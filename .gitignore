@@ -54,9 +54,6 @@ build/
 mobile-blog-*.png
 state.md
 
-# flt agent files (generated per machine)
-CLAUDE.md
-
 # dev symlink to container/blog/posts for Next.js
 frontend/blog-posts
 
