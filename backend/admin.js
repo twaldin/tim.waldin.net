@@ -1,8 +1,18 @@
 const express = require('express');
-const { timingSafeEqual } = require('crypto');
+const { timingSafeEqual, createHmac, randomBytes } = require('crypto');
 const { readAll } = require('./logger');
 
 const router = express.Router();
+
+// Random key generated at startup; used only to normalize HMAC output to a
+// fixed 32-byte length so timingSafeEqual never receives mismatched-length
+// buffers (which would throw RangeError and produce a 500 instead of 401).
+const HMAC_KEY = randomBytes(32);
+function safeEqual(a, b) {
+  const ha = createHmac('sha256', HMAC_KEY).update(a).digest();
+  const hb = createHmac('sha256', HMAC_KEY).update(b).digest();
+  return timingSafeEqual(ha, hb);
+}
 
 function basicAuth(req, res, next) {
   const password = process.env.ADMIN_PASSWORD;
@@ -20,10 +30,9 @@ function basicAuth(req, res, next) {
   const user = idx >= 0 ? decoded.slice(0, idx) : decoded;
   const pass = idx >= 0 ? decoded.slice(idx + 1) : '';
   const email = process.env.ADMIN_EMAIL || 'timothy@waldin.net';
-  // Constant-time comparison to prevent timing-based brute-force
-  const userMatch = timingSafeEqual(Buffer.from(user), Buffer.from(email));
-  const passMatch = timingSafeEqual(Buffer.from(pass), Buffer.from(password));
-  if (!userMatch || !passMatch) {
+  // Constant-time comparison via HMAC digest (fixed 32-byte output regardless
+  // of input length, so timingSafeEqual never throws on length mismatch)
+  if (!safeEqual(user, email) || !safeEqual(pass, password)) {
     res.set('WWW-Authenticate', 'Basic realm="term-site admin"');
     return res.status(401).send('Invalid credentials.');
   }
@@ -237,3 +246,5 @@ function filter(){
 });
 
 module.exports = router;
+module.exports._basicAuth = basicAuth;
+module.exports._safeEqual = safeEqual;
