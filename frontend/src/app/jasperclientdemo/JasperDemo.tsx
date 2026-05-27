@@ -6,7 +6,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
@@ -27,7 +26,7 @@ import {
 const DISCORD = 'https://discord.gg/jasperclient';
 const SITE = 'https://jasperclient.com';
 
-/* ── Tiny inline icon set (no icon-font / lib dependency) ───────────── */
+/* ── Inline icon set (no icon-font / lib dependency) ────────────────── */
 type IconProps = { size?: number };
 const stroke = {
   fill: 'none',
@@ -86,27 +85,6 @@ function ArrowRight({ size = 16 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" {...stroke} aria-hidden>
       <path d="M5 12h14M13 6l6 6-6 6" />
-    </svg>
-  );
-}
-function CursorIcon({ size = 14 }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" {...stroke} aria-hidden>
-      <path d="M5 3l6 16 2.2-6.4L19 10.4 5 3z" />
-    </svg>
-  );
-}
-function DragIcon({ size = 14 }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" {...stroke} aria-hidden>
-      <path d="M12 4v16M4 12h16M9 7l3-3 3 3M9 17l3 3 3-3M7 9l-3 3 3 3M17 9l3 3-3 3" />
-    </svg>
-  );
-}
-function SearchIcon({ size = 14 }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" {...stroke} aria-hidden>
-      <circle cx="11" cy="11" r="6.5" /><path d="m20 20-3.5-3.5" />
     </svg>
   );
 }
@@ -213,7 +191,7 @@ function GuiSlider({
   );
 }
 
-/* ── GUI panel (interactive client window) ──────────────────────────── */
+/* ── GUI panel (the interactive client window) ──────────────────────── */
 function GuiPanel() {
   const [activeCat, setActiveCat] = useState<CategoryId>('mining');
   const [query, setQuery] = useState('');
@@ -251,7 +229,6 @@ function GuiPanel() {
     return hits;
   }, [query, keyed]);
 
-  // Window dragging via the title/logo handle.
   const onHandleDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId);
     drag.current = { active: true, sx: e.clientX, sy: e.clientY, ox: offset.x, oy: offset.y };
@@ -259,9 +236,9 @@ function GuiPanel() {
   const onHandleMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!drag.current.active) return;
     const el = windowRef.current;
-    const w = el?.offsetWidth ?? 760;
+    const w = el?.offsetWidth ?? 700;
     const maxX = Math.max(40, (window.innerWidth - w) / 2);
-    const maxY = 220;
+    const maxY = 200;
     const nx = Math.max(-maxX, Math.min(maxX, drag.current.ox + e.clientX - drag.current.sx));
     const ny = Math.max(-maxY, Math.min(maxY, drag.current.oy + e.clientY - drag.current.sy));
     setOffset({ x: nx, y: ny });
@@ -323,7 +300,6 @@ function GuiPanel() {
         />
       );
     }
-    // keybind
     return (
       <div className="jc-row static" key={key}>
         <span className="jc-row-name">{entry.name}</span>
@@ -348,7 +324,6 @@ function GuiPanel() {
           }}
           aria-hidden={!open}
         >
-          {/* titlebar */}
           <div
             className="jc-titlebar jc-gui-handle"
             onPointerDown={onHandleDown}
@@ -367,9 +342,7 @@ function GuiPanel() {
             </span>
           </div>
 
-          {/* gui body */}
           <div className="jc-gui">
-            {/* sidebar */}
             <div className="jc-gui-side">
               <div className="jc-gui-search-wrap">
                 <input
@@ -432,7 +405,6 @@ function GuiPanel() {
               </div>
             </div>
 
-            {/* content */}
             <div className="jc-gui-content">
               {list.length === 0 ? (
                 <div className="jc-empty">No results found.</div>
@@ -444,35 +416,28 @@ function GuiPanel() {
         </div>
       </div>
 
-      {/* relaunch overlay when closed */}
       {!open && (
         <button
           type="button"
           className="jc-btn jc-btn-ghost"
-          style={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-          }}
+          style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
           onClick={() => {
             setOffset({ x: 0, y: 0 });
             setOpen(true);
           }}
         >
-          Relaunch Jasper
+          Relaunch client
         </button>
       )}
     </div>
   );
 }
 
-/* ── Page ───────────────────────────────────────────────────────────── */
+/* ── Ambient starfield ──────────────────────────────────────────────── */
 function StarField() {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduce) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const canvas = ref.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -527,10 +492,11 @@ function StarField() {
   return <canvas className="jc-stars" ref={ref} aria-hidden />;
 }
 
+/* ── Page ───────────────────────────────────────────────────────────── */
 export default function JasperDemo() {
   const [stuck, setStuck] = useState(false);
   useEffect(() => {
-    const onScroll = () => setStuck(window.scrollY > 24);
+    const onScroll = () => setStuck(window.scrollY > 20);
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
@@ -541,10 +507,8 @@ export default function JasperDemo() {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const sectionAnchor: CSSProperties = { scrollMarginTop: 84 };
-
   return (
-    <div className="jc-root">
+    <div className="jc-root" id="top">
       <div className="jc-bg" aria-hidden />
       <StarField />
 
@@ -554,118 +518,55 @@ export default function JasperDemo() {
           <a className="jc-brand" href="#top" onClick={goTo('top')}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/jasper/logo.png" alt="Jasper Client logo" />
-            <span className="jc-brand-text">
-              <b>Jasper</b> Client
-            </span>
-            <span className="jc-brand-tag">UI Demo</span>
+            <span className="jc-brand-text"><b>Jasper</b> Client</span>
           </a>
           <div className="jc-nav-links">
-            <a className="jc-nav-link" href="#interface" onClick={goTo('interface')}>Interface</a>
             <a className="jc-nav-link" href="#modules" onClick={goTo('modules')}>Modules</a>
             <a className="jc-nav-link" href={DISCORD} target="_blank" rel="noreferrer noopener">Discord</a>
-            <a className="jc-btn jc-btn-primary" href="#get" onClick={goTo('get')} style={{ padding: '9px 20px', borderRadius: 10 }}>
-              Get Jasper
-            </a>
+            <a className="jc-btn jc-btn-primary" href={SITE} target="_blank" rel="noreferrer noopener">Get Jasper</a>
           </div>
         </div>
       </nav>
 
-      {/* HERO */}
-      <header className="jc-hero" id="top">
-        <span className="jc-badge"><span className="jc-dot" /> SkyBlock Client</span>
-        <h1 className="jc-title">
-          <span className="l1">Jasper</span>
-          <span className="l2">Client</span>
-        </h1>
-        <p className="jc-hero-sub">The ultimate Hypixel SkyBlock mod — automation, precision and control, in one client.</p>
-        <div className="jc-hero-btns">
-          <a className="jc-btn jc-btn-primary jc-btn-lg" href="#get" onClick={goTo('get')}>
-            Get Jasper <ArrowRight />
-          </a>
-          <a className="jc-btn jc-btn-ghost jc-btn-lg" href="#interface" onClick={goTo('interface')}>
-            Try the GUI
-          </a>
-        </div>
-        <div className="jc-hero-meta">
-          <span><b>v1.4.2</b></span>
-          <span className="jc-sep" />
-          <span>Forge <b>1.8.9</b></span>
-          <span className="jc-sep" />
-          <span><b>6</b> module categories</span>
-          <span className="jc-sep" />
-          <span>Live config GUI</span>
-        </div>
-        <div className="jc-scroll-hint" aria-hidden>
-          <span>scroll</span>
-          <span className="jc-line" />
+      {/* HERO — copy left, live client GUI right */}
+      <header className="jc-hero">
+        <div className="jc-hero-grid">
+          <div className="jc-hero-left">
+            <h1 className="jc-title">
+              <span className="l1">Jasper</span>
+              <span className="l2">Client</span>
+            </h1>
+            <p className="jc-hero-sub">
+              The ultimate Hypixel SkyBlock mod. Automation, precision and control — in one client.
+            </p>
+            <div className="jc-hero-btns">
+              <a className="jc-btn jc-btn-primary jc-btn-lg" href={SITE} target="_blank" rel="noreferrer noopener">
+                Get Jasper Client <ArrowRight />
+              </a>
+              <a className="jc-btn jc-btn-ghost jc-btn-lg" href={DISCORD} target="_blank" rel="noreferrer noopener">
+                Join Discord
+              </a>
+            </div>
+            <div className="jc-trust">
+              <span><b>v1.4.2</b></span>
+              <span className="jc-sep" />
+              <span>Forge <b>1.8.9</b></span>
+              <span className="jc-sep" />
+              <span>Hypixel SkyBlock</span>
+            </div>
+          </div>
+
+          <GuiPanel />
         </div>
       </header>
 
-      {/* INTERFACE / TRY GUI */}
-      <section className="jc-section" id="interface" style={sectionAnchor}>
+      {/* MODULES — compact editorial manifest */}
+      <section className="jc-section" id="modules" style={{ scrollMarginTop: 80 }}>
         <div className="jc-wrap">
           <div className="jc-section-head">
-            <span className="jc-eyebrow">The client</span>
-            <h2 className="jc-h2">The real in-game GUI, <span className="jc-accent">running right here</span>.</h2>
-            <p className="jc-lede">
-              This is the actual Jasper config interface — not a screenshot. Switch categories,
-              flip modules, drag the sliders and move the window. Everything responds the way it
-              does in-game.
-            </p>
+            <span className="jc-eyebrow">Modules</span>
+            <h2 className="jc-h2">Built for <span className="jc-accent">the grind.</span></h2>
           </div>
-
-          <div className="jc-iface-grid">
-            <div className="jc-iface-copy">
-              <div className="jc-iface-list">
-                <div className="jc-iface-item">
-                  <span className="jc-ico"><CursorIcon /></span>
-                  <div>
-                    <h4>Live, not a mockup</h4>
-                    <p>Toggles, sliders and play buttons all hold real state — interact and watch them respond.</p>
-                  </div>
-                </div>
-                <div className="jc-iface-item">
-                  <span className="jc-ico"><SearchIcon /></span>
-                  <div>
-                    <h4>Search across categories</h4>
-                    <p>Type into the search box to filter every module in the client at once.</p>
-                  </div>
-                </div>
-                <div className="jc-iface-item">
-                  <span className="jc-ico"><DragIcon /></span>
-                  <div>
-                    <h4>Grab and reposition</h4>
-                    <p>Drag the title bar to move the panel, exactly like the draggable in-game window.</p>
-                  </div>
-                </div>
-              </div>
-              <p className="jc-iface-tip">
-                <kbd className="jc-kbd-key">←</kbd>
-                <kbd className="jc-kbd-key">→</kbd>
-                Focus a slider and fine-tune it with the arrow keys.
-              </p>
-            </div>
-
-            <GuiPanel />
-          </div>
-
-          <p className="jc-stage-note">
-            <span className="jc-live-dot" /> Live demo — every control holds real state. Toggle it, drag it, search it.
-          </p>
-        </div>
-      </section>
-
-      {/* MODULES (editorial manifest) */}
-      <section className="jc-section" id="modules" style={sectionAnchor}>
-        <div className="jc-wrap">
-          <div className="jc-section-head">
-            <span className="jc-eyebrow">Capabilities</span>
-            <h2 className="jc-h2">Six modules. <span className="jc-accent">Built for the grind.</span></h2>
-            <p className="jc-lede">
-              Every system is configurable down to the rotation curve. Here is what ships in the client.
-            </p>
-          </div>
-
           <div className="jc-modules">
             {MODULES.map((m, i) => (
               <article className="jc-module" key={m.name}>
@@ -688,12 +589,14 @@ export default function JasperDemo() {
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="jc-section" id="get" style={{ ...sectionAnchor, paddingTop: 0 }}>
+      {/* COMMUNITY + GET — compact band */}
+      <section className="jc-section" id="get" style={{ paddingTop: 0 }}>
         <div className="jc-wrap">
           <div className="jc-cta">
-            <h2>Ready to play?</h2>
-            <p>Join the Jasper community and get access to the client.</p>
+            <div className="jc-cta-text">
+              <h2>Ready to play?</h2>
+              <p>Get the client and join the community.</p>
+            </div>
             <div className="jc-cta-btns">
               <a className="jc-btn jc-btn-primary jc-btn-lg" href={SITE} target="_blank" rel="noreferrer noopener">
                 Get Jasper Client <ArrowRight />
@@ -712,11 +615,10 @@ export default function JasperDemo() {
           <span className="jc-footer-brand">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/jasper/logo.png" alt="" aria-hidden />
-            Jasper Client · UI demo recreation
+            Jasper Client
           </span>
           <span className="jc-footer-note">
-            Independent design study · not affiliated with Mojang or Hypixel ·{' '}
-            <Link href="/">tim.waldin.net</Link>
+            Independent UI study · not affiliated with Mojang or Hypixel · <Link href="/">tim.waldin.net</Link>
           </span>
         </div>
       </footer>
