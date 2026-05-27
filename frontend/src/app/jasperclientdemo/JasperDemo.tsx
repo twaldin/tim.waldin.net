@@ -550,7 +550,7 @@ export default function JasperDemo() {
             <div className="jc-trust">
               <span><b>v1.4.2</b></span>
               <span className="jc-sep" />
-              <span>Forge <b>1.8.9</b></span>
+              <span>Fabric <b>1.21.11</b></span>
               <span className="jc-sep" />
               <span>Hypixel SkyBlock</span>
             </div>
@@ -564,8 +564,7 @@ export default function JasperDemo() {
       <section className="jc-section" id="modules" style={{ scrollMarginTop: 80 }}>
         <div className="jc-wrap">
           <div className="jc-section-head">
-            <span className="jc-eyebrow">Modules</span>
-            <h2 className="jc-h2">Built for <span className="jc-accent">the grind.</span></h2>
+            <h2 className="jc-h2">Modules</h2>
           </div>
           <div className="jc-modules">
             {MODULES.map((m, i) => (
