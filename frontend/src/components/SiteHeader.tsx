@@ -28,7 +28,7 @@ export default function SiteHeader() {
   const pathname = usePathname();
   // The /jasperclientdemo route is a full-bleed standalone landing page with
   // its own chrome — the terminal site header would clash, so hide it there.
-  if (pathname?.startsWith('/jasperclientdemo')) return null;
+  if (pathname?.startsWith('/jasperclientdemo') || pathname?.startsWith('/floydwebsitedemo')) return null;
 
   const linkStyle: CSSProperties = {
     color: LINK,
