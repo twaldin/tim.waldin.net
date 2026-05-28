@@ -2,7 +2,6 @@
 
 import type { CSSProperties, MouseEvent } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
 import { terminalTheme } from '@/config/terminal-theme';
 
 function lightenHex(hex: string, amount: number): string {
@@ -25,11 +24,6 @@ function hardNav(href: string) {
 }
 
 export default function SiteHeader() {
-  const pathname = usePathname();
-  // The /jasperclientdemo route is a full-bleed standalone landing page with
-  // its own chrome — the terminal site header would clash, so hide it there.
-  if (pathname?.startsWith('/jasperclientdemo') || pathname?.startsWith('/floydwebsitedemo')) return null;
-
   const linkStyle: CSSProperties = {
     color: LINK,
     textDecoration: 'none',
