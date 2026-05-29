@@ -179,7 +179,7 @@ table{width:100%;border-collapse:collapse}
 th{color:#8b949e;font-size:11px;text-align:left;padding:5px 8px;border-bottom:1px solid #21262d;white-space:nowrap}
 tr.row{cursor:pointer}tr.row:hover td{background:#161b22}
 td{padding:5px 8px;border-bottom:1px solid #161b22;vertical-align:middle;white-space:nowrap}
-.t{color:#6e7681;font-size:11px}.ip{color:#79c0ff}.cmd{color:#d2a8ff}
+.t{color:#6e7681;font-size:11px}.ip{color:#79c0ff}.cmd{color:#a6e22e}
 .dur{color:#8b949e}.cnt{color:#6e7681;text-align:right}
 .dim{color:#6e7681}
 tr.cmd-block{display:none}tr.cmd-block.open{display:table-row}

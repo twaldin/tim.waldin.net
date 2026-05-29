@@ -14,8 +14,8 @@ function lightenHex(hex: string, amount: number): string {
 
 const BG     = terminalTheme.background;
 const BORDER = terminalTheme.brightBlack;
-const BRAND  = terminalTheme.brightMagenta;
-const LINK   = lightenHex(terminalTheme.brightMagenta, 50);
+const BRAND  = terminalTheme.green;
+const LINK   = lightenHex(BRAND, 50);
 const DIM    = terminalTheme.brightBlack;
 
 // Force a full page reload so nav always gets a fresh session + initCommand.

@@ -19,9 +19,9 @@ function hexToAnsiRgb(hex: string): string {
 }
 
 const ANSI_PROMPT =
-  `\x1b[38;2;${hexToAnsiRgb(terminalTheme.brightMagenta)}mtim.waldin.net ` +
+  `\x1b[38;2;${hexToAnsiRgb(terminalTheme.green)}mtim.waldin.net ` +
   `\x1b[38;2;${hexToAnsiRgb(terminalTheme.foreground)}m~ \r\n` +
-  `\x1b[38;2;${hexToAnsiRgb(terminalTheme.brightMagenta)}m❯ \x1b[0m`;
+  `\x1b[38;2;${hexToAnsiRgb(terminalTheme.green)}m❯ \x1b[0m`;
 
 const CHAR_WIDTH_RATIO = 0.6;
 const MOBILE_BREAKPOINT = 768;
