@@ -13,6 +13,7 @@ export const terminalTheme = {
   black:         '#1b1d1e',   // colour0
   red:           '#f92672',   // colour1
   green:         '#a6e22e',   // colour2
+  primary:       '#a6e22e',   // colour2 — primary accent
   yellow:        '#fd971f',   // colour3
   blue:          '#66d9ef',   // colour4
   magenta:       '#9e6ffe',   // colour5

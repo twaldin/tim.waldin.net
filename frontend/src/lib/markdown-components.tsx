@@ -6,7 +6,7 @@ import { terminalTheme } from '@/config/terminal-theme';
 export const BG          = terminalTheme.background;
 export const FG          = terminalTheme.foreground;
 export const DIM         = terminalTheme.brightBlack;
-export const BRAND       = terminalTheme.green;          // primary green
+export const BRAND       = terminalTheme.primary;          // primary accent
 export const PINK        = terminalTheme.red;            // hot pink in Hardcore
 export const BLUE        = terminalTheme.blue;
 export const BRIGHT_YELLOW = terminalTheme.brightYellow;
@@ -17,7 +17,7 @@ export const BRIGHT_CYAN   = BLUE;
 export const CODE_BG     = terminalTheme.black;
 export const CODE_BORDER = terminalTheme.brightBlack;
 
-// Lighter variant of the primary green — used for navigation links.
+// Lighter variant of the primary accent — used for navigation links.
 function lightenHex(hex: string, amount: number): string {
   const n = parseInt(hex.replace('#', ''), 16);
   const r = Math.min(255, (n >> 16) + amount);

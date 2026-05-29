@@ -14,7 +14,7 @@ function lightenHex(hex: string, amount: number): string {
 
 const BG     = terminalTheme.background;
 const BORDER = terminalTheme.brightBlack;
-const BRAND  = terminalTheme.green;
+const BRAND  = terminalTheme.primary;
 const LINK   = lightenHex(BRAND, 50);
 const DIM    = terminalTheme.brightBlack;
 
