@@ -1,4 +1,17 @@
 export const ASCII_LOADER_TEXT = 'CONNECTING TO CONTAINER';
+export const LOADER_PHRASES = [
+  ASCII_LOADER_TEXT,
+  'ATTACHING PTY',
+  'ALLOCATING SANDBOX',
+  'WARMING SHELL',
+  'LOADING PORTFOLIO',
+  'PREPARING TERMINAL',
+  'SPAWNING SESSION',
+] as const;
+
+export const MAX_LOADER_TEXT_LENGTH = Math.max(
+  ...LOADER_PHRASES.map((phrase) => phrase.length),
+);
 export const BLOCK_SCRAMBLE_POOL = ['░', '▒', '▓', '█'] as const;
 export const RANDOM_SCRAMBLE_POOL = [
   ...'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789%_!<>/{}[]()=+-*&@#?'.split(''),
@@ -20,6 +33,18 @@ function revealThreshold(index: number, length: number): number {
   const distanceFromCenter = Math.abs(index - center) / center;
   // Decode center-out, matching the reference's from: 'center' feel.
   return 0.68 + distanceFromCenter * 0.2;
+}
+
+export function selectLoaderText(randomSource: () => number = Math.random): string {
+  const index = Math.min(
+    LOADER_PHRASES.length - 1,
+    Math.max(0, Math.floor(randomSource() * LOADER_PHRASES.length)),
+  );
+  return LOADER_PHRASES[index];
+}
+
+export function getLoaderHoldText(text: string, dotCount = 0): string {
+  return `${text}${'.'.repeat(Math.max(0, Math.min(3, dotCount))).padEnd(3, ' ')}`;
 }
 
 export function buildScrambleDecodeFrame(

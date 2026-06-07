@@ -4,47 +4,64 @@ import { useEffect, useRef } from 'react';
 import { animate } from 'animejs';
 import { terminalTheme } from '@/config/terminal-theme';
 import {
-  ASCII_LOADER_TEXT,
   buildScrambleDecodeFrame,
+  getLoaderHoldText,
+  MAX_LOADER_TEXT_LENGTH,
+  selectLoaderText,
 } from '@/lib/ascii-loader';
 
 export default function AsciiContainerLoader() {
   const textRef = useRef<HTMLSpanElement>(null);
-  const cursorRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
+    const text = selectLoaderText();
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     if (reducedMotion) {
-      if (textRef.current) textRef.current.textContent = ASCII_LOADER_TEXT;
+      if (textRef.current) textRef.current.textContent = getLoaderHoldText(text, 3);
       return;
     }
 
     const state = { phase: 0, tick: 0 };
-    const animation = animate(state, {
+    let dotCount = 0;
+    let ellipsisInterval: number | undefined;
+
+    const decodeAnimation = animate(state, {
       phase: 1,
-      duration: 760,
-      loop: true,
+      duration: 1800,
+      loop: false,
       ease: 'linear',
       onUpdate: () => {
         state.tick += 1;
         if (textRef.current) {
           textRef.current.textContent = buildScrambleDecodeFrame(
-            ASCII_LOADER_TEXT,
+            text,
             state.phase,
             state.tick,
           );
         }
-        if (cursorRef.current) {
-          cursorRef.current.style.transform = `translateX(${Math.round(Math.sin(state.tick * 0.8) * 2)}px)`;
-        }
+      },
+      onComplete: () => {
+        if (!textRef.current) return;
+        textRef.current.textContent = getLoaderHoldText(text, 0);
+        ellipsisInterval = window.setInterval(() => {
+          dotCount = (dotCount + 1) % 4;
+          if (textRef.current) {
+            textRef.current.textContent = getLoaderHoldText(text, dotCount);
+          }
+        }, 420);
       },
     });
 
     return () => {
-      animation.cancel();
+      decodeAnimation.cancel();
+      if (ellipsisInterval !== undefined) {
+        window.clearInterval(ellipsisInterval);
+      }
     };
   }, []);
+
+  const initialText = buildScrambleDecodeFrame('CONNECTING TO CONTAINER', 0);
 
   return (
     <div
@@ -61,49 +78,18 @@ export default function AsciiContainerLoader() {
         userSelect: 'none',
       }}
     >
-      <div
+      <span
+        ref={textRef}
         style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '0.45ch',
+          display: 'inline-block',
+          minWidth: `${MAX_LOADER_TEXT_LENGTH + 3}ch`,
+          color: terminalTheme.primary,
+          textShadow: `0 0 14px ${terminalTheme.primary}44`,
           whiteSpace: 'pre',
         }}
       >
-        <span
-          ref={cursorRef}
-          aria-hidden="true"
-          style={{
-            display: 'inline-block',
-            width: '1ch',
-            height: '1.08em',
-            background: `repeating-linear-gradient(135deg, ${terminalTheme.primary} 0 2px, transparent 2px 4px)`,
-            boxShadow: `0 0 16px ${terminalTheme.primary}55`,
-          }}
-        />
-        <span
-          ref={textRef}
-          style={{
-            display: 'inline-block',
-            minWidth: `${ASCII_LOADER_TEXT.length}ch`,
-            color: terminalTheme.primary,
-            textShadow: `0 0 14px ${terminalTheme.primary}44`,
-            whiteSpace: 'pre',
-          }}
-        >
-          {buildScrambleDecodeFrame(ASCII_LOADER_TEXT, 0)}
-        </span>
-        <span
-          aria-hidden="true"
-          style={{
-            display: 'inline-block',
-            width: '1ch',
-            height: '1.08em',
-            background: `repeating-linear-gradient(135deg, ${terminalTheme.primary} 0 2px, transparent 2px 4px)`,
-            boxShadow: `0 0 16px ${terminalTheme.primary}55`,
-          }}
-        />
-      </div>
+        {initialText.padEnd(MAX_LOADER_TEXT_LENGTH + 3, ' ')}
+      </span>
     </div>
   );
 }

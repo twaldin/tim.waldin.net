@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   ASCII_LOADER_TEXT,
   BLOCK_SCRAMBLE_POOL,
+  LOADER_PHRASES,
+  MAX_LOADER_TEXT_LENGTH,
   RANDOM_SCRAMBLE_POOL,
   buildScrambleDecodeFrame,
+  getLoaderHoldText,
+  selectLoaderText,
 } from '../ascii-loader';
 
 describe('buildScrambleDecodeFrame', () => {
@@ -35,5 +39,25 @@ describe('buildScrambleDecodeFrame', () => {
 
   it('resolves fully to the target text at the end', () => {
     expect(buildScrambleDecodeFrame(ASCII_LOADER_TEXT, 1, 0)).toBe(ASCII_LOADER_TEXT);
+  });
+});
+
+describe('loader phrases', () => {
+  it('keeps a randomizable phrase pool that includes the original copy', () => {
+    expect(LOADER_PHRASES).toContain(ASCII_LOADER_TEXT);
+    expect(LOADER_PHRASES.length).toBeGreaterThan(3);
+  });
+
+  it('selects a phrase from the pool using a supplied random source', () => {
+    expect(selectLoaderText(() => 0)).toBe(LOADER_PHRASES[0]);
+    expect(selectLoaderText(() => 0.999)).toBe(LOADER_PHRASES[LOADER_PHRASES.length - 1]);
+  });
+
+  it('defines max text width for stable layout across random phrases', () => {
+    expect(MAX_LOADER_TEXT_LENGTH).toBe(Math.max(...LOADER_PHRASES.map((phrase) => phrase.length)));
+  });
+
+  it('builds stable post-decode hold text with a reserved ellipsis slot', () => {
+    expect(getLoaderHoldText('ATTACHING PTY')).toBe('ATTACHING PTY   ');
   });
 });
