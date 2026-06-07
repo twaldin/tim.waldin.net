@@ -1,46 +1,59 @@
 export const ASCII_LOADER_TEXT = 'CONNECTING TO CONTAINER';
-export const DENSITY_RAMP = ['░', '▒', '▓', '█'] as const;
-
-const STATUS_LABELS = [
-  'allocating sandbox',
-  'attaching pty',
-  'warming shell',
-  'loading portfolio',
+export const BLOCK_SCRAMBLE_POOL = ['░', '▒', '▓', '█'] as const;
+export const RANDOM_SCRAMBLE_POOL = [
+  ...'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789%_!<>/{}[]()=+-*&@#?'.split(''),
+  ...BLOCK_SCRAMBLE_POOL,
 ] as const;
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
-export function buildDensityTextFrame(text: string, phase: number): string {
-  const progress = clamp01(phase);
-
-  if (progress >= 0.98) {
-    return text;
-  }
-
-  return Array.from(text, (char, index) => {
-    if (char === ' ') return char;
-
-    // Offset each letter so the density field travels through the phrase
-    // instead of all glyphs flipping together. The sine phase creates the
-    // AliGrids/clockmaker-style shimmer using only ░▒▓█ characters.
-    const wave = Math.sin(progress * Math.PI * 2 + index * 0.72);
-    const normalized = (wave + 1) / 2;
-    const rampIndex = Math.min(
-      DENSITY_RAMP.length - 1,
-      Math.floor(normalized * DENSITY_RAMP.length),
-    );
-
-    return DENSITY_RAMP[rampIndex];
-  }).join('');
+function seededIndex(seed: number, length: number): number {
+  const x = Math.sin(seed * 12.9898) * 43758.5453;
+  return Math.abs(Math.floor((x - Math.floor(x)) * length)) % length;
 }
 
-export function getLoaderStatusLabel(phase: number): string {
+function revealThreshold(index: number, length: number): number {
+  if (length <= 1) return 0.72;
+  const center = (length - 1) / 2;
+  const distanceFromCenter = Math.abs(index - center) / center;
+  // Decode center-out, matching the reference's from: 'center' feel.
+  return 0.68 + distanceFromCenter * 0.2;
+}
+
+export function buildScrambleDecodeFrame(
+  text: string,
+  phase: number,
+  tick = 0,
+): string {
   const progress = clamp01(phase);
-  const index = Math.min(
-    STATUS_LABELS.length - 1,
-    Math.floor(progress * STATUS_LABELS.length),
-  );
-  return STATUS_LABELS[index];
+
+  if (progress >= 0.98) return text;
+
+  const chars = Array.from(text);
+  const nonSpaceLength = chars.filter((char) => char !== ' ').length;
+  let nonSpaceIndex = -1;
+
+  return chars.map((char, index) => {
+    if (char === ' ') return char;
+    nonSpaceIndex += 1;
+
+    const threshold = revealThreshold(nonSpaceIndex, nonSpaceLength);
+    if (progress >= threshold) {
+      const localProgress = (progress - threshold) / Math.max(0.01, 0.98 - threshold);
+      const shouldHoldTarget = localProgress > 0.5 || seededIndex(index + tick * 3, 3) === 0;
+      if (shouldHoldTarget) return char;
+    }
+
+    if (progress < 0.34) {
+      return BLOCK_SCRAMBLE_POOL[
+        seededIndex(index * 7 + tick * 5 + Math.floor(progress * 30), BLOCK_SCRAMBLE_POOL.length)
+      ];
+    }
+
+    return RANDOM_SCRAMBLE_POOL[
+      seededIndex(index * 11 + tick * 17 + Math.floor(progress * 60), RANDOM_SCRAMBLE_POOL.length)
+    ];
+  }).join('');
 }
