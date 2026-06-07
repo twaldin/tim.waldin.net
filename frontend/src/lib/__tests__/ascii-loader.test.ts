@@ -60,11 +60,11 @@ describe('loader config', () => {
     expect(cold.phrases).toEqual(COLD_LOADER_PHRASES);
   });
 
-  it('uses a faster resume decode based on measured reattach time', () => {
+  it('uses a 200ms resume decode so reattached sessions feel instant', () => {
     const resume = getLoaderConfig('resume');
 
+    expect(resume.minDecodeMs).toBe(200);
     expect(resume.minDecodeMs).toBeLessThan(getLoaderConfig('cold').minDecodeMs);
-    expect(resume.minDecodeMs).toBeGreaterThanOrEqual(450);
     expect(resume.phrases).toEqual(RESUME_LOADER_PHRASES);
   });
 

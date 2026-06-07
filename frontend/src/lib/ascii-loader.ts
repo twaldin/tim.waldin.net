@@ -35,7 +35,7 @@ const LOADER_CONFIG = {
     phrases: COLD_LOADER_PHRASES,
   },
   resume: {
-    minDecodeMs: 550,
+    minDecodeMs: 200,
     phrases: RESUME_LOADER_PHRASES,
   },
 } as const;

@@ -69,10 +69,10 @@ export default function AsciiContainerLoader({
       const progress = Math.min(1, elapsed / minDecodeMs);
 
       if (textRef.current) {
-        textRef.current.textContent = getLoaderHoldText(
-          buildScrambleDecodeFrame(text, progress, tickRef.current),
-          0,
-        );
+        const frame = progress >= 1
+          ? text
+          : buildScrambleDecodeFrame(text, progress, tickRef.current);
+        textRef.current.textContent = getLoaderHoldText(frame, 0);
       }
 
       if (progress >= 1 && readyRef.current) {

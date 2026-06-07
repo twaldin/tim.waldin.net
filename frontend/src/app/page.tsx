@@ -15,7 +15,7 @@ export default function Home() {
   const terminalRef = useRef<{ writeToTerminal: (data: string) => void; clearTerminal: () => void; fitTerminal: () => void } | null>(null);
   const [showSkeleton, setShowSkeleton] = useState(true);
   const [containerReady, setContainerReady] = useState(false);
-  const [loaderMode, setLoaderMode] = useState<LoaderMode>('cold');
+  const [loaderMode, setLoaderMode] = useState<LoaderMode | null>(null);
   const firstOutputSeenRef = useRef(false);
   const firstPromptSeenRef = useRef(false);
   const welcomeSeenRef = useRef(false);
@@ -135,9 +135,13 @@ export default function Home() {
     wsManagerRef.current?.resize(cols, rows);
   }, []);
 
+  const handleLoaderFinished = useCallback(() => {
+    setShowSkeleton(false);
+  }, []);
+
   return (
     <div className="w-full flex-1 bg-black overflow-hidden" style={{ minHeight: 0, position: 'relative' }}>
-      {showSkeleton && (
+      {showSkeleton && loaderMode && (
         <div style={{
           position: 'absolute', inset: 0, zIndex: 10,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -148,7 +152,7 @@ export default function Home() {
           <AsciiContainerLoader
             mode={loaderMode}
             ready={containerReady}
-            onFinished={() => setShowSkeleton(false)}
+            onFinished={handleLoaderFinished}
           />
         </div>
       )}
