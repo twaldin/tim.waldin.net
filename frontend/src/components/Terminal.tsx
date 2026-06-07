@@ -11,6 +11,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { terminalConfig } from "../config/terminal-theme";
+import { computeVirtualKeyboardInset } from "../lib/mobile-viewport";
 import { attachTouchScroll } from "../lib/xterm-touch";
 
 const MOBILE_BREAKPOINT = 768;
@@ -175,6 +176,34 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
 
       const detachTouch = attachTouchScroll(xterm, currentTerminalElement);
 
+      const fitAndKeepPromptVisible = () => {
+        if (!fitAddonRef.current || !xtermRef.current) return;
+        fitAddonRef.current.fit();
+        xtermRef.current.scrollToBottom();
+        onResize(xtermRef.current.cols, xtermRef.current.rows);
+      };
+
+      const updateVirtualKeyboardInset = () => {
+        const viewport = window.visualViewport;
+        const keyboardInset = viewport
+          ? computeVirtualKeyboardInset({
+              layoutViewportHeight: window.innerHeight,
+              visualViewportHeight: viewport.height,
+              visualViewportOffsetTop: viewport.offsetTop,
+            })
+          : 0;
+
+        currentTerminalElement.style.setProperty(
+          "--terminal-keyboard-inset",
+          keyboardInset > 0 ? `${keyboardInset + 12}px` : "0px",
+        );
+        requestAnimationFrame(fitAndKeepPromptVisible);
+      };
+
+      updateVirtualKeyboardInset();
+      window.visualViewport?.addEventListener("resize", updateVirtualKeyboardInset);
+      window.visualViewport?.addEventListener("scroll", updateVirtualKeyboardInset);
+
       const handlePaste = async (event: ClipboardEvent) => {
         event.preventDefault();
         try {
@@ -238,6 +267,11 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
           if (dripTimerRef.current) clearTimeout(dripTimerRef.current);
         },
         detachTouch,
+        () => {
+          window.visualViewport?.removeEventListener("resize", updateVirtualKeyboardInset);
+          window.visualViewport?.removeEventListener("scroll", updateVirtualKeyboardInset);
+          currentTerminalElement.style.removeProperty("--terminal-keyboard-inset");
+        },
         () => {
           clearTimeout(resizeTimeout);
           window.removeEventListener("resize", handleResize);

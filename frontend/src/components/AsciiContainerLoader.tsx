@@ -26,7 +26,7 @@ export default function AsciiContainerLoader({
   onFinished,
 }: AsciiContainerLoaderProps) {
   const textRef = useRef<HTMLSpanElement>(null);
-  const textRefValue = useRef('CONNECTING TO CONTAINER');
+  const textRefValue = useRef('connecting to container');
   const readyRef = useRef(false);
   const finishedRef = useRef(false);
   const tickRef = useRef(0);
@@ -102,7 +102,6 @@ export default function AsciiContainerLoader({
         lineHeight: 1,
         letterSpacing: '0.035em',
         textAlign: 'center',
-        textTransform: 'uppercase',
         userSelect: 'none',
       }}
     >
@@ -116,7 +115,7 @@ export default function AsciiContainerLoader({
           whiteSpace: 'pre',
         }}
       >
-        {buildScrambleDecodeFrame('CONNECTING TO CONTAINER', 0).padEnd(MAX_LOADER_TEXT_LENGTH + 3, ' ')}
+        {buildScrambleDecodeFrame('connecting to container', 0).padEnd(MAX_LOADER_TEXT_LENGTH + 3, ' ')}
       </span>
     </div>
   );

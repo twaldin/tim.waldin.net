@@ -1,18 +1,18 @@
-export const ASCII_LOADER_TEXT = 'CONNECTING TO CONTAINER';
+export const ASCII_LOADER_TEXT = 'connecting to container';
 export const COLD_LOADER_PHRASES = [
   ASCII_LOADER_TEXT,
-  'ATTACHING PTY',
-  'ALLOCATING SANDBOX',
-  'WARMING SHELL',
-  'LOADING PORTFOLIO',
-  'PREPARING TERMINAL',
-  'SPAWNING SESSION',
+  'attaching pty',
+  'allocating sandbox',
+  'warming shell',
+  'loading portfolio',
+  'preparing terminal',
+  'spawning session',
 ] as const;
 export const RESUME_LOADER_PHRASES = [
-  'RESUMING SESSION',
-  'RECONNECTING TO PTY',
-  'RESTORING TERMINAL',
-  'REATTACHING SHELL',
+  'resuming session',
+  'reconnecting to pty',
+  'restoring terminal',
+  'reattaching shell',
 ] as const;
 export const LOADER_MODES = ['cold', 'resume'] as const;
 export type LoaderMode = typeof LOADER_MODES[number];

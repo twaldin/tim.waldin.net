@@ -24,21 +24,21 @@ describe('buildScrambleDecodeFrame', () => {
   });
 
   it('mutates through random letters, symbols, and occasional blocks in the middle phase', () => {
-    const frame = buildScrambleDecodeFrame('CONNECTING', 0.5, 9);
+    const frame = buildScrambleDecodeFrame('connecting', 0.5, 9);
     const nonSpaceChars = [...frame.replaceAll(' ', '')];
 
-    expect(frame).toHaveLength('CONNECTING'.length);
-    expect(frame).not.toBe('CONNECTING');
+    expect(frame).toHaveLength('connecting'.length);
+    expect(frame).not.toBe('connecting');
     expect(nonSpaceChars.every((char) => (RANDOM_SCRAMBLE_POOL as readonly string[]).includes(char))).toBe(true);
     expect(nonSpaceChars.some((char) => /[A-Za-z%_!]/.test(char))).toBe(true);
   });
 
   it('partially reveals readable target letters late in the decode', () => {
-    const frame = buildScrambleDecodeFrame('CONNECTING', 0.82, 1);
+    const frame = buildScrambleDecodeFrame('connecting', 0.82, 1);
 
-    expect(frame).toHaveLength('CONNECTING'.length);
-    expect(frame).not.toBe('CONNECTING');
-    expect([...frame].some((char, index) => char === 'CONNECTING'[index])).toBe(true);
+    expect(frame).toHaveLength('connecting'.length);
+    expect(frame).not.toBe('connecting');
+    expect([...frame].some((char, index) => char === 'connecting'[index])).toBe(true);
   });
 
   it('resolves fully to the target text at the end', () => {
@@ -47,10 +47,13 @@ describe('buildScrambleDecodeFrame', () => {
 });
 
 describe('loader config', () => {
-  it('has cold and resume modes', () => {
+  it('has cold and resume modes with lowercase loading phrases', () => {
     expect(LOADER_MODES).toEqual(['cold', 'resume']);
     expect(COLD_LOADER_PHRASES).toContain(ASCII_LOADER_TEXT);
-    expect(RESUME_LOADER_PHRASES).toContain('RESUMING SESSION');
+    expect(RESUME_LOADER_PHRASES).toContain('resuming session');
+    expect([...COLD_LOADER_PHRASES, ...RESUME_LOADER_PHRASES].every(
+      (phrase) => phrase === phrase.toLowerCase(),
+    )).toBe(true);
   });
 
   it('uses a slower cold decode based on measured first-output time', () => {
@@ -81,7 +84,7 @@ describe('loader config', () => {
   });
 
   it('builds stable post-decode hold text with a reserved ellipsis slot', () => {
-    expect(getLoaderHoldText('ATTACHING PTY')).toBe('ATTACHING PTY   ');
+    expect(getLoaderHoldText('attaching pty')).toBe('attaching pty   ');
   });
 
   it('holds the final words briefly before the terminal is revealed', () => {

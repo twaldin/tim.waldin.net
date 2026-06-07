@@ -49,7 +49,7 @@ html {
    terminal background color. */
 @media (max-width: 767px) {
   .terminal-host {
-    padding-bottom: 25vh !important;
+    padding-bottom: max(25vh, var(--terminal-keyboard-inset, 0px)) !important;
   }
 }
 
