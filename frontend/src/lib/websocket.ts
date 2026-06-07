@@ -67,6 +67,7 @@ export interface WebSocketManager {
   onError: (callback: (error: Error) => void) => void;
   onTti: (callback: (phase: string) => void) => void;
   onSessionEnd: (callback: () => void) => void;
+  onSessionStatus: (callback: (status: { mode?: 'cold' | 'resume'; restoredType?: 'active' | 'zombie' }) => void) => void;
   resize: (cols: number, rows: number) => void;
 }
 
@@ -78,6 +79,7 @@ export function createWebSocketManager(): WebSocketManager {
   let outputCallback: ((data: string) => void) | null = null;
   let ttiCallback: ((phase: string) => void) | null = null;
   let sessionEndCallback: (() => void) | null = null;
+  let sessionStatusCallback: ((status: { mode?: 'cold' | 'resume'; restoredType?: 'active' | 'zombie' }) => void) | null = null;
 
   // Generate or reuse persistent session ID
   const getSessionId = (): string => {
@@ -133,6 +135,10 @@ export function createWebSocketManager(): WebSocketManager {
       // after a browser zoom/resize).
       if (lastResize) socket?.emit('resize', lastResize);
       connectCallback?.();
+    });
+
+    socket.on('session_status', (status: { mode?: 'cold' | 'resume'; restoredType?: 'active' | 'zombie' }) => {
+      sessionStatusCallback?.(status);
     });
 
     socket.on('disconnect', () => {
@@ -217,6 +223,10 @@ export function createWebSocketManager(): WebSocketManager {
     sessionEndCallback = callback;
   };
 
+  const onSessionStatus = (callback: (status: { mode?: 'cold' | 'resume'; restoredType?: 'active' | 'zombie' }) => void) => {
+    sessionStatusCallback = callback;
+  };
+
   const resize = (cols: number, rows: number) => {
     lastResize = { cols, rows };
     if (socket?.connected) {
@@ -235,6 +245,7 @@ export function createWebSocketManager(): WebSocketManager {
     onError,
     onTti,
     onSessionEnd,
+    onSessionStatus,
     resize,
   };
 }

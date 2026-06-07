@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   ASCII_LOADER_TEXT,
   BLOCK_SCRAMBLE_POOL,
+  COLD_LOADER_PHRASES,
   LOADER_EXIT_HOLD_MS,
-  LOADER_PHRASES,
+  LOADER_MODES,
   MAX_LOADER_TEXT_LENGTH,
   RANDOM_SCRAMBLE_POOL,
-  buildLoadingScrambleFrame,
+  RESUME_LOADER_PHRASES,
   buildScrambleDecodeFrame,
+  getLoaderConfig,
   getLoaderHoldText,
   selectLoaderText,
 } from '../ascii-loader';
@@ -44,38 +46,38 @@ describe('buildScrambleDecodeFrame', () => {
   });
 });
 
-describe('loading-phase scramble', () => {
-  it('keeps the target words mostly visible while loading', () => {
-    const text = 'CONNECTING';
-    const frame = buildLoadingScrambleFrame(text, 11);
-    const matchingChars = [...frame].filter((char, index) => char === text[index]).length;
-
-    expect(frame).toHaveLength(text.length);
-    expect(frame).not.toBe(text);
-    expect(matchingChars).toBeGreaterThanOrEqual(6);
+describe('loader config', () => {
+  it('has cold and resume modes', () => {
+    expect(LOADER_MODES).toEqual(['cold', 'resume']);
+    expect(COLD_LOADER_PHRASES).toContain(ASCII_LOADER_TEXT);
+    expect(RESUME_LOADER_PHRASES).toContain('RESUMING SESSION');
   });
 
-  it('uses random scramble characters for the non-word glitches', () => {
-    const text = 'CONNECTING';
-    const frame = buildLoadingScrambleFrame(text, 7);
+  it('uses a slower cold decode based on measured first-output time', () => {
+    const cold = getLoaderConfig('cold');
 
-    expect([...frame].every((char, index) => char === text[index] || (RANDOM_SCRAMBLE_POOL as readonly string[]).includes(char))).toBe(true);
-  });
-});
-
-describe('loader phrases', () => {
-  it('keeps a randomizable phrase pool that includes the original copy', () => {
-    expect(LOADER_PHRASES).toContain(ASCII_LOADER_TEXT);
-    expect(LOADER_PHRASES.length).toBeGreaterThan(3);
+    expect(cold.minDecodeMs).toBeGreaterThanOrEqual(1000);
+    expect(cold.phrases).toEqual(COLD_LOADER_PHRASES);
   });
 
-  it('selects a phrase from the pool using a supplied random source', () => {
-    expect(selectLoaderText(() => 0)).toBe(LOADER_PHRASES[0]);
-    expect(selectLoaderText(() => 0.999)).toBe(LOADER_PHRASES[LOADER_PHRASES.length - 1]);
+  it('uses a faster resume decode based on measured reattach time', () => {
+    const resume = getLoaderConfig('resume');
+
+    expect(resume.minDecodeMs).toBeLessThan(getLoaderConfig('cold').minDecodeMs);
+    expect(resume.minDecodeMs).toBeGreaterThanOrEqual(450);
+    expect(resume.phrases).toEqual(RESUME_LOADER_PHRASES);
   });
 
-  it('defines max text width for stable layout across random phrases', () => {
-    expect(MAX_LOADER_TEXT_LENGTH).toBe(Math.max(...LOADER_PHRASES.map((phrase) => phrase.length)));
+  it('selects a phrase from the requested mode pool using a supplied random source', () => {
+    expect(selectLoaderText('cold', () => 0)).toBe(COLD_LOADER_PHRASES[0]);
+    expect(selectLoaderText('resume', () => 0.999)).toBe(RESUME_LOADER_PHRASES[RESUME_LOADER_PHRASES.length - 1]);
+  });
+
+  it('defines max text width for stable layout across all random phrases', () => {
+    expect(MAX_LOADER_TEXT_LENGTH).toBe(Math.max(
+      ...COLD_LOADER_PHRASES.map((phrase) => phrase.length),
+      ...RESUME_LOADER_PHRASES.map((phrase) => phrase.length),
+    ));
   });
 
   it('builds stable post-decode hold text with a reserved ellipsis slot', () => {

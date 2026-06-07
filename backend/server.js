@@ -96,6 +96,7 @@ io.on('connection', (socket) => {
     const restored = sessionManager.restoreByPersistentSessionId(sessionId, socket.id, socket, clientIP, initCommand);
     if (restored) {
       restoredByPersistentId = true;
+      socket.emit('session_status', { mode: 'resume', restoredType: restored.type });
       if (restored.type === 'active' && restored.oldSocketId) {
         const existingSocket = io.sockets.sockets.get(restored.oldSocketId);
         if (existingSocket) {
@@ -142,6 +143,7 @@ io.on('connection', (socket) => {
 
   // Create new terminal session (if not already restored by persistent ID).
   if (!restoredByPersistentId) {
+    socket.emit('session_status', { mode: 'cold' });
     sessionManager.createSession(socket.id, socket, initCommand, clientIP, sessionId)
       .then(() => {
         console.log(`Session created for ${socket.id}${initCommand ? ' (initCommand=' + initCommand + ')' : ''}`);

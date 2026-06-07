@@ -1,5 +1,5 @@
 export const ASCII_LOADER_TEXT = 'CONNECTING TO CONTAINER';
-export const LOADER_PHRASES = [
+export const COLD_LOADER_PHRASES = [
   ASCII_LOADER_TEXT,
   'ATTACHING PTY',
   'ALLOCATING SANDBOX',
@@ -8,16 +8,37 @@ export const LOADER_PHRASES = [
   'PREPARING TERMINAL',
   'SPAWNING SESSION',
 ] as const;
+export const RESUME_LOADER_PHRASES = [
+  'RESUMING SESSION',
+  'RECONNECTING TO PTY',
+  'RESTORING TERMINAL',
+  'REATTACHING SHELL',
+] as const;
+export const LOADER_MODES = ['cold', 'resume'] as const;
+export type LoaderMode = typeof LOADER_MODES[number];
 
 export const MAX_LOADER_TEXT_LENGTH = Math.max(
-  ...LOADER_PHRASES.map((phrase) => phrase.length),
+  ...COLD_LOADER_PHRASES.map((phrase) => phrase.length),
+  ...RESUME_LOADER_PHRASES.map((phrase) => phrase.length),
 );
+
 export const LOADER_EXIT_HOLD_MS = 75;
 export const BLOCK_SCRAMBLE_POOL = ['░', '▒', '▓', '█'] as const;
 export const RANDOM_SCRAMBLE_POOL = [
   ...'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789%_!<>/{}[]()=+-*&@#?'.split(''),
   ...BLOCK_SCRAMBLE_POOL,
 ] as const;
+
+const LOADER_CONFIG = {
+  cold: {
+    minDecodeMs: 1000,
+    phrases: COLD_LOADER_PHRASES,
+  },
+  resume: {
+    minDecodeMs: 550,
+    phrases: RESUME_LOADER_PHRASES,
+  },
+} as const;
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -36,32 +57,24 @@ function revealThreshold(index: number, length: number): number {
   return 0.68 + distanceFromCenter * 0.2;
 }
 
-export function selectLoaderText(randomSource: () => number = Math.random): string {
+export function getLoaderConfig(mode: LoaderMode = 'cold') {
+  return LOADER_CONFIG[mode];
+}
+
+export function selectLoaderText(
+  mode: LoaderMode = 'cold',
+  randomSource: () => number = Math.random,
+): string {
+  const phrases = getLoaderConfig(mode).phrases;
   const index = Math.min(
-    LOADER_PHRASES.length - 1,
-    Math.max(0, Math.floor(randomSource() * LOADER_PHRASES.length)),
+    phrases.length - 1,
+    Math.max(0, Math.floor(randomSource() * phrases.length)),
   );
-  return LOADER_PHRASES[index];
+  return phrases[index];
 }
 
 export function getLoaderHoldText(text: string, dotCount = 0): string {
   return `${text}${'.'.repeat(Math.max(0, Math.min(3, dotCount))).padEnd(3, ' ')}`;
-}
-
-export function buildLoadingScrambleFrame(text: string, tick = 0): string {
-  return Array.from(text, (char, index) => {
-    if (char === ' ') return char;
-
-    // Keep the phrase legible while the container is still loading: most
-    // characters remain the target word, while a small deterministic subset
-    // glitches through the broader random/symbol/block pool every frame.
-    const shouldScramble = seededIndex(index * 19 + tick * 23, 5) === 0;
-    if (!shouldScramble) return char;
-
-    return RANDOM_SCRAMBLE_POOL[
-      seededIndex(index * 11 + tick * 17, RANDOM_SCRAMBLE_POOL.length)
-    ];
-  }).join('');
 }
 
 export function buildScrambleDecodeFrame(

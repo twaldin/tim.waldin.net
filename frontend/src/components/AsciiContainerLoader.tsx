@@ -3,58 +3,93 @@
 import { useEffect, useRef } from 'react';
 import { terminalTheme } from '@/config/terminal-theme';
 import {
-  buildLoadingScrambleFrame,
+  buildScrambleDecodeFrame,
+  getLoaderConfig,
   getLoaderHoldText,
   LOADER_EXIT_HOLD_MS,
   MAX_LOADER_TEXT_LENGTH,
   selectLoaderText,
+  type LoaderMode,
 } from '@/lib/ascii-loader';
 
 type AsciiContainerLoaderProps = {
+  mode: LoaderMode;
   ready: boolean;
   onFinished: () => void;
 };
 
+const FRAME_MS = 50;
+
 export default function AsciiContainerLoader({
+  mode,
   ready,
   onFinished,
 }: AsciiContainerLoaderProps) {
   const textRef = useRef<HTMLSpanElement>(null);
   const textRefValue = useRef('CONNECTING TO CONTAINER');
+  const readyRef = useRef(false);
+  const finishedRef = useRef(false);
   const tickRef = useRef(0);
 
   useEffect(() => {
-    textRefValue.current = selectLoaderText();
-    if (textRef.current) {
-      textRef.current.textContent = getLoaderHoldText(textRefValue.current, 0);
-    }
-  }, []);
+    textRefValue.current = selectLoaderText(mode);
+  }, [mode]);
+
+  useEffect(() => {
+    readyRef.current = ready;
+  }, [ready]);
 
   useEffect(() => {
     const text = textRefValue.current;
+    const { minDecodeMs } = getLoaderConfig(mode);
+    const startedAt = performance.now();
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    if (ready || reducedMotion) {
+    let finishTimer: number | undefined;
+
+    const finish = () => {
+      if (finishedRef.current) return;
+      finishedRef.current = true;
       if (textRef.current) {
         textRef.current.textContent = getLoaderHoldText(text, 0);
       }
-      const finishTimer = window.setTimeout(onFinished, LOADER_EXIT_HOLD_MS);
-      return () => window.clearTimeout(finishTimer);
+      finishTimer = window.setTimeout(onFinished, LOADER_EXIT_HOLD_MS);
+    };
+
+    if (reducedMotion) {
+      finish();
+      return undefined;
     }
 
-    const scrambleTimer = window.setInterval(() => {
+    const render = () => {
+      if (finishedRef.current) return;
+
       tickRef.current += 1;
+      const elapsed = performance.now() - startedAt;
+      const progress = Math.min(1, elapsed / minDecodeMs);
+
       if (textRef.current) {
-        const dotCount = tickRef.current % 4;
         textRef.current.textContent = getLoaderHoldText(
-          buildLoadingScrambleFrame(text, tickRef.current),
-          dotCount,
+          buildScrambleDecodeFrame(text, progress, tickRef.current),
+          0,
         );
       }
-    }, 70);
 
-    return () => window.clearInterval(scrambleTimer);
-  }, [ready, onFinished]);
+      if (progress >= 1 && readyRef.current) {
+        finish();
+      }
+    };
+
+    render();
+    const frameTimer = window.setInterval(render, FRAME_MS);
+
+    return () => {
+      window.clearInterval(frameTimer);
+      if (finishTimer !== undefined) {
+        window.clearTimeout(finishTimer);
+      }
+    };
+  }, [mode, onFinished]);
 
   return (
     <div
@@ -81,7 +116,7 @@ export default function AsciiContainerLoader({
           whiteSpace: 'pre',
         }}
       >
-        {getLoaderHoldText('CONNECTING TO CONTAINER', 0).padEnd(MAX_LOADER_TEXT_LENGTH + 3, ' ')}
+        {buildScrambleDecodeFrame('CONNECTING TO CONTAINER', 0).padEnd(MAX_LOADER_TEXT_LENGTH + 3, ' ')}
       </span>
     </div>
   );

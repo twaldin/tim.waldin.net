@@ -5,6 +5,7 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { createWebSocketManager, WebSocketManager } from '@/lib/websocket';
 import { terminalTheme } from '@/config/terminal-theme';
 import AsciiContainerLoader from '@/components/AsciiContainerLoader';
+import type { LoaderMode } from '@/lib/ascii-loader';
 
 // xterm references browser globals (`self`) at module level — skip SSR.
 const Terminal = dynamic(() => import('@/components/Terminal'), { ssr: false });
@@ -14,6 +15,7 @@ export default function Home() {
   const terminalRef = useRef<{ writeToTerminal: (data: string) => void; clearTerminal: () => void; fitTerminal: () => void } | null>(null);
   const [showSkeleton, setShowSkeleton] = useState(true);
   const [containerReady, setContainerReady] = useState(false);
+  const [loaderMode, setLoaderMode] = useState<LoaderMode>('cold');
   const firstOutputSeenRef = useRef(false);
   const firstPromptSeenRef = useRef(false);
   const welcomeSeenRef = useRef(false);
@@ -45,6 +47,14 @@ export default function Home() {
 
     wsManager.onConnect(() => {
       mark('term:socket-connected');
+    });
+
+    wsManager.onSessionStatus((status) => {
+      if (status.mode === 'resume') {
+        setLoaderMode('resume');
+      } else {
+        setLoaderMode('cold');
+      }
     });
 
     wsManager.onDisconnect(() => {});
@@ -136,6 +146,7 @@ export default function Home() {
           pointerEvents: 'none',
         }}>
           <AsciiContainerLoader
+            mode={loaderMode}
             ready={containerReady}
             onFinished={() => setShowSkeleton(false)}
           />
