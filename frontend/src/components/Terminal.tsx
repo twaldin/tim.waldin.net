@@ -11,7 +11,10 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { terminalConfig } from "../config/terminal-theme";
-import { computeVirtualKeyboardInset } from "../lib/mobile-viewport";
+import {
+  computeVirtualKeyboardInset,
+  getStableLayoutViewportHeight,
+} from "../lib/mobile-viewport";
 import { attachTouchScroll } from "../lib/xterm-touch";
 
 const MOBILE_BREAKPOINT = 768;
@@ -169,6 +172,7 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
 
       const handleClick = () => xterm.focus();
       const currentTerminalElement = terminalRef.current;
+      const hostElement = currentTerminalElement.parentElement as HTMLElement | null;
       currentTerminalElement.addEventListener("click", handleClick);
 
       const loadWebLinks = () => xterm.loadAddon(new WebLinksAddon(handleLinkActivate));
@@ -183,26 +187,45 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
         onResize(xtermRef.current.cols, xtermRef.current.rows);
       };
 
+      let stableLayoutViewportHeight = Math.max(
+        window.innerHeight,
+        window.visualViewport?.height ?? 0,
+      );
+
       const updateVirtualKeyboardInset = () => {
         const viewport = window.visualViewport;
+        const currentVisualViewportHeight = viewport?.height ?? window.innerHeight;
+        stableLayoutViewportHeight = getStableLayoutViewportHeight({
+          baselineHeight: stableLayoutViewportHeight,
+          currentInnerHeight: window.innerHeight,
+          currentVisualViewportHeight,
+        });
         const keyboardInset = viewport
           ? computeVirtualKeyboardInset({
-              layoutViewportHeight: window.innerHeight,
+              layoutViewportHeight: stableLayoutViewportHeight,
               visualViewportHeight: viewport.height,
               visualViewportOffsetTop: viewport.offsetTop,
             })
           : 0;
 
-        currentTerminalElement.style.setProperty(
+        hostElement?.style.setProperty(
           "--terminal-keyboard-inset",
           keyboardInset > 0 ? `${keyboardInset + 12}px` : "0px",
         );
         requestAnimationFrame(fitAndKeepPromptVisible);
       };
 
+      const updateVirtualKeyboardInsetFromInput = () => {
+        setTimeout(updateVirtualKeyboardInset, 0);
+        setTimeout(updateVirtualKeyboardInset, 80);
+        setTimeout(updateVirtualKeyboardInset, 250);
+      };
+
       updateVirtualKeyboardInset();
       window.visualViewport?.addEventListener("resize", updateVirtualKeyboardInset);
       window.visualViewport?.addEventListener("scroll", updateVirtualKeyboardInset);
+      currentTerminalElement.addEventListener("focusin", updateVirtualKeyboardInsetFromInput);
+      currentTerminalElement.addEventListener("input", updateVirtualKeyboardInsetFromInput);
 
       const handlePaste = async (event: ClipboardEvent) => {
         event.preventDefault();
@@ -270,7 +293,9 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
         () => {
           window.visualViewport?.removeEventListener("resize", updateVirtualKeyboardInset);
           window.visualViewport?.removeEventListener("scroll", updateVirtualKeyboardInset);
-          currentTerminalElement.style.removeProperty("--terminal-keyboard-inset");
+          currentTerminalElement.removeEventListener("focusin", updateVirtualKeyboardInsetFromInput);
+          currentTerminalElement.removeEventListener("input", updateVirtualKeyboardInsetFromInput);
+          hostElement?.style.removeProperty("--terminal-keyboard-inset");
         },
         () => {
           clearTimeout(resizeTimeout);
