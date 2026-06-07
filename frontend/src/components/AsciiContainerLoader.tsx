@@ -1,67 +1,60 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { animate } from 'animejs';
 import { terminalTheme } from '@/config/terminal-theme';
 import {
-  buildScrambleDecodeFrame,
+  buildLoadingScrambleFrame,
   getLoaderHoldText,
+  LOADER_EXIT_HOLD_MS,
   MAX_LOADER_TEXT_LENGTH,
   selectLoaderText,
 } from '@/lib/ascii-loader';
 
-export default function AsciiContainerLoader() {
+type AsciiContainerLoaderProps = {
+  ready: boolean;
+  onFinished: () => void;
+};
+
+export default function AsciiContainerLoader({
+  ready,
+  onFinished,
+}: AsciiContainerLoaderProps) {
   const textRef = useRef<HTMLSpanElement>(null);
+  const textRefValue = useRef('CONNECTING TO CONTAINER');
+  const tickRef = useRef(0);
 
   useEffect(() => {
-    const text = selectLoaderText();
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-    if (reducedMotion) {
-      if (textRef.current) textRef.current.textContent = getLoaderHoldText(text, 3);
-      return;
+    textRefValue.current = selectLoaderText();
+    if (textRef.current) {
+      textRef.current.textContent = getLoaderHoldText(textRefValue.current, 0);
     }
-
-    const state = { phase: 0, tick: 0 };
-    let dotCount = 0;
-    let ellipsisInterval: number | undefined;
-
-    const decodeAnimation = animate(state, {
-      phase: 1,
-      duration: 1800,
-      loop: false,
-      ease: 'linear',
-      onUpdate: () => {
-        state.tick += 1;
-        if (textRef.current) {
-          textRef.current.textContent = buildScrambleDecodeFrame(
-            text,
-            state.phase,
-            state.tick,
-          );
-        }
-      },
-      onComplete: () => {
-        if (!textRef.current) return;
-        textRef.current.textContent = getLoaderHoldText(text, 0);
-        ellipsisInterval = window.setInterval(() => {
-          dotCount = (dotCount + 1) % 4;
-          if (textRef.current) {
-            textRef.current.textContent = getLoaderHoldText(text, dotCount);
-          }
-        }, 420);
-      },
-    });
-
-    return () => {
-      decodeAnimation.cancel();
-      if (ellipsisInterval !== undefined) {
-        window.clearInterval(ellipsisInterval);
-      }
-    };
   }, []);
 
-  const initialText = buildScrambleDecodeFrame('CONNECTING TO CONTAINER', 0);
+  useEffect(() => {
+    const text = textRefValue.current;
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (ready || reducedMotion) {
+      if (textRef.current) {
+        textRef.current.textContent = getLoaderHoldText(text, 0);
+      }
+      const finishTimer = window.setTimeout(onFinished, LOADER_EXIT_HOLD_MS);
+      return () => window.clearTimeout(finishTimer);
+    }
+
+    const scrambleTimer = window.setInterval(() => {
+      tickRef.current += 1;
+      if (textRef.current) {
+        const dotCount = tickRef.current % 4;
+        textRef.current.textContent = getLoaderHoldText(
+          buildLoadingScrambleFrame(text, tickRef.current),
+          dotCount,
+        );
+      }
+    }, 70);
+
+    return () => window.clearInterval(scrambleTimer);
+  }, [ready, onFinished]);
 
   return (
     <div
@@ -88,7 +81,7 @@ export default function AsciiContainerLoader() {
           whiteSpace: 'pre',
         }}
       >
-        {initialText.padEnd(MAX_LOADER_TEXT_LENGTH + 3, ' ')}
+        {getLoaderHoldText('CONNECTING TO CONTAINER', 0).padEnd(MAX_LOADER_TEXT_LENGTH + 3, ' ')}
       </span>
     </div>
   );

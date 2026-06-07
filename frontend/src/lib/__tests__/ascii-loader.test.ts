@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   ASCII_LOADER_TEXT,
   BLOCK_SCRAMBLE_POOL,
+  LOADER_EXIT_HOLD_MS,
   LOADER_PHRASES,
   MAX_LOADER_TEXT_LENGTH,
   RANDOM_SCRAMBLE_POOL,
+  buildLoadingScrambleFrame,
   buildScrambleDecodeFrame,
   getLoaderHoldText,
   selectLoaderText,
@@ -16,7 +18,7 @@ describe('buildScrambleDecodeFrame', () => {
 
     expect(frame).toHaveLength(5);
     expect(frame[2]).toBe(' ');
-    expect([...frame.replaceAll(' ', '')].every((char) => BLOCK_SCRAMBLE_POOL.includes(char))).toBe(true);
+    expect([...frame.replaceAll(' ', '')].every((char) => (BLOCK_SCRAMBLE_POOL as readonly string[]).includes(char))).toBe(true);
   });
 
   it('mutates through random letters, symbols, and occasional blocks in the middle phase', () => {
@@ -25,7 +27,7 @@ describe('buildScrambleDecodeFrame', () => {
 
     expect(frame).toHaveLength('CONNECTING'.length);
     expect(frame).not.toBe('CONNECTING');
-    expect(nonSpaceChars.every((char) => RANDOM_SCRAMBLE_POOL.includes(char))).toBe(true);
+    expect(nonSpaceChars.every((char) => (RANDOM_SCRAMBLE_POOL as readonly string[]).includes(char))).toBe(true);
     expect(nonSpaceChars.some((char) => /[A-Za-z%_!]/.test(char))).toBe(true);
   });
 
@@ -39,6 +41,25 @@ describe('buildScrambleDecodeFrame', () => {
 
   it('resolves fully to the target text at the end', () => {
     expect(buildScrambleDecodeFrame(ASCII_LOADER_TEXT, 1, 0)).toBe(ASCII_LOADER_TEXT);
+  });
+});
+
+describe('loading-phase scramble', () => {
+  it('keeps the target words mostly visible while loading', () => {
+    const text = 'CONNECTING';
+    const frame = buildLoadingScrambleFrame(text, 11);
+    const matchingChars = [...frame].filter((char, index) => char === text[index]).length;
+
+    expect(frame).toHaveLength(text.length);
+    expect(frame).not.toBe(text);
+    expect(matchingChars).toBeGreaterThanOrEqual(6);
+  });
+
+  it('uses random scramble characters for the non-word glitches', () => {
+    const text = 'CONNECTING';
+    const frame = buildLoadingScrambleFrame(text, 7);
+
+    expect([...frame].every((char, index) => char === text[index] || (RANDOM_SCRAMBLE_POOL as readonly string[]).includes(char))).toBe(true);
   });
 });
 
@@ -59,5 +80,10 @@ describe('loader phrases', () => {
 
   it('builds stable post-decode hold text with a reserved ellipsis slot', () => {
     expect(getLoaderHoldText('ATTACHING PTY')).toBe('ATTACHING PTY   ');
+  });
+
+  it('holds the final words briefly before the terminal is revealed', () => {
+    expect(LOADER_EXIT_HOLD_MS).toBeGreaterThanOrEqual(50);
+    expect(LOADER_EXIT_HOLD_MS).toBeLessThanOrEqual(100);
   });
 });

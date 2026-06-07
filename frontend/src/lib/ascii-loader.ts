@@ -12,6 +12,7 @@ export const LOADER_PHRASES = [
 export const MAX_LOADER_TEXT_LENGTH = Math.max(
   ...LOADER_PHRASES.map((phrase) => phrase.length),
 );
+export const LOADER_EXIT_HOLD_MS = 75;
 export const BLOCK_SCRAMBLE_POOL = ['░', '▒', '▓', '█'] as const;
 export const RANDOM_SCRAMBLE_POOL = [
   ...'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789%_!<>/{}[]()=+-*&@#?'.split(''),
@@ -45,6 +46,22 @@ export function selectLoaderText(randomSource: () => number = Math.random): stri
 
 export function getLoaderHoldText(text: string, dotCount = 0): string {
   return `${text}${'.'.repeat(Math.max(0, Math.min(3, dotCount))).padEnd(3, ' ')}`;
+}
+
+export function buildLoadingScrambleFrame(text: string, tick = 0): string {
+  return Array.from(text, (char, index) => {
+    if (char === ' ') return char;
+
+    // Keep the phrase legible while the container is still loading: most
+    // characters remain the target word, while a small deterministic subset
+    // glitches through the broader random/symbol/block pool every frame.
+    const shouldScramble = seededIndex(index * 19 + tick * 23, 5) === 0;
+    if (!shouldScramble) return char;
+
+    return RANDOM_SCRAMBLE_POOL[
+      seededIndex(index * 11 + tick * 17, RANDOM_SCRAMBLE_POOL.length)
+    ];
+  }).join('');
 }
 
 export function buildScrambleDecodeFrame(

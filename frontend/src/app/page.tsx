@@ -13,6 +13,7 @@ export default function Home() {
   const wsManagerRef = useRef<WebSocketManager | null>(null);
   const terminalRef = useRef<{ writeToTerminal: (data: string) => void; clearTerminal: () => void; fitTerminal: () => void } | null>(null);
   const [showSkeleton, setShowSkeleton] = useState(true);
+  const [containerReady, setContainerReady] = useState(false);
   const firstOutputSeenRef = useRef(false);
   const firstPromptSeenRef = useRef(false);
   const welcomeSeenRef = useRef(false);
@@ -95,7 +96,7 @@ export default function Home() {
         mark('term:ready-for-input');
       }
 
-      setShowSkeleton(false);
+      setContainerReady(true);
       if (terminalRef.current) {
         terminalRef.current.writeToTerminal(data);
       }
@@ -108,10 +109,10 @@ export default function Home() {
     };
   }, []);
 
-  // Auto-dismiss skeleton after 3s so it never permanently blocks the
+  // Auto-dismiss skeleton after 10s so it never permanently blocks the
   // terminal — if the WS is rate-limited or slow, xterm still shows.
   useEffect(() => {
-    const t = setTimeout(() => setShowSkeleton(false), 3000);
+    const t = setTimeout(() => setShowSkeleton(false), 10000);
     return () => clearTimeout(t);
   }, []);
 
@@ -134,7 +135,10 @@ export default function Home() {
           fontFamily: 'JetBrains Mono, monospace',
           pointerEvents: 'none',
         }}>
-          <AsciiContainerLoader />
+          <AsciiContainerLoader
+            ready={containerReady}
+            onFinished={() => setShowSkeleton(false)}
+          />
         </div>
       )}
       <Terminal
