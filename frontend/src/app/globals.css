@@ -50,7 +50,7 @@ html {
    terminal background color. */
 @media (max-width: 767px) {
   .terminal-host {
-    padding-bottom: max(25vh, var(--terminal-keyboard-inset, 0px)) !important;
+    padding-bottom: 12px !important;
   }
 }
 

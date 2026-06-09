@@ -140,7 +140,7 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="w-full flex-1 bg-black overflow-hidden" style={{ minHeight: 0, position: 'relative' }}>
+    <div className="terminal-page w-full flex-1 bg-black" style={{ minHeight: 0, position: 'relative', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
       {showSkeleton && loaderMode && (
         <div style={{
           position: 'absolute', inset: 0, zIndex: 10,

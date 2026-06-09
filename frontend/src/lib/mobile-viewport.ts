@@ -26,7 +26,22 @@ export type PromptVisibleScrollTarget = {
   bottomMarginRows?: number;
 };
 
+export type ElementVisibilityScrollDelta = {
+  elementTop: number;
+  elementBottom: number;
+  visibleTop: number;
+  visibleBottom: number;
+  topMargin?: number;
+  bottomMargin?: number;
+};
+
+export type TerminalDimensions = {
+  cols: number;
+  rows: number;
+};
+
 const KEYBOARD_INSET_NOISE_FLOOR_PX = 24;
+const KEYBOARD_INSET_MIN_PX = 120;
 const DEFAULT_TERMINAL_LINE_HEIGHT_PX = 15;
 const DEFAULT_MIN_TERMINAL_ROWS = 3;
 const DEFAULT_PROMPT_BOTTOM_MARGIN_ROWS = 3;
@@ -37,7 +52,7 @@ export function computeVirtualKeyboardInset({
   visualViewportOffsetTop = 0,
 }: VirtualKeyboardViewport): number {
   const occludedHeight = layoutViewportHeight - visualViewportHeight - visualViewportOffsetTop;
-  if (occludedHeight < KEYBOARD_INSET_NOISE_FLOOR_PX) return 0;
+  if (occludedHeight < KEYBOARD_INSET_MIN_PX) return 0;
   return Math.max(0, Math.round(occludedHeight));
 }
 
@@ -46,9 +61,9 @@ export function getStableLayoutViewportHeight({
   currentInnerHeight,
   currentVisualViewportHeight,
 }: StableLayoutViewport): number {
-  const viewportShrankWithKeyboard = currentInnerHeight <= currentVisualViewportHeight + KEYBOARD_INSET_NOISE_FLOOR_PX;
-  if (viewportShrankWithKeyboard && baselineHeight > currentInnerHeight) {
-    return baselineHeight;
+  const viewportResizesContent = Math.abs(currentInnerHeight - currentVisualViewportHeight) <= KEYBOARD_INSET_NOISE_FLOOR_PX;
+  if (viewportResizesContent) {
+    return currentInnerHeight;
   }
   return Math.max(baselineHeight, currentInnerHeight);
 }
@@ -85,4 +100,33 @@ export function getPromptVisibleScrollTarget({
   }
 
   return Math.max(0, viewportTop);
+}
+
+export function getScrollDeltaToKeepElementVisible({
+  elementTop,
+  elementBottom,
+  visibleTop,
+  visibleBottom,
+  topMargin = 0,
+  bottomMargin = 0,
+}: ElementVisibilityScrollDelta): number {
+  const comfortableTop = visibleTop + Math.max(0, topMargin);
+  const comfortableBottom = visibleBottom - Math.max(0, bottomMargin);
+
+  if (elementBottom > comfortableBottom) {
+    return Math.ceil(elementBottom - comfortableBottom);
+  }
+
+  if (elementTop < comfortableTop) {
+    return Math.floor(elementTop - comfortableTop);
+  }
+
+  return 0;
+}
+
+export function shouldEmitTerminalResize(
+  previous: TerminalDimensions | null,
+  next: TerminalDimensions,
+): boolean {
+  return previous === null || previous.cols !== next.cols || previous.rows !== next.rows;
 }

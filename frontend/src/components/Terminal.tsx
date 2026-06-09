@@ -12,9 +12,10 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { terminalConfig } from "../config/terminal-theme";
 import {
-  computeVirtualKeyboardInset,
   getPromptVisibleScrollTarget,
-  getStableLayoutViewportHeight,
+  getScrollDeltaToKeepElementVisible,
+  shouldEmitTerminalResize,
+  type TerminalDimensions,
 } from "../lib/mobile-viewport";
 import { attachTouchScroll } from "../lib/xterm-touch";
 
@@ -22,9 +23,10 @@ const MOBILE_BREAKPOINT = 768;
 const MIN_FONT_SIZE = 10;
 const MAX_FONT_SIZE = 28;
 const CHAR_WIDTH_RATIO = 0.6;
-const KEYBOARD_EXTRA_BREATHING_ROOM_PX = 16;
 const KEYBOARD_UPDATE_DELAYS_MS = [0, 80, 160, 260, 400, 650] as const;
 const PROMPT_BOTTOM_MARGIN_ROWS = 3;
+const PROMPT_BROWSER_BOTTOM_MARGIN_PX = 36;
+const PROMPT_BROWSER_TOP_MARGIN_PX = 48;
 
 // Pick font size directly from viewport width. Cols fall out via xterm's
 // FitAddon so box widths, figlet output, etc. scale naturally — narrow
@@ -62,6 +64,7 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
     const dripTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const cancelDripRef = useRef(false);
     const dripRemainingRef = useRef('');
+    const lastResizeSentRef = useRef<TerminalDimensions | null>(null);
 
     useEffect(() => {
       if (!terminalRef.current || typeof window === "undefined") return;
@@ -142,6 +145,15 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
         outputBufferRef.current = [];
       }
 
+      const emitResizeIfNeeded = () => {
+        const currentXterm = xtermRef.current;
+        if (!currentXterm) return;
+        const next = { cols: currentXterm.cols, rows: currentXterm.rows };
+        if (!shouldEmitTerminalResize(lastResizeSentRef.current, next)) return;
+        lastResizeSentRef.current = next;
+        onResize(next.cols, next.rows);
+      };
+
       const dataDisposable = xterm.onData((data) => {
         cancelDripRef.current = true;
         if (dripTimerRef.current) {
@@ -154,21 +166,28 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
         }
         onData(data);
       });
-      const resizeDisposable = xterm.onResize(({ cols, rows }) => {
-        onResize(cols, rows);
-      });
+      const resizeDisposable = xterm.onResize(emitResizeIfNeeded);
+
+      let fitFrame: number | null = null;
+      const scheduleFitAndKeepPromptVisible = (scrollPrompt = false) => {
+        if (fitFrame !== null) cancelAnimationFrame(fitFrame);
+        fitFrame = requestAnimationFrame(() => {
+          fitFrame = null;
+          fitAndKeepPromptVisible(scrollPrompt);
+        });
+      };
 
       // Fit after one frame for DOM layout
       requestAnimationFrame(() => {
         fitAddon.fit();
-        onResize(xterm.cols, xterm.rows);
+        emitResizeIfNeeded();
       });
 
       // Re-fit when Nerd Font finishes loading — glyph widths change.
       document.fonts.ready.then(() => {
         if (fitAddonRef.current && xtermRef.current) {
           fitAddonRef.current.fit();
-          onResize(xtermRef.current.cols, xtermRef.current.rows);
+          emitResizeIfNeeded();
         }
       });
 
@@ -176,7 +195,6 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
 
       const handleClick = () => xterm.focus();
       const currentTerminalElement = terminalRef.current;
-      const hostElement = currentTerminalElement.parentElement as HTMLElement | null;
       currentTerminalElement.addEventListener("click", handleClick);
 
       const loadWebLinks = () => xterm.loadAddon(new WebLinksAddon(handleLinkActivate));
@@ -184,7 +202,34 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
 
       const detachTouch = attachTouchScroll(xterm, currentTerminalElement);
 
-      const fitAndKeepPromptVisible = () => {
+      const scrollPromptIntoBrowserViewport = () => {
+        const cursor = currentTerminalElement.querySelector(".xterm-cursor") as HTMLElement | null;
+        const targetElement = cursor ?? currentTerminalElement.querySelector(".xterm-screen") as HTMLElement | null;
+        if (!targetElement) return;
+
+        const rect = targetElement.getBoundingClientRect();
+        const viewport = window.visualViewport;
+        const visibleTop = viewport?.offsetTop ?? 0;
+        const visibleBottom = visibleTop + (viewport?.height ?? window.innerHeight);
+        const delta = getScrollDeltaToKeepElementVisible({
+          elementTop: rect.top,
+          elementBottom: rect.bottom,
+          visibleTop,
+          visibleBottom,
+          topMargin: PROMPT_BROWSER_TOP_MARGIN_PX,
+          bottomMargin: PROMPT_BROWSER_BOTTOM_MARGIN_PX,
+        });
+        if (delta === 0) return;
+
+        const scrollContainer = currentTerminalElement.closest(".terminal-page") as HTMLElement | null;
+        if (scrollContainer) {
+          scrollContainer.scrollBy({ top: delta, behavior: "auto" });
+        } else {
+          window.scrollBy({ top: delta, behavior: "auto" });
+        }
+      };
+
+      const fitAndKeepPromptVisible = (scrollPrompt = false) => {
         const currentXterm = xtermRef.current;
         if (!fitAddonRef.current || !currentXterm) return;
 
@@ -199,64 +244,39 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
         });
         const deltaRows = targetViewportTop - currentXterm.buffer.active.viewportY;
         if (deltaRows !== 0) currentXterm.scrollLines(deltaRows);
-        onResize(currentXterm.cols, currentXterm.rows);
+        emitResizeIfNeeded();
 
-        currentTerminalElement.scrollIntoView({
-          block: "nearest",
-          inline: "nearest",
-          behavior: "smooth",
-        });
+        if (scrollPrompt) requestAnimationFrame(scrollPromptIntoBrowserViewport);
       };
 
-      let stableLayoutViewportHeight = Math.max(
-        window.innerHeight,
-        window.visualViewport?.height ?? 0,
-      );
       let keyboardUpdateTimers: ReturnType<typeof setTimeout>[] = [];
 
-      const applyViewportHeightVars = (keyboardInset: number) => {
+      const applyViewportHeightVars = () => {
         const viewport = window.visualViewport;
         const visibleHeight = viewport?.height ?? window.innerHeight;
         document.documentElement.style.setProperty("--app-visual-viewport-height", `${Math.round(visibleHeight)}px`);
-        document.documentElement.style.setProperty("--terminal-keyboard-inset", `${keyboardInset}px`);
-        hostElement?.style.setProperty(
-          "--terminal-keyboard-inset",
-          keyboardInset > 0 ? `${keyboardInset + KEYBOARD_EXTRA_BREATHING_ROOM_PX}px` : "0px",
-        );
       };
 
-      const updateVirtualKeyboardInset = () => {
-        const viewport = window.visualViewport;
-        const currentVisualViewportHeight = viewport?.height ?? window.innerHeight;
-        stableLayoutViewportHeight = getStableLayoutViewportHeight({
-          baselineHeight: stableLayoutViewportHeight,
-          currentInnerHeight: window.innerHeight,
-          currentVisualViewportHeight,
-        });
-        const keyboardInset = viewport
-          ? computeVirtualKeyboardInset({
-              layoutViewportHeight: stableLayoutViewportHeight,
-              visualViewportHeight: viewport.height,
-              visualViewportOffsetTop: viewport.offsetTop,
-            })
-          : 0;
-
-        applyViewportHeightVars(keyboardInset);
-        requestAnimationFrame(fitAndKeepPromptVisible);
+      const updateVisibleViewportFit = () => {
+        applyViewportHeightVars();
+        scheduleFitAndKeepPromptVisible(false);
       };
 
-      const updateVirtualKeyboardInsetFromInput = () => {
+      const updateVisibleViewportFitFromInput = () => {
         keyboardUpdateTimers.forEach(clearTimeout);
         keyboardUpdateTimers = KEYBOARD_UPDATE_DELAYS_MS.map((delay) =>
-          setTimeout(updateVirtualKeyboardInset, delay),
+          setTimeout(() => {
+            updateVisibleViewportFit();
+            scheduleFitAndKeepPromptVisible(true);
+          }, delay),
         );
       };
 
-      updateVirtualKeyboardInset();
-      window.visualViewport?.addEventListener("resize", updateVirtualKeyboardInset);
-      window.visualViewport?.addEventListener("scroll", updateVirtualKeyboardInset);
-      currentTerminalElement.addEventListener("focusin", updateVirtualKeyboardInsetFromInput);
-      currentTerminalElement.addEventListener("input", updateVirtualKeyboardInsetFromInput);
+      updateVisibleViewportFit();
+      window.visualViewport?.addEventListener("resize", updateVisibleViewportFit);
+      window.visualViewport?.addEventListener("scroll", updateVisibleViewportFit);
+      currentTerminalElement.addEventListener("focusin", updateVisibleViewportFitFromInput);
+      currentTerminalElement.addEventListener("input", updateVisibleViewportFitFromInput);
 
       const handlePaste = async (event: ClipboardEvent) => {
         event.preventDefault();
@@ -302,7 +322,6 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
       const handleResize = () => {
         clearTimeout(resizeTimeout);
         resizeTimeout = setTimeout(() => {
-          updateVirtualKeyboardInset();
           if (terminalRef.current && xterm && fitAddon) {
             const newFontSize = calculateFontSize(terminalRef.current);
             const currentFontSize =
@@ -310,8 +329,8 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
             if (Math.abs(currentFontSize - newFontSize) > 1) {
               xterm.options.fontSize = newFontSize;
             }
-            fitAndKeepPromptVisible();
           }
+          updateVisibleViewportFit();
         }, 150);
       };
 
@@ -324,13 +343,12 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
         detachTouch,
         () => {
           keyboardUpdateTimers.forEach(clearTimeout);
-          window.visualViewport?.removeEventListener("resize", updateVirtualKeyboardInset);
-          window.visualViewport?.removeEventListener("scroll", updateVirtualKeyboardInset);
-          currentTerminalElement.removeEventListener("focusin", updateVirtualKeyboardInsetFromInput);
-          currentTerminalElement.removeEventListener("input", updateVirtualKeyboardInsetFromInput);
-          hostElement?.style.removeProperty("--terminal-keyboard-inset");
+          if (fitFrame !== null) cancelAnimationFrame(fitFrame);
+          window.visualViewport?.removeEventListener("resize", updateVisibleViewportFit);
+          window.visualViewport?.removeEventListener("scroll", updateVisibleViewportFit);
+          currentTerminalElement.removeEventListener("focusin", updateVisibleViewportFitFromInput);
+          currentTerminalElement.removeEventListener("input", updateVisibleViewportFitFromInput);
           document.documentElement.style.removeProperty("--app-visual-viewport-height");
-          document.documentElement.style.removeProperty("--terminal-keyboard-inset");
         },
         () => {
           clearTimeout(resizeTimeout);
@@ -396,8 +414,11 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
       fitTerminal: () => {
         if (fitAddonRef.current && xtermRef.current) {
           fitAddonRef.current.fit();
-          const { cols, rows } = xtermRef.current;
-          onResize(cols, rows);
+          const next = { cols: xtermRef.current.cols, rows: xtermRef.current.rows };
+          if (shouldEmitTerminalResize(lastResizeSentRef.current, next)) {
+            lastResizeSentRef.current = next;
+            onResize(next.cols, next.rows);
+          }
         }
       },
     }), [onResize]);
