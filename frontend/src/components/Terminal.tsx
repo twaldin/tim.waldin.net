@@ -13,6 +13,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { terminalConfig } from "../config/terminal-theme";
 import {
   computeVirtualKeyboardInset,
+  getPromptVisibleScrollTarget,
   getStableLayoutViewportHeight,
 } from "../lib/mobile-viewport";
 import { attachTouchScroll } from "../lib/xterm-touch";
@@ -23,6 +24,7 @@ const MAX_FONT_SIZE = 28;
 const CHAR_WIDTH_RATIO = 0.6;
 const KEYBOARD_EXTRA_BREATHING_ROOM_PX = 16;
 const KEYBOARD_UPDATE_DELAYS_MS = [0, 80, 160, 260, 400, 650] as const;
+const PROMPT_BOTTOM_MARGIN_ROWS = 3;
 
 // Pick font size directly from viewport width. Cols fall out via xterm's
 // FitAddon so box widths, figlet output, etc. scale naturally — narrow
@@ -183,11 +185,27 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
       const detachTouch = attachTouchScroll(xterm, currentTerminalElement);
 
       const fitAndKeepPromptVisible = () => {
-        if (!fitAddonRef.current || !xtermRef.current) return;
+        const currentXterm = xtermRef.current;
+        if (!fitAddonRef.current || !currentXterm) return;
+
+        const previousViewportTop = currentXterm.buffer.active.viewportY;
         fitAddonRef.current.fit();
-        xtermRef.current.scrollToBottom();
-        onResize(xtermRef.current.cols, xtermRef.current.rows);
-        currentTerminalElement.scrollIntoView({ block: "end", inline: "nearest" });
+
+        const targetViewportTop = getPromptVisibleScrollTarget({
+          cursorLine: currentXterm.buffer.active.baseY + currentXterm.buffer.active.cursorY,
+          viewportTop: previousViewportTop,
+          rows: currentXterm.rows,
+          bottomMarginRows: PROMPT_BOTTOM_MARGIN_ROWS,
+        });
+        const deltaRows = targetViewportTop - currentXterm.buffer.active.viewportY;
+        if (deltaRows !== 0) currentXterm.scrollLines(deltaRows);
+        onResize(currentXterm.cols, currentXterm.rows);
+
+        currentTerminalElement.scrollIntoView({
+          block: "nearest",
+          inline: "nearest",
+          behavior: "smooth",
+        });
       };
 
       let stableLayoutViewportHeight = Math.max(

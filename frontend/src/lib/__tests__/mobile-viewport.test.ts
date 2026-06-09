@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   computeVirtualKeyboardInset,
   estimateTerminalRowsForVisualViewport,
+  getPromptVisibleScrollTarget,
   getStableLayoutViewportHeight,
 } from '../mobile-viewport';
 
@@ -82,5 +83,34 @@ describe('estimateTerminalRowsForVisualViewport', () => {
       lineHeight: 15,
       minRows: 3,
     })).toBe(3);
+  });
+});
+
+describe('getPromptVisibleScrollTarget', () => {
+  it('scrolls only enough to keep the prompt visible with scrollback above it', () => {
+    expect(getPromptVisibleScrollTarget({
+      cursorLine: 100,
+      viewportTop: 80,
+      rows: 18,
+      bottomMarginRows: 3,
+    })).toBe(86);
+  });
+
+  it('does not jump when the prompt is already comfortably visible', () => {
+    expect(getPromptVisibleScrollTarget({
+      cursorLine: 90,
+      viewportTop: 80,
+      rows: 18,
+      bottomMarginRows: 3,
+    })).toBe(80);
+  });
+
+  it('scrolls upward just enough when the prompt is above the viewport', () => {
+    expect(getPromptVisibleScrollTarget({
+      cursorLine: 40,
+      viewportTop: 80,
+      rows: 18,
+      bottomMarginRows: 3,
+    })).toBe(37);
   });
 });
