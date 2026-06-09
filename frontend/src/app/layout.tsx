@@ -9,6 +9,9 @@ export const viewport: Viewport = {
   initialScale: 1,
   colorScheme: "dark",
   themeColor: terminalTheme.background,
+  // Ask mobile browsers to resize the layout viewport when the virtual
+  // keyboard opens instead of just overlaying the bottom of the terminal.
+  interactiveWidget: "resizes-content",
 };
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -61,7 +64,7 @@ export default function RootLayout({
       </head>
       <body>
         <SiteHeader />
-        <main style={{ flex: '1 0 auto', display: 'flex', flexDirection: 'column', background: terminalTheme.background }}>
+        <main style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', background: terminalTheme.background }}>
           {children}
         </main>
       </body>

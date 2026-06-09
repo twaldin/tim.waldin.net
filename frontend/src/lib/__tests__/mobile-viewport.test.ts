@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeVirtualKeyboardInset,
+  estimateTerminalRowsForVisualViewport,
   getStableLayoutViewportHeight,
 } from '../mobile-viewport';
 
@@ -58,5 +59,28 @@ describe('getStableLayoutViewportHeight', () => {
       currentInnerHeight: 900,
       currentVisualViewportHeight: 900,
     })).toBe(900);
+  });
+});
+
+describe('estimateTerminalRowsForVisualViewport', () => {
+  it('estimates rows from the keyboard-resized visual viewport', () => {
+    expect(estimateTerminalRowsForVisualViewport({
+      visualViewportHeight: 520,
+      headerHeight: 58,
+      verticalPadding: 12,
+      keyboardInset: 0,
+      lineHeight: 15,
+    })).toBe(30);
+  });
+
+  it('keeps a minimum visible terminal even with a very tall keyboard inset', () => {
+    expect(estimateTerminalRowsForVisualViewport({
+      visualViewportHeight: 300,
+      headerHeight: 58,
+      verticalPadding: 12,
+      keyboardInset: 260,
+      lineHeight: 15,
+      minRows: 3,
+    })).toBe(3);
   });
 });

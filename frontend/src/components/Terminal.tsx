@@ -21,6 +21,8 @@ const MOBILE_BREAKPOINT = 768;
 const MIN_FONT_SIZE = 10;
 const MAX_FONT_SIZE = 28;
 const CHAR_WIDTH_RATIO = 0.6;
+const KEYBOARD_EXTRA_BREATHING_ROOM_PX = 16;
+const KEYBOARD_UPDATE_DELAYS_MS = [0, 80, 160, 260, 400, 650] as const;
 
 // Pick font size directly from viewport width. Cols fall out via xterm's
 // FitAddon so box widths, figlet output, etc. scale naturally — narrow
@@ -185,12 +187,25 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
         fitAddonRef.current.fit();
         xtermRef.current.scrollToBottom();
         onResize(xtermRef.current.cols, xtermRef.current.rows);
+        currentTerminalElement.scrollIntoView({ block: "end", inline: "nearest" });
       };
 
       let stableLayoutViewportHeight = Math.max(
         window.innerHeight,
         window.visualViewport?.height ?? 0,
       );
+      let keyboardUpdateTimers: ReturnType<typeof setTimeout>[] = [];
+
+      const applyViewportHeightVars = (keyboardInset: number) => {
+        const viewport = window.visualViewport;
+        const visibleHeight = viewport?.height ?? window.innerHeight;
+        document.documentElement.style.setProperty("--app-visual-viewport-height", `${Math.round(visibleHeight)}px`);
+        document.documentElement.style.setProperty("--terminal-keyboard-inset", `${keyboardInset}px`);
+        hostElement?.style.setProperty(
+          "--terminal-keyboard-inset",
+          keyboardInset > 0 ? `${keyboardInset + KEYBOARD_EXTRA_BREATHING_ROOM_PX}px` : "0px",
+        );
+      };
 
       const updateVirtualKeyboardInset = () => {
         const viewport = window.visualViewport;
@@ -208,17 +223,15 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
             })
           : 0;
 
-        hostElement?.style.setProperty(
-          "--terminal-keyboard-inset",
-          keyboardInset > 0 ? `${keyboardInset + 12}px` : "0px",
-        );
+        applyViewportHeightVars(keyboardInset);
         requestAnimationFrame(fitAndKeepPromptVisible);
       };
 
       const updateVirtualKeyboardInsetFromInput = () => {
-        setTimeout(updateVirtualKeyboardInset, 0);
-        setTimeout(updateVirtualKeyboardInset, 80);
-        setTimeout(updateVirtualKeyboardInset, 250);
+        keyboardUpdateTimers.forEach(clearTimeout);
+        keyboardUpdateTimers = KEYBOARD_UPDATE_DELAYS_MS.map((delay) =>
+          setTimeout(updateVirtualKeyboardInset, delay),
+        );
       };
 
       updateVirtualKeyboardInset();
@@ -271,6 +284,7 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
       const handleResize = () => {
         clearTimeout(resizeTimeout);
         resizeTimeout = setTimeout(() => {
+          updateVirtualKeyboardInset();
           if (terminalRef.current && xterm && fitAddon) {
             const newFontSize = calculateFontSize(terminalRef.current);
             const currentFontSize =
@@ -278,7 +292,7 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
             if (Math.abs(currentFontSize - newFontSize) > 1) {
               xterm.options.fontSize = newFontSize;
             }
-            fitAddon.fit();
+            fitAndKeepPromptVisible();
           }
         }, 150);
       };
@@ -291,11 +305,14 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
         },
         detachTouch,
         () => {
+          keyboardUpdateTimers.forEach(clearTimeout);
           window.visualViewport?.removeEventListener("resize", updateVirtualKeyboardInset);
           window.visualViewport?.removeEventListener("scroll", updateVirtualKeyboardInset);
           currentTerminalElement.removeEventListener("focusin", updateVirtualKeyboardInsetFromInput);
           currentTerminalElement.removeEventListener("input", updateVirtualKeyboardInsetFromInput);
           hostElement?.style.removeProperty("--terminal-keyboard-inset");
+          document.documentElement.style.removeProperty("--app-visual-viewport-height");
+          document.documentElement.style.removeProperty("--terminal-keyboard-inset");
         },
         () => {
           clearTimeout(resizeTimeout);
