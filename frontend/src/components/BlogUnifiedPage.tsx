@@ -12,6 +12,7 @@ import {
   CODE_BORDER,
 } from '@/lib/markdown-components';
 import { terminalConfig, terminalTheme } from '@/config/terminal-theme';
+import { isSafeExternalUrl } from '@/lib/safe-url';
 
 function hexToAnsiRgb(hex: string): string {
   const n = parseInt(hex.replace('#', ''), 16);
@@ -88,8 +89,10 @@ export default function BlogUnifiedPage({ slug, title, date, body }: Props) {
         disableStdin: false,
       });
 
-      const openLink = (_e: MouseEvent, href: string) =>
+      const openLink = (_e: MouseEvent, href: string) => {
+        if (!isSafeExternalUrl(href)) return;
         window.open(href, '_blank', 'noopener,noreferrer');
+      };
       xterm.loadAddon(new WebLinksAddon(openLink));
       xterm.options.linkHandler = { activate: openLink, allowNonHttpProtocols: true };
 
