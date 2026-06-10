@@ -16,6 +16,13 @@ echo "Building and starting services..."
 docker compose build --no-cache
 docker compose up -d --force-recreate
 
+# Reclaim disk: remove dangling images and ALL build cache left by the
+# --no-cache builds above. Safe — only removes data not used by a running
+# container. Never prunes volumes (backend_data holds the audit log).
+echo "Pruning stale Docker build cache and dangling images..."
+docker image prune -f
+docker builder prune -f
+
 # Wait for services to initialize
 echo "Waiting for services to initialize..."
 sleep 5
