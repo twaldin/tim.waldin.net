@@ -21,21 +21,20 @@ WORKDIR /app
 RUN addgroup -g 1001 -S nextjs && \
     adduser -S nextjs -u 1001 -G nextjs
 
-# Copy built application
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/package.json /app/pnpm-lock.yaml ./
-COPY --from=builder /app/next.config.ts ./
+ENV NODE_ENV=production
 
-# Install all deps (not just prod) — Next.js needs typescript at runtime
-# to parse next.config.ts. Enable corepack and chown before USER switch.
-RUN corepack enable && pnpm install --frozen-lockfile && \
-    chown -R nextjs:nextjs /app
+# Standalone server bundle (includes a pruned node_modules + compiled config).
+COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./
+# Static assets and public files are NOT in standalone — copy them in.
+COPY --from=builder --chown=nextjs:nextjs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nextjs /app/public ./public
+# Blog markdown is read from disk at request time; standalone tracing omits it.
+COPY --from=builder --chown=nextjs:nextjs /app/blog-posts ./blog-posts
 
 USER nextjs
 
 EXPOSE 3000
 
-ENV NODE_ENV=production
-
-CMD ["npx", "next", "start"]
+# Standalone emits server.js at the app root; run it directly (no next CLI,
+# no TypeScript, no pnpm install needed at runtime).
+CMD ["node", "server.js"]
