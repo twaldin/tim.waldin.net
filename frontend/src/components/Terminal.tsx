@@ -18,6 +18,7 @@ import {
   type TerminalDimensions,
 } from "../lib/mobile-viewport";
 import { attachTouchScroll } from "../lib/xterm-touch";
+import { isSafeExternalUrl } from "../lib/safe-url";
 
 const MOBILE_BREAKPOINT = 768;
 const MIN_FONT_SIZE = 10;
@@ -90,6 +91,7 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
       xterm.loadAddon(fitAddon);
 
       const handleLinkActivate = (_event: MouseEvent, text: string) => {
+        if (!isSafeExternalUrl(text)) return;
         window.open(text, "_blank", "noopener,noreferrer");
       };
       xterm.options.linkHandler = {
