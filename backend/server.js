@@ -59,12 +59,20 @@ function checkRateLimit(ip) {
     connectionTracker.set(ip, []);
   }
   const timestamps = connectionTracker.get(ip).filter(t => now - t < RATE_LIMIT_WINDOW);
-  connectionTracker.set(ip, timestamps);
+  // Drop the key entirely when nothing is left in the window so the map can't
+  // accumulate a permanent empty-array entry per unique visitor IP.
+  if (timestamps.length === 0) {
+    connectionTracker.delete(ip);
+  } else {
+    connectionTracker.set(ip, timestamps);
+  }
 
   if (timestamps.length >= MAX_CONNECTIONS_PER_IP) {
+    connectionTracker.set(ip, timestamps); // keep the full window for lockout
     return false;
   }
   timestamps.push(now);
+  connectionTracker.set(ip, timestamps);
   return true;
 }
 
@@ -232,6 +240,16 @@ sessionManager.startPoolMaintenance();
 setInterval(() => {
   sessionManager.cleanupOrphanedContainers();
 }, 60 * 1000);
+
+// Drop stale per-IP rate-limit entries so the map can't grow unbounded.
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, ts] of connectionTracker) {
+    if (!ts.length || now - ts[ts.length - 1] > RATE_LIMIT_WINDOW) {
+      connectionTracker.delete(ip);
+    }
+  }
+}, 5 * 60 * 1000);
 
 // Start server
 const PORT = process.env.PORT || 3001;

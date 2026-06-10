@@ -15,11 +15,32 @@ function safeEqual(a, b) {
   return timingSafeEqual(ha, hb);
 }
 
+// Per-IP admin auth throttle: lock out an IP after too many failures.
+const AUTH_FAILS = new Map(); // ip -> { count, firstAt, lockedUntil }
+const MAX_FAILS = 5;
+const LOCK_MS = 10 * 60 * 1000;   // 10 min lockout
+const FAIL_WINDOW_MS = 10 * 60 * 1000;
+
+function adminIp(req) {
+  return req.headers['x-real-ip'] || req.ip || req.socket?.remoteAddress || 'unknown';
+}
+
 function basicAuth(req, res, next) {
   const password = process.env.ADMIN_PASSWORD;
   if (!password) return res.status(503).send('ADMIN_PASSWORD not set.');
 
+  const ip = adminIp(req);
+  const now = Date.now();
+  const rec = AUTH_FAILS.get(ip);
+  if (rec && rec.lockedUntil && now < rec.lockedUntil) {
+    res.set('Retry-After', String(Math.ceil((rec.lockedUntil - now) / 1000)));
+    return res.status(429).send('Too many attempts. Try again later.');
+  }
+
   const header = req.headers.authorization || '';
+  // A missing/non-Basic header is NOT a failed password — browsers send no auth
+  // on the first request. Do NOT count it toward lockout or the admin could be
+  // locked out of their own panel permanently.
   if (!header.startsWith('Basic ')) {
     res.set('WWW-Authenticate', 'Basic realm="term-site admin"');
     return res.status(401).send('Authentication required.');
@@ -34,9 +55,16 @@ function basicAuth(req, res, next) {
   // Constant-time comparison via HMAC digest (fixed 32-byte output regardless
   // of input length, so timingSafeEqual never throws on length mismatch)
   if (!safeEqual(user, email) || !safeEqual(pass, password)) {
+    const r = AUTH_FAILS.get(ip) || { count: 0, firstAt: now, lockedUntil: 0 };
+    if (now - r.firstAt > FAIL_WINDOW_MS) { r.count = 0; r.firstAt = now; }
+    r.count++;
+    if (r.count >= MAX_FAILS) r.lockedUntil = now + LOCK_MS;
+    AUTH_FAILS.set(ip, r);
     res.set('WWW-Authenticate', 'Basic realm="term-site admin"');
     return res.status(401).send('Invalid credentials.');
   }
+
+  AUTH_FAILS.delete(ip); // success clears the counter
   next();
 }
 
