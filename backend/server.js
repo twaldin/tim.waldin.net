@@ -225,6 +225,9 @@ app.get('/stats', (req, res) => {
 // Admin panel
 app.use('/admin', adminRouter);
 
+// Keep the pre-warm pool topped up — self-heals if idle pool streams drain it.
+sessionManager.startPoolMaintenance();
+
 // Periodic orphan cleanup every 60 seconds
 setInterval(() => {
   sessionManager.cleanupOrphanedContainers();
