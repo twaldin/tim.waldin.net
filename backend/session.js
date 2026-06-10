@@ -30,6 +30,7 @@ class SessionManager {
     this.pool = [];
     this.poolSize = 5;
     this.poolWarming = 0;
+    this._poolBackoffMs = 0;
     this.zombieSessions = new Map();
     // Resizes that arrive before the session is stored (fresh container path)
     // are buffered here and applied once the session is ready.
@@ -83,9 +84,30 @@ class SessionManager {
     while (this.pool.length + this.poolWarming < this.poolSize) {
       this.poolWarming++;
       this.warmOne()
-        .catch((err) => console.error('warmOne failed:', err.message))
+        .then(() => { this._poolBackoffMs = 0; })
+        .catch((err) => {
+          console.error('warmOne failed:', err.message);
+          // Exponential backoff so a transient socket-proxy/DNS failure
+          // (EAI_AGAIN) doesn't spin. Capped at 30s. The periodic
+          // maintenance loop (startPoolMaintenance) retries after this.
+          this._poolBackoffMs = Math.min((this._poolBackoffMs || 0) * 2 || 1000, 30000);
+          this._lastWarmFailAt = Date.now();
+        })
         .finally(() => { this.poolWarming--; });
     }
+  }
+
+  startPoolMaintenance() {
+    if (this._poolMaintTimer) return; // single-flight
+    this._poolMaintTimer = setInterval(() => {
+      if (!this.imagePreloaded) return;
+      // Honor backoff window after a recent failure.
+      if (this._poolBackoffMs && this._lastWarmFailAt &&
+          Date.now() - this._lastWarmFailAt < this._poolBackoffMs) return;
+      if (this.pool.length < this.poolSize) {
+        this.fillPool();
+      }
+    }, 15 * 1000); // top up every 15s
   }
 
   async warmOne() {
@@ -120,6 +142,7 @@ class SessionManager {
     item._onClose = () => {
       item.alive = false;
       this.pool = this.pool.filter((p) => p !== item);
+      console.log(`Pool: container stream closed, ${this.pool.length}/${this.poolSize} ready (will top up)`);
     };
     stream.on('data', item._onData);
     stream.on('close', item._onClose);
@@ -300,6 +323,9 @@ class SessionManager {
       this.fillPool();
       return this.attachPooledSession(sessionId, socket, initCommand, pooled, clientIP, persistentSessionId);
     }
+    // Pool was empty — start refilling for the next visitor, then serve this
+    // one on the slow path.
+    this.fillPool();
     return this.createContainerSession(sessionId, socket, initCommand, clientIP, persistentSessionId);
   }
 
