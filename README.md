@@ -44,7 +44,6 @@ term-site/
 │   │   ├── stm32-games.sh # Project pages with git activity
 │   │   ├── term-site.sh
 │   │   ├── trade-up-bot.sh
-│   │   ├── skyblock-qol.sh
 │   │   ├── dotfiles.sh
 │   │   ├── resume.sh      # Resume with clickable link
 │   │   ├── about.sh
@@ -77,7 +76,7 @@ Custom portfolio navigation:
 - `contact` - Email and social links
 - `resume` - View my resume
 - `help` - Show available commands
-- `stm32-games`, `term-site`, `trade-up-bot`, `skyblock-qol`, `dotfiles` - Jump to project repos
+- `stm32-games`, `term-site`, `trade-up-bot`, `dotfiles` - Jump to project repos
 
 Plus standard Linux tools: `ls`, `cd`, `cat`, `nvim`, `git`, `grep`, `rg`, `fzf`, `tree`, `htop`, `bat`, etc.
 

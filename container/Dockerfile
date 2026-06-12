@@ -153,7 +153,6 @@ RUN git clone https://github.com/twaldin/dotfiles.git /home/portfolio/.dotfiles 
     git clone https://github.com/twaldin/stm32-games.git && \
     (git clone https://github.com/twaldin/term-site.git || mkdir -p term-site) && \
     git clone https://github.com/twaldin/trade-up-bot.git && \
-    git clone https://github.com/twaldin/SkyblockQOLmod.git && \
     git clone https://github.com/twaldin/hone.git && \
     git clone https://github.com/twaldin/harness.git && \
     ln -sf /home/portfolio/scripts/flt.sh /home/portfolio/projects/flt/flt.sh && \
@@ -161,7 +160,6 @@ RUN git clone https://github.com/twaldin/dotfiles.git /home/portfolio/.dotfiles 
     ln -sf /home/portfolio/scripts/stm32-games.sh /home/portfolio/projects/stm32-games/stm32-games.sh && \
     ln -sf /home/portfolio/scripts/term-site.sh /home/portfolio/projects/term-site/term-site.sh && \
     ln -sf /home/portfolio/scripts/trade-up-bot.sh /home/portfolio/projects/trade-up-bot/trade-up-bot.sh && \
-    ln -sf /home/portfolio/scripts/skyblock-qol.sh /home/portfolio/projects/SkyblockQOLmod/skyblock-qol.sh && \
     ln -sf /home/portfolio/scripts/hone.sh /home/portfolio/projects/hone/hone.sh && \
     ln -sf /home/portfolio/scripts/harness.sh /home/portfolio/projects/harness/harness.sh && \
     ln -sf /home/portfolio/scripts/dotfiles.sh /home/portfolio/.dotfiles/dotfiles.sh && \
@@ -190,7 +188,6 @@ RUN cp /home/portfolio/.dotfiles/zsh/zshrc /home/portfolio/.zshrc && \
     echo "alias stm32-games='cd ~/projects/stm32-games && /home/portfolio/scripts/stm32-games.sh'" >> /home/portfolio/.zshrc && \
     echo "alias term-site='cd ~/projects/term-site && /home/portfolio/scripts/term-site.sh'" >> /home/portfolio/.zshrc && \
     echo "alias trade-up-bot='cd ~/projects/trade-up-bot && /home/portfolio/scripts/trade-up-bot.sh'" >> /home/portfolio/.zshrc && \
-    echo "alias skyblock-qol='cd ~/projects/SkyblockQOLmod && /home/portfolio/scripts/skyblock-qol.sh'" >> /home/portfolio/.zshrc && \
     echo "alias hone='cd ~/projects/hone && /home/portfolio/scripts/hone.sh'" >> /home/portfolio/.zshrc && \
     echo "alias harness='cd ~/projects/harness && /home/portfolio/scripts/harness.sh'" >> /home/portfolio/.zshrc && \
     echo "alias dotfiles='cd ~/.dotfiles && /home/portfolio/scripts/dotfiles.sh'" >> /home/portfolio/.zshrc && \
@@ -220,7 +217,7 @@ RUN cp /home/portfolio/.dotfiles/zsh/zshrc /home/portfolio/.zshrc && \
     echo "  # pretty URL instead of the raw alias name." >> /home/portfolio/.zshrc && \
     echo "  case \"\$cmd\" in" >> /home/portfolio/.zshrc && \
     echo "    welcome|home)         emit_url \"\"; return ;;" >> /home/portfolio/.zshrc && \
-    echo "    flt|agentelo|hone|harness|term-site|trade-up-bot|stm32-games|dotfiles|skyblock-qol)" >> /home/portfolio/.zshrc && \
+    echo "    flt|agentelo|hone|harness|term-site|trade-up-bot|stm32-games|dotfiles)" >> /home/portfolio/.zshrc && \
     echo "                          emit_url \"projects/\$cmd\"; return ;;" >> /home/portfolio/.zshrc && \
     echo "  esac" >> /home/portfolio/.zshrc && \
     echo "  # Universal: url-encode spaces, leave everything else literal." >> /home/portfolio/.zshrc && \
@@ -284,7 +281,6 @@ RUN echo 'export PATH="/home/portfolio/scripts:$PATH"' >> /home/portfolio/.bashr
     echo "alias stm32-games='cd ~/projects/stm32-games && /home/portfolio/scripts/stm32-games.sh'" >> /home/portfolio/.bashrc && \
     echo "alias term-site='cd ~/projects/term-site && /home/portfolio/scripts/term-site.sh'" >> /home/portfolio/.bashrc && \
     echo "alias trade-up-bot='cd ~/projects/trade-up-bot && /home/portfolio/scripts/trade-up-bot.sh'" >> /home/portfolio/.bashrc && \
-    echo "alias skyblock-qol='cd ~/projects/SkyblockQOLmod && /home/portfolio/scripts/skyblock-qol.sh'" >> /home/portfolio/.bashrc && \
     echo "alias dotfiles='cd ~/.dotfiles && /home/portfolio/scripts/dotfiles.sh'" >> /home/portfolio/.bashrc && \
     echo "alias home='cd ~ && /home/portfolio/scripts/welcome.sh'" >> /home/portfolio/.bashrc && \
     echo "alias welcome='cd ~ && /home/portfolio/scripts/welcome.sh'" >> /home/portfolio/.bashrc && \

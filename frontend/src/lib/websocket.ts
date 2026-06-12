@@ -5,7 +5,7 @@ import { io, Socket } from 'socket.io-client';
 // Legacy pretty URL: /projects/<alias> jumps straight into the project
 // (runs the alias command, which cd's + shows the project info page).
 const PROJECT_ALIASES = new Set([
-  'flt', 'agentelo', 'trade-up-bot', 'skyblock-qol',
+  'flt', 'agentelo', 'trade-up-bot',
   'term-site', 'stm32-games', 'dotfiles', 'hone', 'harness',
 ]);
 

@@ -1,6 +1,6 @@
 export const KNOWN_COMMANDS = new Set([
   'welcome', 'about', 'contact', 'blog', 'projects', 'resume', 'help',
-  'flt', 'agentelo', 'trade-up-bot', 'skyblock-qol', 'term-site',
+  'flt', 'agentelo', 'trade-up-bot', 'term-site',
   'stm32-games', 'dotfiles', 'hone', 'harness',
 ]);
 
@@ -63,7 +63,7 @@ export function getPageMetadata(pathname: string): { title: string; description:
   }
 
   const projectAliases = new Set([
-    'flt', 'agentelo', 'trade-up-bot', 'skyblock-qol', 'term-site',
+    'flt', 'agentelo', 'trade-up-bot', 'term-site',
     'stm32-games', 'dotfiles', 'hone', 'harness',
   ]);
   if (projectAliases.has(cmd)) {
