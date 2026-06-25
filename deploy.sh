@@ -23,6 +23,20 @@ echo "Pruning stale Docker build cache and dangling images..."
 docker image prune -f
 docker builder prune -f
 
+# Install certbot renewal hooks so the certbot.timer can renew the TLS cert
+# while nginx is running. The renewal uses the standalone authenticator, which
+# needs port 80 — held by term-nginx. These hooks stop nginx before renewal and
+# restart it after, so auto-renewal actually succeeds (without them the cert
+# silently lapses; see the Jun 2026 expiry incident).
+echo "Installing certbot renewal hooks..."
+if [ -d /etc/letsencrypt/renewal-hooks ]; then
+    install -m 0755 deploy/renewal-hooks/pre/stop-nginx.sh   /etc/letsencrypt/renewal-hooks/pre/stop-nginx.sh
+    install -m 0755 deploy/renewal-hooks/post/start-nginx.sh /etc/letsencrypt/renewal-hooks/post/start-nginx.sh
+    echo "  renewal hooks installed"
+else
+    echo "  WARNING: /etc/letsencrypt/renewal-hooks not found — skipping (certbot not installed?)"
+fi
+
 # Wait for services to initialize
 echo "Waiting for services to initialize..."
 sleep 5
