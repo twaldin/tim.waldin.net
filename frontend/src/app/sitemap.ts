@@ -1,15 +1,11 @@
-import { readdirSync, existsSync } from 'fs';
-import { join } from 'path';
 import type { MetadataRoute } from 'next';
 import { PROJECT_ALIASES } from '@/lib/routes';
+import { listPostSlugs } from '@/lib/blog-posts';
 
 const BASE_URL = 'https://tim.waldin.net';
-const POSTS_DIR = join(process.cwd(), 'blog-posts');
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const slugs = existsSync(POSTS_DIR)
-    ? readdirSync(POSTS_DIR).filter(f => f.endsWith('.md')).map(f => f.slice(0, -3))
-    : [];
+  const slugs = listPostSlugs();
 
   return [
     { url: `${BASE_URL}/` },

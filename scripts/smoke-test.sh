@@ -97,10 +97,11 @@ if [[ -d "${POSTS_DIR}" ]]; then
     [[ -f "${f}" ]] || continue
     slug="$(basename "${f}" .md)"
     IFS='|' read -r code _ _ <<<"$(probe "${BASE}/blog/${slug}")"
-    if [[ "${code}" == 200 ]] && grep -qi 'og:image' "${BODY}"; then
-      record PASS "blog/${slug}" "200, og:image present"
+    # The og:image must be the post's own card, not the generic site image.
+    if [[ "${code}" == 200 ]] && grep -qi "og:image\" content=\"[^\"]*/blog/${slug}/opengraph-image" "${BODY}"; then
+      record PASS "blog/${slug}" "200, per-post og:image"
     else
-      record FAIL "blog/${slug}" "code=${code}, og:image=$(grep -qi og:image "${BODY}" && echo y || echo n)"
+      record FAIL "blog/${slug}" "code=${code}, per-post og:image=$(grep -qi "/blog/${slug}/opengraph-image" "${BODY}" && echo y || echo n)"
     fi
   done
 else

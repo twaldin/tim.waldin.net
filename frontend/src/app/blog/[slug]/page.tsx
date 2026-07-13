@@ -1,61 +1,44 @@
-import { readFileSync, readdirSync, existsSync } from 'fs';
-import { join } from 'path';
-import { notFound } from 'next/navigation';
+import { notFound, permanentRedirect } from 'next/navigation';
 import BlogUnifiedPage from '@/components/BlogUnifiedPage';
-
-const POSTS_DIR = join(process.cwd(), 'blog-posts');
-
-function parseFrontmatter(raw: string): { meta: Record<string, string>; body: string } {
-  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
-  if (!match) return { meta: {}, body: raw };
-  const meta: Record<string, string> = {};
-  for (const line of match[1].split('\n')) {
-    const idx = line.indexOf(':');
-    if (idx > 0) meta[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
-  }
-  return { meta, body: match[2] };
-}
+import { getPost, listPostSlugs, postExcerpt, resolveSlugAlias } from '@/lib/blog-posts';
 
 export async function generateStaticParams() {
-  if (!existsSync(POSTS_DIR)) return [];
-  return readdirSync(POSTS_DIR)
-    .filter(f => f.endsWith('.md'))
-    .map(f => ({ slug: f.slice(0, -3) }));
+  return listPostSlugs().map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const filePath = join(POSTS_DIR, `${slug}.md`);
-  if (!existsSync(filePath)) return { title: 'Post not found' };
-  const { meta, body } = parseFrontmatter(readFileSync(filePath, 'utf-8'));
-  const title = meta.title || slug;
-  // First paragraph, markdown links flattened to their text, clipped for OG.
-  const firstParagraph = body.trim().split(/\r?\n\r?\n/)[0]
-    .replace(/\r?\n/g, ' ')
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
-  const description = firstParagraph.length > 200
-    ? `${firstParagraph.slice(0, 197)}...`
-    : firstParagraph;
+  const post = getPost(slug);
+  if (!post) return { title: 'Post not found' };
+  const title = post.meta.title || slug;
+  const description = postExcerpt(post.body);
+  // og:image / twitter:image come from the sibling opengraph-image.tsx file
+  // convention — Next appends the per-post image URL to both automatically.
   return {
     title,
     description,
-    openGraph: { title, description, url: `https://tim.waldin.net/blog/${slug}`, siteName: 'twaldin', type: 'article', images: ['/opengraph-image'] },
-    twitter: { card: 'summary_large_image', title, description, images: ['/opengraph-image'] },
+    openGraph: { title, description, url: `https://tim.waldin.net/blog/${slug}`, siteName: 'twaldin', type: 'article' },
+    twitter: { card: 'summary_large_image', title, description },
   };
 }
 
 export default async function BlogPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const filePath = join(POSTS_DIR, `${slug}.md`);
-  if (!existsSync(filePath)) notFound();
-  const { meta, body } = parseFrontmatter(readFileSync(filePath, 'utf-8'));
+  const post = getPost(slug);
+  if (!post) {
+    // Old links in the wild (tweets especially) sometimes carry a slug
+    // variant; send them to the canonical post instead of a 404.
+    const alias = resolveSlugAlias(slug);
+    if (alias) permanentRedirect(`/blog/${alias}`);
+    notFound();
+  }
 
   return (
     <BlogUnifiedPage
       slug={slug}
-      title={meta.title || slug}
-      date={meta.date}
-      body={body}
+      title={post.meta.title || slug}
+      date={post.meta.date}
+      body={post.body}
     />
   );
 }
