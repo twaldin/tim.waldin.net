@@ -1,5 +1,7 @@
 # Terminal Portfolio
 
+<img src=".github/social-card.png" alt="term site" width="100%" />
+
 My portfolio website that looks like a terminal. Users get an xterm.js terminal in their browser that connects to isolated Docker containers where they can run commands, explore my projects, view my resume, etc.
 
 Live at [tim.waldin.net](https://tim.waldin.net)
