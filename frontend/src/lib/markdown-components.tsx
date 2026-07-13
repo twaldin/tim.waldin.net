@@ -10,9 +10,6 @@ export const BRAND       = terminalTheme.primary;          // primary accent
 export const PINK        = terminalTheme.red;            // hot pink in Hardcore
 export const BLUE        = terminalTheme.blue;
 export const BRIGHT_YELLOW = terminalTheme.brightYellow;
-// legacy aliases still imported by BlogUnifiedPage etc.
-export const BRIGHT_GREEN  = BRAND;
-export const BRIGHT_BLUE   = BLUE;
 export const BRIGHT_CYAN   = BLUE;
 export const CODE_BG     = terminalTheme.black;
 export const CODE_BORDER = terminalTheme.brightBlack;
