@@ -1,7 +1,12 @@
 export const KNOWN_COMMANDS = new Set([
   'welcome', 'about', 'contact', 'blog', 'projects', 'resume', 'help',
   'flt', 'agentelo', 'trade-up-bot', 'term-site',
-  'stm32-games', 'dotfiles', 'hone', 'harness',
+  'stm32-games', 'dotfiles', 'hone', 'harness', 'studyspot',
+]);
+
+export const PROJECT_ALIASES = new Set([
+  'flt', 'agentelo', 'trade-up-bot', 'term-site',
+  'stm32-games', 'dotfiles', 'hone', 'harness', 'studyspot',
 ]);
 
 export const BLOG_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
@@ -33,7 +38,7 @@ export function getPageMetadata(pathname: string): { title: string; description:
   if (pathname === '/' || pathname === '') {
     return {
       title: 'twaldin — interactive terminal portfolio',
-      description: "Timothy Waldin's portfolio: live terminal, blog, projects.",
+      description: "Timothy Waldin's interactive terminal portfolio — every visitor gets their own isolated Docker container to explore. Projects, blog, and resume in a live zsh terminal.",
     };
   }
 
@@ -62,11 +67,7 @@ export function getPageMetadata(pathname: string): { title: string; description:
     return { title: 'projects — twaldin', description: 'Projects by Timothy Waldin.' };
   }
 
-  const projectAliases = new Set([
-    'flt', 'agentelo', 'trade-up-bot', 'term-site',
-    'stm32-games', 'dotfiles', 'hone', 'harness',
-  ]);
-  if (projectAliases.has(cmd)) {
+  if (PROJECT_ALIASES.has(cmd)) {
     return { title: `${cmd} — twaldin`, description: `Project: ${cmd}.` };
   }
 

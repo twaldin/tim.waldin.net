@@ -6,7 +6,7 @@ import { io, Socket } from 'socket.io-client';
 // (runs the alias command, which cd's + shows the project info page).
 const PROJECT_ALIASES = new Set([
   'flt', 'agentelo', 'trade-up-bot',
-  'term-site', 'stm32-games', 'dotfiles', 'hone', 'harness',
+  'term-site', 'stm32-games', 'dotfiles', 'hone', 'harness', 'studyspot',
 ]);
 
 // Commands that must never be triggered from a URL, even with a clean char

@@ -17,10 +17,11 @@ export const viewport: Viewport = {
 export async function generateMetadata(): Promise<Metadata> {
   const m = getPageMetadata('/');
   return {
+    metadataBase: new URL('https://tim.waldin.net'),
     title: m.title,
     description: m.description,
     openGraph: { title: m.title, description: m.description, url: 'https://tim.waldin.net', siteName: 'twaldin', type: 'website' },
-    twitter: { card: 'summary', title: m.title, description: m.description },
+    twitter: { card: 'summary_large_image', title: m.title, description: m.description },
   };
 }
 
