@@ -3,17 +3,19 @@ set -e  # Exit on any error
 
 echo "Starting deployment..."
 
-# Stop all containers
-echo "Stopping existing containers..."
-docker compose down
-
-# Build terminal image on host first
+# Build everything BEFORE stopping the stack — the old services keep serving
+# while images build, so downtime is the container swap (seconds), not the
+# multi-minute --no-cache build. Crawlers (X/Google link previews) used to
+# catch the dark window and cache imageless/failed cards.
 echo "Building terminal container image on host..."
 docker build -t twaldin/terminal-portfolio:latest ./container
 
-# Build and start all services
-echo "Building and starting services..."
+echo "Building service images..."
 docker compose build --no-cache
+
+# Swap: stop old stack, start freshly built images
+echo "Restarting services on new images..."
+docker compose down
 docker compose up -d --force-recreate
 
 # Reclaim disk: remove dangling images and ALL build cache left by the
