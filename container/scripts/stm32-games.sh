@@ -7,8 +7,8 @@ echo ""
 ascii_typewriter "stm32 games" "DOS_Rebel" "${RED}"
 
 echo ""
-create_box "Description" "Game console using the stm32 blue pill and an lcd display, written in C.
-Currently only plays snake game but tetris and more coming soon" "${RED}"
+create_box "Description" "Complete snake game running on an STM32 Blue Pill with an ST7789 LCD,
+written in C. Built to learn bare-metal programming on a microcontroller." "${RED}"
 
 echo ""
 typewriter "${BLUE}Tech Stack:${RESET}"

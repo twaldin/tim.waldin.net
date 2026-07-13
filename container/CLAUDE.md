@@ -23,7 +23,7 @@ container/
     ├── help.sh             # Available commands
     └── flt.sh, agentelo.sh, hone.sh, harness.sh,
         stm32-games.sh, term-site.sh, trade-up-bot.sh,
-        dotfiles.sh                    # Per-project pages
+        studyspot.sh, dotfiles.sh      # Per-project pages
 ```
 
 ## Image build (Dockerfile highlights)
