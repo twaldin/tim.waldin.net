@@ -60,3 +60,6 @@ frontend/blog-posts
 # flt agent fleet artifacts (per-spawn scratch + handoff docs)
 .flt/
 handoffs/
+
+# opencode agent projections (flt-injected, regenerated per spawn)
+.opencode/
