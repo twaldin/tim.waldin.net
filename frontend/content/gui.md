@@ -18,7 +18,7 @@ i'm tim waldin, software engineer at [lindy](https://lindy.ai) in san francisco.
 
 ## the story
 
-one tweet about hone got retweeted exactly once — by GEPA's creator — and went viral from there. lindy's CEO cold-emailed "want a job", and i took a leave of absence from purdue.
+[one tweet](https://x.com/twaldin/status/2046018469028565439) about hone got retweeted exactly once — by [GEPA](https://github.com/gepa-ai/gepa)'s creator — and went viral from there. lindy's CEO cold-emailed "want a job", and i took a leave of absence from purdue.
 
 ## links
 

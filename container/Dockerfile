@@ -201,6 +201,7 @@ RUN cp /home/portfolio/.dotfiles/zsh/zshrc /home/portfolio/.zshrc && \
     echo "alias help='/home/portfolio/scripts/help.sh'" >> /home/portfolio/.zshrc && \
     echo "alias resume='cd ~ && /home/portfolio/scripts/resume.sh'" >> /home/portfolio/.zshrc && \
     echo "alias blog='/home/portfolio/scripts/blog.sh'" >> /home/portfolio/.zshrc && \
+    echo "alias gui='/home/portfolio/scripts/gui.sh'" >> /home/portfolio/.zshrc && \
     echo "" >> /home/portfolio/.zshrc && \
     echo "# preexec — re-emit OSC 9999 URL before every typed command so the" >> /home/portfolio/.zshrc && \
     echo "# browser URL tracks literally whatever the user typed. The frontend" >> /home/portfolio/.zshrc && \
