@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import SiteHeader from "@/components/SiteHeader";
+import PageviewBeacon from "@/components/PageviewBeacon";
 import { terminalTheme } from "@/config/terminal-theme";
 import { getPageMetadata } from "@/lib/routes";
 
@@ -64,6 +65,7 @@ export default function RootLayout({
         />
       </head>
       <body>
+        <PageviewBeacon />
         <SiteHeader />
         <main style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', background: terminalTheme.background }}>
           {children}

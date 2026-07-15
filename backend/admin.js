@@ -1,6 +1,7 @@
 const express = require('express');
 const { timingSafeEqual, createHmac, randomBytes } = require('crypto');
 const { readAll } = require('./logger');
+const { getPageviewStats } = require('./pageviews');
 const theme = require('./theme');
 
 const router = express.Router();
@@ -130,6 +131,10 @@ router.get('/api/sessions', (req, res) => {
   res.json(groupSessions(readAll()));
 });
 
+router.get('/api/pageviews', (req, res) => {
+  res.json(getPageviewStats());
+});
+
 router.get('/', (req, res) => {
   const events = readAll();
   const sessions = groupSessions(events);
@@ -138,6 +143,14 @@ router.get('/', (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   const todayCount = sessions.filter(s => new Date(s.at).toISOString().startsWith(today)).length;
   const totalCmds = events.filter(e => e.type === 'command').length;
+
+  // Pageview funnel (in-memory since boot; daily rollups live in the audit log).
+  const pv = getPageviewStats();
+  const pvToday = pv.paths.reduce((sum, p) => sum + p.today, 0);
+  const pvAll = pv.paths.reduce((sum, p) => sum + p.allTime, 0);
+  const pvRows = pv.paths.map(p =>
+    `<tr><td class="cmd">${esc(p.path)}</td><td class="cnt">${p.today}</td><td class="cnt">${p.allTime}</td></tr>`
+  ).join('');
 
   // Group sessions by IP, sort groups by session count desc (Tim's own IP
   // likely tops the list and can be collapsed to filter it out).
@@ -244,6 +257,20 @@ tbody.ip-group.collapsed tr.row,tbody.ip-group.collapsed tr.cmd-block{display:no
   <th>time (UTC)</th><th>referrer</th><th>init command</th><th>device</th><th>duration</th><th>#cmds</th>
 </tr></thead>
 ${rows}
+</table>
+<h1 style="margin-top:28px">▸ pageviews <span class="dim">(in-memory since boot · today = ${esc(pv.date)} UTC)</span></h1>
+<div class="stats">
+  <div class="stat"><strong>${pvToday}</strong>views today</div>
+  <div class="stat"><strong>${pvAll}</strong>views since boot</div>
+  <div class="stat"><strong>${pv.paths.length}</strong>paths</div>
+</div>
+<table>
+<thead><tr>
+  <th>path</th><th style="text-align:right">today</th><th style="text-align:right">since boot</th>
+</tr></thead>
+<tbody>
+${pvRows || '<tr><td colspan="3" class="dim">no pageviews yet</td></tr>'}
+</tbody>
 </table>
 <script>
 function toggle(id){
