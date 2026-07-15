@@ -316,5 +316,20 @@ ENV USER=portfolio
 ENV SHELL=/bin/zsh
 ENV PATH=/home/portfolio/.local/bin:/home/portfolio/scripts:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
+# Snapshot GitHub star counts for welcome.sh — the runtime container has
+# NetworkMode: none, so the numbers must be baked in at image build time.
+# STARS_REFRESH is a cache-buster (deploy.sh passes the current timestamp)
+# so every deploy re-fetches; kept as the last layer so busting it never
+# rebuilds anything else (same reasoning as the late sudo install above).
+# Failure-tolerant (|| true): rate-limited or offline builds still succeed,
+# and welcome.sh falls back to a hardcoded count when the file is missing
+# or a value is empty.
+ARG STARS_REFRESH=0
+RUN echo "star snapshot ${STARS_REFRESH}" && \
+    { printf 'hone=%s\nharness=%s\n' \
+        "$(curl -fsSL --max-time 10 https://api.github.com/repos/twaldin/hone    | sed -n 's/.*"stargazers_count": *\([0-9][0-9]*\).*/\1/p' | head -n 1)" \
+        "$(curl -fsSL --max-time 10 https://api.github.com/repos/twaldin/harness | sed -n 's/.*"stargazers_count": *\([0-9][0-9]*\).*/\1/p' | head -n 1)" \
+        > /home/portfolio/.stars; } || true
+
 # Default command starts secure shell
 CMD ["/home/portfolio/secure-shell.sh"]
