@@ -25,7 +25,9 @@ Node.js 18 + Express + Socket.IO server (`server.js`) and a `SessionManager` (`s
 | `noInputTimeout` (60 s)   | `session.noInputTimer` | first `sendInput` (cancels) | kill session if no keystrokes ever arrived |
 | Connection rate limit     | `connectionTracker` | sliding 60 s window | reject if >30 connects/min from one IP (`server.js:47`) |
 
-Resize is a passive signal — it does **not** reset `sessionTimeout` (`session.js:608` comment).
+The no-input window is visibility-aware: the client emits a `visibility` socket event (`{ hidden }`) on connect and on every `visibilitychange`. A page reported **visible** gets `noInputTimeoutVisible` (5 min, `session.js:30`) instead of 60 s — humans read without typing; hidden pages and clients that never report (bots that don't run JS) keep 60 s. Flips re-arm the timer via `setVisibility` (`session.js:1036`). Reattach/restore paths reset `session.pageVisible` to undefined (the new page re-reports right after connect).
+
+Resize and visibility are passive signals — neither resets `sessionTimeout` (`session.js:608` comment).
 
 ## Container spec (`session.js:46`)
 

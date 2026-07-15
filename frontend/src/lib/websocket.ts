@@ -98,6 +98,20 @@ export function createWebSocketManager(): WebSocketManager {
   // triggers another browser-side resize (zoom, window resize).
   let lastResize: { cols: number; rows: number } | null = null;
 
+  // Report page visibility so the backend can relax the 60s no-input bot-kill
+  // while the reader's tab is focused. Attached once per manager inside
+  // connect() (client-side only — document doesn't exist during SSR); the
+  // handler closes over `socket` so it always targets the current connection
+  // and no-ops after disconnect() nulls it.
+  let visibilityListenerAttached = false;
+
+  const emitVisibility = () => {
+    if (typeof document === 'undefined') return;
+    if (socket?.connected) {
+      socket.emit('visibility', { hidden: document.hidden });
+    }
+  };
+
   const getWebSocketUrl = (): string => {
     if (process.env.NEXT_PUBLIC_API_URL) {
       return process.env.NEXT_PUBLIC_API_URL;
@@ -129,11 +143,19 @@ export function createWebSocketManager(): WebSocketManager {
       },
     });
 
+    if (!visibilityListenerAttached && typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', emitVisibility);
+      visibilityListenerAttached = true;
+    }
+
     socket.on('connect', () => {
       // Flush any resize that was emitted before the socket became ready so
       // the container PTY gets sized correctly on first render (not just
       // after a browser zoom/resize).
       if (lastResize) socket?.emit('resize', lastResize);
+      // Initial visibility report — the backend treats "never reported" as
+      // bot-like and keeps the aggressive no-input window.
+      emitVisibility();
       connectCallback?.();
     });
 

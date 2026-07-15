@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "node test-admin-auth.js"
+    "test": "node test-admin-auth.js && node test-no-input-visibility.js && node test-pageviews.js"
   },
   "keywords": [],
   "author": "",

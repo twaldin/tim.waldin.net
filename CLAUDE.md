@@ -31,7 +31,7 @@ Disconnect without `exit` (browser close, network drop) → session is **zombifi
 Idle / bot timers, all in `backend/session.js`:
 
 - **5 min idle** without keystrokes → kill (`sessionTimeout`, line 21).
-- **60 s no-input** from connect → kill (`noInputTimeout`, line 24) — kills bots and background tabs that never engage.
+- **60 s no-input** from connect → kill (`noInputTimeout`, line 24) — kills bots and background tabs that never engage. Relaxed to **5 min** (`noInputTimeoutVisible`, line 30) while the client reports its page visible via the `visibility` socket event; never-reported (no-JS bots) stays 60 s.
 - **30 connection attempts/min per IP** rate-limit at the Socket.IO layer (`backend/server.js:47`).
 
 ## Sandbox / security

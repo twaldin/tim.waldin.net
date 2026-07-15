@@ -5,6 +5,7 @@ const cors = require('cors');
 const SessionManager = require('./session');
 const logger = require('./logger');
 const adminRouter = require('./admin');
+const pageviews = require('./pageviews');
 
 const app = express();
 const server = http.createServer(app);
@@ -192,6 +193,14 @@ io.on('connection', (socket) => {
     sessionManager.resizeTerminal(socket.id, safeCols, safeRows);
   });
 
+  // Page visibility reports — passive like resize (never counts as input).
+  // Visible pages get a longer no-input window than hidden tabs / bots that
+  // never report at all.
+  socket.on('visibility', (payload) => {
+    if (typeof payload?.hidden !== 'boolean') return;
+    sessionManager.setVisibility(socket.id, payload.hidden);
+  });
+
   // Handle client disconnect
   socket.on('disconnect', (reason) => {
     console.log(`Client disconnected: ${socket.id}, reason: ${reason}`);
@@ -229,6 +238,10 @@ app.get('/stats', (req, res) => {
     uptime: process.uptime()
   });
 });
+
+// First-party pageview beacon (nginx proxies /pv here). navigator.sendBeacon
+// posts text/plain, so parse the body as text; JSON.parse happens in the handler.
+app.post('/pv', express.text({ type: '*/*', limit: '1kb' }), pageviews.handlePageview);
 
 // Admin panel
 app.use('/admin', adminRouter);
@@ -272,6 +285,10 @@ async function gracefulShutdown(signal) {
   console.log(`Received ${signal}, shutting down gracefully...`);
 
   try {
+    // Persist the current day's pageview counts so a restart doesn't drop them
+    // (rollup events for the same date are additive).
+    pageviews.flushRollup();
+
     await sessionManager.destroyAllSessions();
 
     server.close(() => {

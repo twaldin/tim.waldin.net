@@ -22,6 +22,12 @@ class SessionManager {
     // Bot kill — if a session never receives ANY user input within this
     // window, assume it's a background tab / bot and free the slot.
     this.noInputTimeout = 60 * 1000; // 60 seconds
+    // Visibility-aware relaxation of the bot kill: a client whose page is
+    // reported VISIBLE gets this longer window instead — humans often read
+    // the welcome/blog output for minutes before touching a key. Hidden
+    // pages and clients that never report visibility (bots that don't run
+    // JS, headless fetchers) keep the aggressive 60s window.
+    this.noInputTimeoutVisible = 5 * 60 * 1000; // 5 minutes
     this.imagePreloaded = false;
 
     // Container pre-warm pool: always keep `poolSize` containers ready-to-go
@@ -35,6 +41,10 @@ class SessionManager {
     // Resizes that arrive before the session is stored (fresh container path)
     // are buffered here and applied once the session is ready.
     this.pendingResizes = new Map();
+    // Visibility reports (`hidden` boolean) that arrive before the session is
+    // stored are buffered here too — the client emits one right on connect,
+    // which races container creation on the slow path.
+    this.pendingVisibility = new Map();
 
     // Preload the image on startup, then fill the pool.
     this.preloadImage().then(() => {
@@ -356,6 +366,9 @@ class SessionManager {
       firstResizeApplied: false,
       initCommandRun: false,
       inAltScreen: false,
+      // true/false once the client reports page visibility; undefined = never
+      // reported (treated like hidden by setNoInputTimeout).
+      pageVisible: undefined,
     };
     this.sessions.set(sessionId, session);
 
@@ -506,6 +519,9 @@ class SessionManager {
         firstResizeApplied: false,
         initCommandRun: false,
         inAltScreen: false,
+        // true/false once the client reports page visibility; undefined =
+        // never reported (treated like hidden by setNoInputTimeout).
+        pageVisible: undefined,
       };
 
       this.sessions.set(sessionId, session);
@@ -519,6 +535,15 @@ class SessionManager {
       if (pendingResize) {
         this.pendingResizes.delete(sessionId);
         this.resizeTerminal(sessionId, pendingResize.cols, pendingResize.rows);
+      }
+
+      // Apply any visibility report that arrived during container creation so
+      // setNoInputTimeout below arms with the right window for an
+      // already-visible page (the client emits one right on connect).
+      const pendingHidden = this.pendingVisibility.get(sessionId);
+      if (pendingHidden !== undefined) {
+        this.pendingVisibility.delete(sessionId);
+        session.pageVisible = !pendingHidden;
       }
 
       session._streamDataHandler = (data) => {
@@ -761,6 +786,9 @@ class SessionManager {
       }
 
       this.sessions.set(newSocketId, session);
+      // Visibility belongs to the page, not the container — the new tab
+      // reports its own state right after connect. Until then, strict window.
+      session.pageVisible = undefined;
       this.setSessionTimeout(newSocketId);
       this.setNoInputTimeout(newSocketId);
 
@@ -800,6 +828,8 @@ class SessionManager {
       }
 
       this.sessions.set(newSocketId, session);
+      // Same as the active-session path — the new page re-reports visibility.
+      session.pageVisible = undefined;
       this.setSessionTimeout(newSocketId);
       this.setNoInputTimeout(newSocketId);
 
@@ -812,6 +842,10 @@ class SessionManager {
   }
 
   async destroySession(sessionId) {
+    // Drop buffered pre-attach state first — entries for sessions that die
+    // before (or without) consuming them would otherwise leak in these maps.
+    this.pendingResizes.delete(sessionId);
+    this.pendingVisibility.delete(sessionId);
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
@@ -885,6 +919,10 @@ class SessionManager {
     session.initCommandRun = true;
     session.hasReceivedInput = false;
     session.lastActivity = Date.now();
+    // Visibility belongs to the page, not the container — the reconnecting
+    // client reports its own state right after connect. Until then, strict
+    // window.
+    session.pageVisible = undefined;
 
     this.sessions.set(newSocketId, session);
     this.setSessionTimeout(newSocketId);
@@ -969,24 +1007,53 @@ class SessionManager {
   }
 
   // Bot / background-tab killer: if the session receives NO user input at all
-  // within `noInputTimeout`, assume it's not an engaged user and free the slot.
-  // Cancelled on the first sendInput().
+  // within the no-input window, assume it's not an engaged user and free the
+  // slot. Cancelled on the first sendInput(). Visible pages get the longer
+  // `noInputTimeoutVisible` window (humans reading without typing); hidden
+  // pages and clients that never reported visibility keep `noInputTimeout`.
   setNoInputTimeout(sessionId) {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
     if (session.noInputTimer) clearTimeout(session.noInputTimer);
 
+    const timeout = session.pageVisible === true
+      ? this.noInputTimeoutVisible
+      : this.noInputTimeout;
+
     session.noInputTimer = setTimeout(() => {
       const s = this.sessions.get(sessionId);
       if (!s || s.hasReceivedInput) return;
-      console.log(`Session ${sessionId} closed (no user input within ${this.noInputTimeout / 1000}s)`);
+      console.log(`Session ${sessionId} closed (no user input within ${timeout / 1000}s)`);
       const { socket } = s;
       this.destroySession(sessionId);
       if (socket) {
         try { socket.disconnect(); } catch { /* ignore */ }
       }
-    }, this.noInputTimeout);
+    }, timeout);
+  }
+
+  // Visibility reports from the client. Passive like resize — never counts as
+  // input and never resets the 5-min idle timer. Only picks which no-input
+  // window applies, re-arming the bot-kill timer when the page flips between
+  // hidden and visible.
+  setVisibility(sessionId, hidden) {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      // Session still being created (fresh container path has multiple awaits
+      // before sessions.set) — buffer the report like pendingResizes.
+      this.pendingVisibility.set(sessionId, hidden);
+      return;
+    }
+
+    const visible = !hidden;
+    if (session.pageVisible === visible) return;
+    session.pageVisible = visible;
+
+    // After the first keystroke the bot-kill timer is cancelled for good —
+    // nothing to re-arm.
+    if (session.hasReceivedInput) return;
+    this.setNoInputTimeout(sessionId);
   }
 
   getActiveSessionCount() {

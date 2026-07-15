@@ -46,6 +46,7 @@ The container's zsh `preexec` hook emits OSC sequences that the frontend parses 
 ## Socket.IO client (`lib/websocket.ts`)
 
 - Persistent `sessionId` stored in `localStorage` under `terminal-session-id` (UUID v4, generated lazily). Sent in the Socket.IO handshake `auth` so backend reattach works across refresh.
+- Emits a `visibility` event (`{ hidden: document.hidden }`) on connect and on every `visibilitychange` so the backend relaxes its 60s no-input bot-kill to 5 min while the tab is visible. Passive like resize — it never resets the idle keystroke timer.
 - `pathToCommand(pathname)` (`websocket.ts:26`): maps the current URL to the `initCommand` that gets sent in the handshake. Rules:
   - `/` → `welcome`
   - `/t/<cmd>` → `<cmd>` (forces live terminal, used by blog cold pages)
