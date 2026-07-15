@@ -70,4 +70,4 @@ Nginx terminates TLS via Let's Encrypt (`/etc/letsencrypt` mounted read-only), e
 ## Conventions
 
 - Every directory with a `CLAUDE.md` also has an `AGENTS.md` symlink → `CLAUDE.md`. Treat `CLAUDE.md` as canonical; edit only `CLAUDE.md`, never `AGENTS.md`.
-- Diagnosis scratch files at the repo root (`MOBILE-RENDER-DIAGNOSIS.md`, `TTI-DIAGNOSIS.md`) are historical investigation notes, not authoritative docs.
+- One-off agent docs (plans, diagnoses, handoffs, content drafts) never get committed — they live untracked in `~/notes/term-site/` on the dev machine.
