@@ -23,16 +23,16 @@ fi
 # create_box content — the box measures width with color codes stripped but
 # doesn't know OSC 8 sequences are zero-width.
 echo ""
-proof_line="${DIM}$(hyperlink "hone" "https://github.com/twaldin/hone" "$PURPLE")${DIM}★${hone_stars} ·"
-proof_line+="$(hyperlink "harness" "https://github.com/twaldin/harness" "$PURPLE")${DIM}★${harness_stars} ·"
+proof_line="${DIM}$(hyperlink "󰊤 hone" "https://github.com/twaldin/hone" "$PURPLE")${DIM}★${hone_stars} ·"
+proof_line+="$(hyperlink "󰊤 harness" "https://github.com/twaldin/harness" "$PURPLE")${DIM}★${harness_stars} ·"
 proof_line+="$(hyperlink "ranked 148 coding agents on ~1B tokens" "https://tim.waldin.net/blog/2026-04-20-agentelo-155-combos" "$DIM")${DIM} ·"
-proof_line+=" agents @$(hyperlink "lindy.ai" "https://lindy.ai" "$DIM")${RESET}"
+proof_line+=" agents @$(hyperlink "󰖟 lindy.ai" "https://lindy.ai" "$DIM")${RESET}"
 typewriter "$proof_line"
 echo ""
 
-typewriter "${WHITE}i'm tim — i optimize ai agents at$(hyperlink "lindy.ai" "https://lindy.ai" "$BLUE")${WHITE} in san francisco.${RESET}"
-typewriter "${WHITE}i built the coding-agent suite in the open:$(hyperlink "harness" "https://github.com/twaldin/harness" "$PURPLE")${WHITE} ·$(hyperlink "hone" "https://github.com/twaldin/hone" "$PURPLE")${WHITE} ·$(hyperlink "flt" "https://github.com/twaldin/flt" "$PURPLE")${WHITE} ·$(hyperlink "agentelo" "https://github.com/twaldin/agentelo" "$PURPLE")${WHITE}.${RESET}"
-typewriter "${WHITE}$(hyperlink "one tweet" "https://x.com/twaldin/status/2046018469028565439" "$BLUE")${WHITE} about hone got retweeted by the creator of$(hyperlink "GEPA" "https://github.com/gepa-ai/gepa" "$BLUE")${WHITE}, went viral,${RESET}"
+typewriter "${WHITE}i'm tim — i optimize ai agents at$(hyperlink "󰖟 lindy.ai" "https://lindy.ai" "$BLUE")${WHITE} in san francisco.${RESET}"
+typewriter "${WHITE}i built the coding-agent suite in the open:$(hyperlink "󰊤 harness" "https://github.com/twaldin/harness" "$PURPLE")${WHITE} ·$(hyperlink "󰊤 hone" "https://github.com/twaldin/hone" "$PURPLE")${WHITE} ·$(hyperlink "󰊤 flt" "https://github.com/twaldin/flt" "$PURPLE")${WHITE} ·$(hyperlink "󰊤 agentelo" "https://github.com/twaldin/agentelo" "$PURPLE")${WHITE}.${RESET}"
+typewriter "${WHITE}$(hyperlink "󰕄 one tweet" "https://x.com/twaldin/status/2046018469028565439" "$BLUE")${WHITE} about hone got retweeted by the creator of$(hyperlink "󰊤 GEPA" "https://github.com/gepa-ai/gepa" "$BLUE")${WHITE}, went viral,${RESET}"
 typewriter "${WHITE}and lindy's ceo cold-emailed me a job — i took a leave from purdue for it.${RESET}"
 
 echo ""
