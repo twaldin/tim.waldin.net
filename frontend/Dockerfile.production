@@ -30,6 +30,8 @@ COPY --from=builder --chown=nextjs:nextjs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nextjs /app/public ./public
 # Blog markdown is read from disk at request time; standalone tracing omits it.
 COPY --from=builder --chown=nextjs:nextjs /app/blog-posts ./blog-posts
+# /gui markdown (frontend-only content) — same disk-read pattern as blog-posts.
+COPY --from=builder --chown=nextjs:nextjs /app/content ./content
 
 USER nextjs
 

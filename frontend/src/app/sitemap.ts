@@ -9,6 +9,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
   return [
     { url: `${BASE_URL}/` },
+    { url: `${BASE_URL}/gui` },
     { url: `${BASE_URL}/blog` },
     ...slugs.map(slug => ({ url: `${BASE_URL}/blog/${slug}` })),
     ...[...PROJECT_ALIASES].map(alias => ({ url: `${BASE_URL}/projects/${alias}` })),
