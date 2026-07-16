@@ -29,6 +29,7 @@ body_after_frontmatter() {
 }
 
 list_posts() {
+  clear
   echo ""
   typewriter "${PURPLE}blog${RESET}"
   animated_separator "-" 10 "$PURPLE"
@@ -74,8 +75,18 @@ list_posts() {
   local osc_open=$'\033]8;;'
   local osc_close=$'\033\\'
 
+  # Truncate titles so a row never exceeds the terminal width — xterm would
+  # otherwise hard-wrap mid-word at the right edge ("leaderboa / rd").
+  local cols
+  cols=$(tput cols 2>/dev/null || echo 80)
+
   local idx=1
   printf '%s\n' "${rows[@]}" | sort -r | while IFS='|' read -r d s t; do
+    # plain-text prefix: 2 spaces + idx + 2 + date(10) + 2 + slug + 2
+    local avail=$(( cols - 2 - ${#idx} - 2 - 10 - 2 - ${#s} - 2 ))
+    if (( avail > 4 )) && (( ${#t} > avail )); then
+      t="${t:0:avail-1}…"
+    fi
     echo "  ${esc_dim}${idx}${esc_reset}  ${esc_gray}${d}${esc_reset}  ${esc_yellow}${osc_open}https://tim.waldin.net/blog/${s}${osc_close}${s}${osc_open}${osc_close}${esc_reset}  ${esc_white}${t}${esc_reset}"
     idx=$((idx + 1))
   done
@@ -83,6 +94,7 @@ list_posts() {
   echo ""
   typewriter "${DIM}read:  ${CYAN}blog <N>${RESET}${DIM}  ${CYAN}blog <slug>${RESET}${DIM}  ${CYAN}blog latest${RESET}${DIM}   (fuzzy match: ${CYAN}blog haiku${RESET}${DIM} works too)${RESET}"
   echo ""
+  emit_scroll_top
 }
 
 render_post() {

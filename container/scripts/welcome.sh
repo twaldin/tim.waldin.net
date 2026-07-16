@@ -25,7 +25,7 @@ fi
 echo ""
 proof_line="${DIM}$(hyperlink "󰊤 hone" "https://github.com/twaldin/hone" "$PURPLE")${DIM}★${hone_stars} ·"
 proof_line+="$(hyperlink "󰊤 harness" "https://github.com/twaldin/harness" "$PURPLE")${DIM}★${harness_stars} ·"
-proof_line+="$(hyperlink "ranked 148 coding agents on ~1B tokens" "https://tim.waldin.net/blog/2026-04-20-agentelo-155-combos" "$DIM")${DIM} ·"
+proof_line+="$(hyperlink "benchmarked 155 agent combos on ~1B tokens" "https://tim.waldin.net/blog/2026-04-20-agentelo-155-combos" "$DIM")${DIM} ·"
 proof_line+=" agents @$(hyperlink "󰖟 lindy.ai" "https://lindy.ai" "$DIM")${RESET}"
 typewriter "$proof_line"
 echo ""

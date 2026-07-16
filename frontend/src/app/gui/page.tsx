@@ -21,8 +21,8 @@ export function generateMetadata(): Metadata {
   return {
     title,
     description,
-    openGraph: { title, description, url: 'https://tim.waldin.net/gui', siteName: 'twaldin', type: 'website' },
-    twitter: { card: 'summary', title, description },
+    openGraph: { title, description, url: 'https://tim.waldin.net/gui', siteName: 'twaldin', type: 'website', images: [{ url: '/opengraph-image', width: 1200, height: 630 }] },
+    twitter: { card: 'summary_large_image', title, description, images: ['/opengraph-image'] },
   };
 }
 

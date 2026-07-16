@@ -13,8 +13,8 @@ export function generateMetadata(): Metadata {
   return {
     title: m.title,
     description: m.description,
-    openGraph: { title: m.title, description: m.description, url: 'https://tim.waldin.net/blog', siteName: 'twaldin', type: 'website' },
-    twitter: { card: 'summary', title: m.title, description: m.description },
+    openGraph: { title: m.title, description: m.description, url: 'https://tim.waldin.net/blog', siteName: 'twaldin', type: 'website', images: [{ url: '/opengraph-image', width: 1200, height: 630 }] },
+    twitter: { card: 'summary_large_image', title: m.title, description: m.description, images: ['/opengraph-image'] },
   };
 }
 

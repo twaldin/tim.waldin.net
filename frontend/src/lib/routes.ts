@@ -34,6 +34,21 @@ export function isValidPath(pathname: string): boolean {
   return true;
 }
 
+// Social-preview image for a URL path. Project pages reuse the pre-rendered
+// /repo-card/<name> PNGs (1280×640, same cards GitHub shows); everything else
+// falls back to the root terminal card from app/opengraph-image.tsx (1200×630).
+export function getOgImage(pathname: string): { url: string; width: number; height: number } {
+  let p = pathname.startsWith('/') ? pathname.slice(1) : pathname;
+  if (p.startsWith('t/')) p = p.slice(2);
+  else if (p.startsWith('projects/')) p = p.slice('projects/'.length);
+  const cmd = p.split('/')[0];
+  if (PROJECT_ALIASES.has(cmd)) {
+    const card = cmd === 'term-site' ? 'tim.waldin.net' : cmd;
+    return { url: `/repo-card/${card}`, width: 1280, height: 640 };
+  }
+  return { url: '/opengraph-image', width: 1200, height: 630 };
+}
+
 export function getPageMetadata(pathname: string): { title: string; description: string } {
   if (pathname === '/' || pathname === '') {
     return {

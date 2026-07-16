@@ -50,7 +50,9 @@ export default function SiteHeader() {
       <Link href="/" onClick={hardNav('/')} style={{ color: BRAND, textDecoration: 'none', fontWeight: 'bold' }}>
         tim.waldin.net
       </Link>
-      <nav style={{ display: 'flex', gap: '12px', alignItems: 'center', color: DIM }}>
+      {/* flexWrap: narrow viewports (~390px) must wrap the nav instead of
+          forcing horizontal page scroll that clips the last links. */}
+      <nav style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', alignItems: 'center', color: DIM }}>
         <span>navigation —</span>
         <Link href="/" onClick={hardNav('/')} style={linkStyle}>home</Link>
         <Link href="/t/blog" onClick={hardNav('/t/blog')} style={linkStyle}>blog</Link>

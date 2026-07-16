@@ -14,7 +14,7 @@ ENTRIES=(
   'harness|harness|one python+ts interface to 13 coding-agent CLIs|Python, TypeScript, per-CLI adapters'
   'hone|hone|GEPA prompt optimizer — +20pp solve rate on unseen bugs|Python, GEPA/dspy, harness'
   'flt|flt|spawn + orchestrate fleets of coding agents in tmux|TypeScript, Bun, raw ANSI TUI'
-  'agentelo|agentelo|Bradley-Terry leaderboard for coding agents (148 ranked)|TypeScript, Next.js, SQLite, Bun'
+  'agentelo|agentelo|Bradley-Terry leaderboard for coding agents (148-agent baseline)|TypeScript, Next.js, SQLite, Bun'
   'term-site|term site|this site — every visitor gets their own docker container|next.js, node.js, socket.IO, docker'
   'trade-up-bot|trade-up-bot|CS2 trade-up arbitrage — live at tradeupbot.app|TypeScript, React, PostgreSQL, Redis'
   'studyspot|studyspot|co-founded AI study platform — RAG + Claude over course docs|Next.js, Cloudflare Workers, pgvector'
