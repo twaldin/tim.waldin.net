@@ -32,8 +32,7 @@ echo ""
 
 typewriter "${WHITE}i'm tim — i optimize ai agents at$(hyperlink "󰖟 lindy.ai" "https://lindy.ai" "$BLUE")${WHITE} in san francisco.${RESET}"
 typewriter "${WHITE}i built the coding-agent suite in the open:$(hyperlink "󰊤 harness" "https://github.com/twaldin/harness" "$PURPLE")${WHITE} ·$(hyperlink "󰊤 hone" "https://github.com/twaldin/hone" "$PURPLE")${WHITE} ·$(hyperlink "󰊤 flt" "https://github.com/twaldin/flt" "$PURPLE")${WHITE} ·$(hyperlink "󰊤 agentelo" "https://github.com/twaldin/agentelo" "$PURPLE")${WHITE}.${RESET}"
-typewriter "${WHITE}$(hyperlink "󰕄 one tweet" "https://x.com/twaldin/status/2046018469028565439" "$BLUE")${WHITE} about hone got retweeted by the creator of$(hyperlink "󰊤 GEPA" "https://github.com/gepa-ai/gepa" "$BLUE")${WHITE}, went viral,${RESET}"
-typewriter "${WHITE}and lindy's ceo cold-emailed me a job — i took a leave from purdue for it.${RESET}"
+typewriter "${WHITE}and then i got a job at$(hyperlink "󰖟 lindy" "https://lindy.ai" "$BLUE")${WHITE} — i took a leave from purdue for it.${RESET}"
 
 echo ""
 create_box "portfolio terminal" "  about       learn about me
