@@ -54,39 +54,29 @@ else
     echo "WARNING: Socket proxy may not be ready yet"
 fi
 
-# Verify the proxy-validator gate using dockerode — the SAME client the backend
-# uses — so a protocol/TLS mismatch (e.g. auto-TLS on :2376) is caught here,
-# not only after a visitor fails to lease a session.
-echo "Testing proxy-validator gate (via dockerode)..."
+# Verify the backend can reach Docker through the socket-proxy using dockerode
+# (the same client the backend uses), so a connectivity/protocol issue is
+# caught here rather than only after a visitor fails to lease a session.
+echo "Testing backend -> socket-proxy (via dockerode)..."
 VAL_OUT=$(docker exec term-backend node -e '
 const Docker = require("dockerode");
-const d = new Docker({ protocol: "http", host: "proxy-validator", port: 2376 });
+const d = new Docker({ protocol: "http", host: "socket-proxy", port: 2375 });
 (async () => {
-  try { await d.ping(); console.log("validator-ping:ok"); }
-  catch (e) { console.log("validator-ping-err:" + e.message); }
-  try { await d.listContainers(); console.log("validator-read:ok"); }
-  catch (e) { console.log("validator-read-err:" + e.message); }
-  try {
-    // A privileged create MUST be rejected by the validator (403), never forwarded.
-    await d.createContainer({ Image: "evil:latest", HostConfig: { Privileged: true } });
-    console.log("validator-reject:NOT-REJECTED");
-  } catch (e) { console.log("validator-reject:" + (e.statusCode || e.reason || e.message)); }
+  try { await d.ping(); console.log("dock-ping:ok"); }
+  catch (e) { console.log("dock-ping-err:" + e.message); }
+  try { await d.listContainers(); console.log("dock-read:ok"); }
+  catch (e) { console.log("dock-read-err:" + e.message); }
 })();
 ')
-if echo "$VAL_OUT" | grep -q "validator-ping:ok" && echo "$VAL_OUT" | grep -q "validator-read:ok"; then
-    echo "  backend reaches Docker through the validator (ping+read): OK"
+if echo "$VAL_OUT" | grep -q "dock-ping:ok" && echo "$VAL_OUT" | grep -q "dock-read:ok"; then
+    echo "  backend reaches Docker through socket-proxy (ping+read): OK"
 else
-    echo "  WARNING: backend cannot reach Docker via proxy-validator! $VAL_OUT"
-fi
-if echo "$VAL_OUT" | grep -q "validator-reject:403"; then
-    echo "  validator REJECTS privileged create: enforced"
-else
-    echo "  WARNING: validator did NOT reject a privileged create! $VAL_OUT"
+    echo "  WARNING: backend cannot reach Docker! $VAL_OUT"
 fi
 
 # Check if all required services are running
 echo "Checking service health..."
-REQUIRED_SERVICES=("term-frontend" "term-backend" "term-nginx" "term-socket-proxy" "term-proxy-validator")
+REQUIRED_SERVICES=("term-frontend" "term-backend" "term-nginx" "term-socket-proxy")
 ALL_RUNNING=true
 
 for service in "${REQUIRED_SERVICES[@]}"; do

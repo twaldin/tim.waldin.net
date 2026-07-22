@@ -37,9 +37,12 @@ services:
       - no-new-privileges:true
     restart: unless-stopped
 
-  # Docker Socket Proxy (Tecnativa) — URL/method filtering only. It now lives on
-  # validator-upstream, NOT docker-net, so the backend cannot bypass the
-  # proxy-validator below by dialing :2375 directly.
+  # Docker Socket Proxy (Tecnativa) — URL/method filtering. The body-validating
+  # proxy-validator (backend/proxy-validator/) is intentionally NOT in the data
+  # path yet: its http-based forward cannot relay dockerode's hijacked `attach`
+  # stream, which hung every session lease. It stays in the codebase, tested at
+  # the unit level, to be re-introduced once it proxies attach at the raw-socket
+  # level. The lifecycle module still only ever requests the hardened spec.
   socket-proxy:
     image: tecnativa/docker-socket-proxy:latest
     container_name: term-socket-proxy
@@ -60,31 +63,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
-      - validator-upstream
-    restart: unless-stopped
-
-  # Proxy Validator — body-validating gate between the backend and the Docker
-  # API. Forwards GET/inspect and the lifecycle's real container mutations
-  # (start/stop/kill/remove/attach/resize), validates POST /containers/create
-  # against the frozen SandboxPolicy, and 403s everything else (privileged,
-  # host binds, host-net, pulls/builds). The security guarantee that a backend
-  # compromise can't create an arbitrary privileged container.
-  proxy-validator:
-    build:
-      context: .
-      dockerfile: backend/proxy-validator/Dockerfile
-    container_name: term-proxy-validator
-    environment:
-      - DOCKER_UPSTREAM_HOST=socket-proxy
-      - DOCKER_UPSTREAM_PORT=2375
-      - PORT=2376
-    expose:
-      - "2376"
-    depends_on:
-      - socket-proxy
-    networks:
       - docker-net
-      - validator-upstream
     restart: unless-stopped
 
   # Terminal backend
@@ -96,7 +75,7 @@ services:
     environment:
       - NODE_ENV=production
       - FRONTEND_URL=http://frontend:3000
-      - DOCKER_HOST=tcp://proxy-validator:2376
+      - DOCKER_HOST=tcp://socket-proxy:2375
       - ADMIN_EMAIL=timothy@waldin.net
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
     volumes:
@@ -105,7 +84,7 @@ services:
       - "3001"
     restart: unless-stopped
     depends_on:
-      - proxy-validator
+      - socket-proxy
     networks:
       - backend-net
       - docker-net
@@ -120,9 +99,6 @@ networks:
     driver: bridge
     internal: true
   docker-net:
-    driver: bridge
-    internal: true
-  validator-upstream:
     driver: bridge
     internal: true
 
