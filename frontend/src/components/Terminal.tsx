@@ -129,11 +129,14 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
           // Strip leading slashes then re-add exactly one, so //evil.com
           // becomes /evil.com (same-origin). Reject anything that still
           // looks like a URL scheme or protocol-relative path.
+          if (data.includes('\\')) return true;
           const clean = data.replace(/^\/+/, '');
           if (/^[a-zA-Z][a-zA-Z0-9+.-]*:|^\//.test(clean)) return true; // reject scheme: or //
           const path = '/' + clean;
           if (typeof window !== 'undefined') {
-            window.location.assign(path);
+            const u = new URL(path, window.location.origin);
+            if (u.origin !== window.location.origin) return true;
+            window.location.assign(u.pathname + u.search + u.hash);
           }
         } catch { /* malformed */ }
         return true;
