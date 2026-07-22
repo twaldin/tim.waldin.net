@@ -1,5 +1,5 @@
 # Build stage
-FROM node:18-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 
 # Copy package files (build context is repo root)
@@ -14,7 +14,7 @@ COPY container/blog/posts/ ./blog-posts/
 RUN pnpm run build
 
 # Production stage
-FROM node:18-alpine
+FROM node:24-alpine
 WORKDIR /app
 
 # Create non-root user

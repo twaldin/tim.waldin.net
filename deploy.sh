@@ -54,15 +54,39 @@ else
     echo "WARNING: Socket proxy may not be ready yet"
 fi
 
-# Verify containers endpoint works but networks/volumes are blocked
-echo "Testing socket proxy permissions..."
-if docker exec term-backend wget -q -O /dev/null http://socket-proxy:2375/containers/json 2>/dev/null; then
-    echo "  containers endpoint: allowed"
+# Verify the proxy-validator gate: the backend reaches Docker ONLY through it,
+# legit reads forward, and a privileged create is REJECTED (the H1 closer).
+echo "Testing proxy-validator gate..."
+VAL_OUT=$(docker exec term-backend node -e '
+(async () => {
+  try {
+    const ok = await fetch("http://proxy-validator:2376/containers/json");
+    console.log("validator-read-status:" + ok.status);
+  } catch (e) { console.log("validator-read-error:" + e.message); }
+  try {
+    const bad = await fetch("http://proxy-validator:2376/containers/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ Image: "evil:latest", HostConfig: { Privileged: true } })
+    });
+    console.log("validator-reject-status:" + bad.status);
+  } catch (e) { console.log("validator-reject-error:" + e.message); }
+})();
+')
+if echo "$VAL_OUT" | grep -q "validator-read-status:200"; then
+    echo "  validator forwards legit read (containers/json): OK"
+else
+    echo "  WARNING: backend could not read through proxy-validator: $VAL_OUT"
+fi
+if echo "$VAL_OUT" | grep -q "validator-reject-status:403"; then
+    echo "  validator REJECTS privileged create: enforced"
+else
+    echo "  WARNING: validator did NOT reject a privileged create! $VAL_OUT"
 fi
 
 # Check if all required services are running
 echo "Checking service health..."
-REQUIRED_SERVICES=("term-frontend" "term-backend" "term-nginx" "term-socket-proxy")
+REQUIRED_SERVICES=("term-frontend" "term-backend" "term-nginx" "term-socket-proxy" "term-proxy-validator")
 ALL_RUNNING=true
 
 for service in "${REQUIRED_SERVICES[@]}"; do

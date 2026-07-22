@@ -9,15 +9,26 @@ const PROJECT_ALIASES = new Set([
   'term-site', 'stm32-games', 'dotfiles', 'hone', 'harness', 'studyspot',
 ]);
 
-// Commands that must never be triggered from a URL, even with a clean char
-// set. The container is already sandboxed (non-root, no-net, cap-drop, ephemeral)
-// but a drive-by `/rm%20-rf%20~` is still annoying for the visitor's session.
-const BLOCKED_HEADS = new Set([
-  'rm', 'mv', 'cp', 'dd', 'sudo', 'su', 'chmod', 'chown',
-  'kill', 'pkill', 'killall', 'sh', 'bash', 'zsh', 'dash',
-  'eval', 'exec', 'source', 'mkfs', 'mount', 'umount',
-  'exit', 'logout', // would auto-type and immediately end the session
-]);
+const NAVIGATION_COMMANDS: Record<string, true> = {
+  welcome: true,
+  home: true,
+  projects: true,
+  blog: true,
+  help: true,
+  resume: true,
+  contact: true,
+  about: true,
+  gui: true,
+  flt: true,
+  agentelo: true,
+  hone: true,
+  harness: true,
+  'term-site': true,
+  'trade-up-bot': true,
+  studyspot: true,
+  'stm32-games': true,
+  dotfiles: true,
+};
 
 // Safe char set for a full command string (first word + args combined).
 // Blocks shell metachars: ; | & > < ` $ ( ) { } [ ] * ? ! ~ ^ " ' \
@@ -51,9 +62,9 @@ function pathToCommand(pathname: string): string | undefined {
   if (!/\s/.test(cmd) && cmd.includes('/')) {
     cmd = cmd.replace('/', ' ');
   }
-  const head = cmd.split(/\s+/)[0];
-  if (BLOCKED_HEADS.has(head)) return undefined;
-  return cmd;
+  if (NAVIGATION_COMMANDS[cmd]) return cmd;
+  if (/^blog [A-Za-z0-9._-]+$/.test(cmd)) return cmd;
+  return undefined;
 }
 
 export interface WebSocketManager {

@@ -40,105 +40,18 @@ const io = socketIo(server, {
 // Initialize session manager
 const sessionManager = new SessionManager();
 
-// Per-socket command buffer for audit logging (raw chars → full commands)
+// Per-socket command buffer for audit logging (raw chars → full commands).
 const cmdBufs = new Map();
 
-// Per-IP rate limiting for connections (connect attempts per window).
-const connectionTracker = new Map();
-const MAX_CONNECTIONS_PER_IP = 30;
-const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
-
-// Single-session-per-IP: one IP can hold ONE live session at a time. A new
-// connection from the same IP immediately closes the old session. This keeps
-// one user from hoarding multiple slots (background tabs, bot retries) and
-// means the 40-slot pool can serve 40 distinct users.
-const ipSessions = new Map(); // ip → socketId (current session)
-
-function checkRateLimit(ip) {
-  const now = Date.now();
-  if (!connectionTracker.has(ip)) {
-    connectionTracker.set(ip, []);
-  }
-  const timestamps = connectionTracker.get(ip).filter(t => now - t < RATE_LIMIT_WINDOW);
-  // Drop the key entirely when nothing is left in the window so the map can't
-  // accumulate a permanent empty-array entry per unique visitor IP.
-  if (timestamps.length === 0) {
-    connectionTracker.delete(ip);
-  } else {
-    connectionTracker.set(ip, timestamps);
-  }
-
-  if (timestamps.length >= MAX_CONNECTIONS_PER_IP) {
-    connectionTracker.set(ip, timestamps); // keep the full window for lockout
-    return false;
-  }
-  timestamps.push(now);
-  connectionTracker.set(ip, timestamps);
-  return true;
-}
-
-// Socket.IO connection handling
+// Socket.IO connection handling. All admission policy (rate limit, IP-singleton,
+// persistent restore, capacity, zombies) lives behind the SessionManager →
+// Admission seam; server.js is now just socket wiring + audit logging.
 io.on('connection', (socket) => {
   const clientIP = socket.handshake.headers['x-real-ip'] || socket.handshake.address;
   console.log(`Client connected: ${socket.id} from ${clientIP}`);
 
-  // Extract optional init command and persistent session ID from client handshake.
   const initCommand = typeof socket.handshake.auth?.initCommand === 'string'
-    ? socket.handshake.auth.initCommand
-    : undefined;
-  const sessionId = typeof socket.handshake.auth?.sessionId === 'string'
-    ? socket.handshake.auth.sessionId
-    : undefined;
-
-  // Rate limit check
-  if (!checkRateLimit(clientIP)) {
-    console.log(`Rate limit exceeded for ${clientIP}`);
-    socket.emit('error', 'Too many connections. Please wait a minute.');
-    socket.disconnect();
-    return;
-  }
-
-  // First priority: if the client brought a persistent session ID, restore
-  // that exact session (active or zombie) instead of creating/killing a new one.
-  let restoredByPersistentId = false;
-  if (sessionId) {
-    const restored = sessionManager.restoreByPersistentSessionId(sessionId, socket.id, socket, clientIP, initCommand);
-    if (restored) {
-      restoredByPersistentId = true;
-      socket.emit('session_status', { mode: 'resume', restoredType: restored.type });
-      if (restored.type === 'active' && restored.oldSocketId) {
-        const existingSocket = io.sockets.sockets.get(restored.oldSocketId);
-        if (existingSocket) {
-          try {
-            existingSocket.emit('output', '\r\n[session continued in a new tab]\r\n');
-            existingSocket.disconnect();
-          } catch { /* ignore */ }
-        }
-      }
-      ipSessions.set(clientIP, socket.id);
-      console.log(`Restored persistent session ${sessionId} for ${socket.id} (${restored.type})`);
-    }
-  }
-
-  // Single-session-per-IP: if this IP already has a live session and we didn't
-  // just restore by persistent ID, kick the old one so the new connection gets
-  // the slot. Prevents idle tabs from hoarding.
-  if (!restoredByPersistentId) {
-    const existingSid = ipSessions.get(clientIP);
-    if (existingSid && existingSid !== socket.id) {
-      console.log(`IP ${clientIP} already has session ${existingSid} — kicking to make room for ${socket.id}`);
-      const existingSocket = io.sockets.sockets.get(existingSid);
-      if (existingSocket) {
-        try {
-          existingSocket.emit('output', '\r\n[replaced by a new session from this ip]\r\n');
-          existingSocket.disconnect();
-        } catch { /* ignore */ }
-      }
-      try { sessionManager.destroySession(existingSid); } catch { /* ignore */ }
-      ipSessions.delete(clientIP);
-    }
-    ipSessions.set(clientIP, socket.id);
-  }
+    ? socket.handshake.auth.initCommand : undefined;
 
   logger.append({
     type: 'session_start',
@@ -150,74 +63,48 @@ io.on('connection', (socket) => {
   });
   cmdBufs.set(socket.id, '');
 
-  // Create new terminal session (if not already restored by persistent ID).
-  if (!restoredByPersistentId) {
-    socket.emit('session_status', { mode: 'cold' });
-    sessionManager.createSession(socket.id, socket, initCommand, clientIP, sessionId)
-      .then(() => {
-        console.log(`Session created for ${socket.id}${initCommand ? ' (initCommand=' + initCommand + ')' : ''}`);
-      })
-      .catch((error) => {
-        console.error(`Failed to create session for ${socket.id}:`, error);
-        socket.emit('error', 'Failed to create terminal session');
-        socket.disconnect();
-      });
-  }
+  // Lease or restore a session (async; errors surface to the socket internally).
+  sessionManager.handleConnect(socket);
 
-  // Handle terminal input with validation
   socket.on('input', (data) => {
-    if (typeof data !== 'string' || data.length > 1024) {
-      return;
-    }
-    // Buffer printable chars; emit completed command on Enter
-    let buf = cmdBufs.get(socket.id) || '';
-    for (const ch of data) {
-      if (ch === '\r' || ch === '\n') {
-        const cmd = buf.trim();
-        if (cmd) logger.append({ type: 'command', id: socket.id, cmd });
-        buf = '';
-      } else if (ch === '\x7f' || ch === '\x08') {
-        buf = buf.slice(0, -1);
-      } else if (ch >= ' ' && ch <= '~') {
-        buf += ch;
+    // Buffer printable chars; log completed commands on Enter.
+    if (typeof data === 'string') {
+      let buf = cmdBufs.get(socket.id) || '';
+      for (const ch of data) {
+        if (ch === '\r' || ch === '\n') {
+          const cmd = buf.trim();
+          if (cmd) logger.append({ type: 'command', id: socket.id, cmd });
+          buf = '';
+        } else if (ch === '\x7f' || ch === '\x08') {
+          buf = buf.slice(0, -1);
+        } else if (ch >= ' ' && ch <= '~') {
+          buf += ch;
+        }
       }
+      cmdBufs.set(socket.id, buf);
     }
-    cmdBufs.set(socket.id, buf);
-    sessionManager.sendInput(socket.id, data);
+    sessionManager.handleInput(socket.id, data);
   });
 
-  // Handle terminal resize with bounds checking
   socket.on('resize', ({ cols, rows }) => {
-    const safeCols = Math.min(Math.max(Math.floor(cols) || 80, 10), 500);
-    const safeRows = Math.min(Math.max(Math.floor(rows) || 24, 2), 200);
-    sessionManager.resizeTerminal(socket.id, safeCols, safeRows);
+    sessionManager.handleResize(socket.id, cols, rows);
   });
 
-  // Page visibility reports — passive like resize (never counts as input).
-  // Visible pages get a longer no-input window than hidden tabs / bots that
-  // never report at all.
   socket.on('visibility', (payload) => {
     if (typeof payload?.hidden !== 'boolean') return;
-    sessionManager.setVisibility(socket.id, payload.hidden);
+    sessionManager.handleVisibility(socket.id, payload.hidden);
   });
 
-  // Handle client disconnect
   socket.on('disconnect', (reason) => {
     console.log(`Client disconnected: ${socket.id}, reason: ${reason}`);
     logger.append({ type: 'session_end', id: socket.id, reason });
     cmdBufs.delete(socket.id);
-    // Clear the per-IP lock only if this is still the active session for that
-    // IP (don't clobber a newer session from the same IP that just came in).
-    if (ipSessions.get(clientIP) === socket.id) {
-      ipSessions.delete(clientIP);
-    }
-    sessionManager.zombifySession(socket.id);
+    sessionManager.handleDisconnect(socket.id);
   });
 
-  // Handle connection errors
   socket.on('error', (error) => {
     console.error(`Socket error for ${socket.id}:`, error);
-    sessionManager.destroySession(socket.id);
+    sessionManager.handleError(socket.id);
   });
 });
 
@@ -249,20 +136,6 @@ app.use('/admin', adminRouter);
 // Keep the pre-warm pool topped up — self-heals if idle pool streams drain it.
 sessionManager.startPoolMaintenance();
 
-// Periodic orphan cleanup every 60 seconds
-setInterval(() => {
-  sessionManager.cleanupOrphanedContainers();
-}, 60 * 1000);
-
-// Drop stale per-IP rate-limit entries so the map can't grow unbounded.
-setInterval(() => {
-  const now = Date.now();
-  for (const [ip, ts] of connectionTracker) {
-    if (!ts.length || now - ts[ts.length - 1] > RATE_LIMIT_WINDOW) {
-      connectionTracker.delete(ip);
-    }
-  }
-}, 5 * 60 * 1000);
 
 // Start server
 const PORT = process.env.PORT || 3001;

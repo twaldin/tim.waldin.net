@@ -1,6 +1,6 @@
 # Backend with Docker CLI only (no Docker daemon)
 
-FROM node:18-alpine
+FROM node:24-alpine
 
 # Install Docker CLI only
 RUN apk add --no-cache docker-cli
