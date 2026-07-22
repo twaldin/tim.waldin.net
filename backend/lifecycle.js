@@ -43,7 +43,10 @@ const ALT_SCREEN_SEQUENCE = /\x1b\[\?(?:1049|47)([hl])/g;
 class DockerodeAdapter {
   constructor() {
     const Docker = require('dockerode');
-    const dockerOptions = {};
+    // Force plain HTTP: docker-modem auto-negotiates TLS on the conventional
+    // Docker TLS port (2376), but the proxy-validator speaks plain HTTP. The
+    // default (no protocol) breaks the moment DOCKER_HOST points at :2376.
+    const dockerOptions = { protocol: 'http' };
 
     if (process.env.DOCKER_HOST) {
       const hostParts = process.env.DOCKER_HOST.replace('tcp://', '').split(':');

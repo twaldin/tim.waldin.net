@@ -54,31 +54,31 @@ else
     echo "WARNING: Socket proxy may not be ready yet"
 fi
 
-# Verify the proxy-validator gate: the backend reaches Docker ONLY through it,
-# legit reads forward, and a privileged create is REJECTED (the H1 closer).
-echo "Testing proxy-validator gate..."
+# Verify the proxy-validator gate using dockerode — the SAME client the backend
+# uses — so a protocol/TLS mismatch (e.g. auto-TLS on :2376) is caught here,
+# not only after a visitor fails to lease a session.
+echo "Testing proxy-validator gate (via dockerode)..."
 VAL_OUT=$(docker exec term-backend node -e '
+const Docker = require("dockerode");
+const d = new Docker({ protocol: "http", host: "proxy-validator", port: 2376 });
 (async () => {
+  try { await d.ping(); console.log("validator-ping:ok"); }
+  catch (e) { console.log("validator-ping-err:" + e.message); }
+  try { await d.listContainers(); console.log("validator-read:ok"); }
+  catch (e) { console.log("validator-read-err:" + e.message); }
   try {
-    const ok = await fetch("http://proxy-validator:2376/containers/json");
-    console.log("validator-read-status:" + ok.status);
-  } catch (e) { console.log("validator-read-error:" + e.message); }
-  try {
-    const bad = await fetch("http://proxy-validator:2376/containers/create", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ Image: "evil:latest", HostConfig: { Privileged: true } })
-    });
-    console.log("validator-reject-status:" + bad.status);
-  } catch (e) { console.log("validator-reject-error:" + e.message); }
+    // A privileged create MUST be rejected by the validator (403), never forwarded.
+    await d.createContainer({ Image: "evil:latest", HostConfig: { Privileged: true } });
+    console.log("validator-reject:NOT-REJECTED");
+  } catch (e) { console.log("validator-reject:" + (e.statusCode || e.reason || e.message)); }
 })();
 ')
-if echo "$VAL_OUT" | grep -q "validator-read-status:200"; then
-    echo "  validator forwards legit read (containers/json): OK"
+if echo "$VAL_OUT" | grep -q "validator-ping:ok" && echo "$VAL_OUT" | grep -q "validator-read:ok"; then
+    echo "  backend reaches Docker through the validator (ping+read): OK"
 else
-    echo "  WARNING: backend could not read through proxy-validator: $VAL_OUT"
+    echo "  WARNING: backend cannot reach Docker via proxy-validator! $VAL_OUT"
 fi
-if echo "$VAL_OUT" | grep -q "validator-reject-status:403"; then
+if echo "$VAL_OUT" | grep -q "validator-reject:403"; then
     echo "  validator REJECTS privileged create: enforced"
 else
     echo "  WARNING: validator did NOT reject a privileged create! $VAL_OUT"
