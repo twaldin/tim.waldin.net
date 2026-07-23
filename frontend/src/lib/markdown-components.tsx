@@ -1,28 +1,18 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Components } from 'react-markdown';
-import { terminalTheme } from '@/config/terminal-theme';
 
-export const BG          = terminalTheme.background;
-export const FG          = terminalTheme.foreground;
-export const DIM         = terminalTheme.brightBlack;
-export const BRAND       = terminalTheme.primary;          // primary accent
-export const PINK        = terminalTheme.red;            // hot pink in Hardcore
-export const BLUE        = terminalTheme.blue;
-export const BRIGHT_YELLOW = terminalTheme.brightYellow;
+export const BG            = 'var(--color-bg)';
+export const FG            = 'var(--color-fg)';
+export const DIM           = 'var(--color-dim)';
+export const BRAND         = 'var(--color-primary)';
+export const PINK          = 'var(--color-red)';
+export const BLUE          = 'var(--color-blue)';
+export const BRIGHT_YELLOW = 'var(--color-bright-yellow)';
 export const BRIGHT_CYAN   = BLUE;
-export const CODE_BG     = terminalTheme.black;
-export const CODE_BORDER = terminalTheme.brightBlack;
-
-// Lighter variant of the primary accent — used for navigation links.
-function lightenHex(hex: string, amount: number): string {
-  const n = parseInt(hex.replace('#', ''), 16);
-  const r = Math.min(255, (n >> 16) + amount);
-  const g = Math.min(255, ((n >> 8) & 0xff) + amount);
-  const b = Math.min(255, (n & 0xff) + amount);
-  return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
-}
-export const LINK = lightenHex(BRAND, 50);
+export const CODE_BG       = 'var(--color-black)';
+export const CODE_BORDER   = 'var(--color-border)';
+export const LINK          = 'var(--color-green)';
 
 export const markdownComponents: Components = {
   h1: ({ children }) => (
@@ -124,7 +114,7 @@ export const markdownComponents: Components = {
   td: ({ children }) => (
     <td style={{ color: FG, padding: '8px 12px', borderBottom: `1px solid ${CODE_BORDER}` }}>{children}</td>
   ),
-  strong: ({ children }) => <strong style={{ color: terminalTheme.brightWhite, fontWeight: 'bold' }}>{children}</strong>,
+  strong: ({ children }) => <strong style={{ color: 'var(--color-bright-white)', fontWeight: 'bold' }}>{children}</strong>,
   em: ({ children }) => <em style={{ color: DIM, fontStyle: 'italic' }}>{children}</em>,
 };
 

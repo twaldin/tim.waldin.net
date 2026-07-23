@@ -7,22 +7,24 @@ import {
   BG,
   FG,
   DIM,
-  BRAND,
   LINK,
   CODE_BORDER,
 } from '@/lib/markdown-components';
-import { terminalConfig, terminalTheme } from '@/config/terminal-theme';
+import { terminalConfig } from '@/config/terminal-theme';
+import type { ThemeEntry } from '@/config/themes';
+import { getActiveTheme, subscribe } from '@/lib/theme-manager';
 import { isSafeExternalUrl } from '@/lib/safe-url';
 
-function hexToAnsiRgb(hex: string): string {
-  const n = parseInt(hex.replace('#', ''), 16);
-  return `${(n >> 16) & 0xff};${(n >> 8) & 0xff};${n & 0xff}`;
+
+function toXtermTheme(theme: ThemeEntry): Partial<ThemeEntry> {
+  const xtermTheme: Partial<ThemeEntry> = { ...theme };
+  delete xtermTheme.mode;
+  return xtermTheme;
 }
 
 const ANSI_PROMPT =
-  `\x1b[38;2;${hexToAnsiRgb(terminalTheme.primary)}mtim.waldin.net ` +
-  `\x1b[38;2;${hexToAnsiRgb(terminalTheme.foreground)}m~ \r\n` +
-  `\x1b[38;2;${hexToAnsiRgb(terminalTheme.primary)}m❯ \x1b[0m`;
+  '\x1b[32mtim.waldin.net \x1b[39m~ \r\n' +
+  '\x1b[32m❯ \x1b[0m';
 
 const CHAR_WIDTH_RATIO = 0.6;
 const MOBILE_BREAKPOINT = 768;
@@ -80,8 +82,10 @@ export default function BlogUnifiedPage({ slug, title, date, body }: Props) {
       const usableWidth = Math.max(200, parentWidth - 28 - 24);
       const cols = Math.max(40, Math.floor(usableWidth / (fontSize * CHAR_WIDTH_RATIO)));
 
+      const activeXtermTheme = toXtermTheme(getActiveTheme());
       const xterm = new Terminal({
         ...terminalConfig,
+        theme: activeXtermTheme,
         cols,
         rows: 3,
         fontSize,
@@ -97,6 +101,9 @@ export default function BlogUnifiedPage({ slug, title, date, body }: Props) {
       xterm.options.linkHandler = { activate: openLink, allowNonHttpProtocols: true };
 
       xterm.open(hostRef.current);
+      const unsubscribeTheme = subscribe((entry) => {
+        xterm.options.theme = toXtermTheme(entry);
+      });
       xterm.write(ANSI_PROMPT);
 
       const dataDisposable = xterm.onData((data) => {
@@ -128,6 +135,7 @@ export default function BlogUnifiedPage({ slug, title, date, body }: Props) {
       });
 
       cleanups.push(() => dataDisposable.dispose());
+      cleanups.push(unsubscribeTheme);
       cleanups.push(() => xterm.dispose());
     });
 

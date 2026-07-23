@@ -12,13 +12,13 @@ require_vps_reachable
 
 # ---- Sync terminal theme from current Ghostty config -----------------------
 
-log_info "syncing terminal theme from ghostty config..."
-"$(dirname "$0")/generate-theme.sh"
-theme_ts="${REPO_ROOT}/frontend/src/config/terminal-theme.ts"
-if ! git -C "${REPO_ROOT}" diff --quiet "${theme_ts}"; then
-  log_info "theme changed — committing updated terminal-theme.ts..."
-  git -C "${REPO_ROOT}" add "${theme_ts}"
-  git -C "${REPO_ROOT}" commit -m "chore: sync terminal theme"
+log_info "regenerating theme library from ghostty themes..."
+"$(dirname "$0")/generate-themes-lib.py"
+theme_files=("${REPO_ROOT}/frontend/src/config/themes.ts" "${REPO_ROOT}/backend/theme.js")
+if ! git -C "${REPO_ROOT}" diff --quiet "${theme_files[@]}"; then
+  log_info "theme library changed — committing..."
+  git -C "${REPO_ROOT}" add "${theme_files[@]}"
+  git -C "${REPO_ROOT}" commit -m "chore: sync theme library"
 fi
 
 # ---- Pre-flight: warn if local blog posts lack captured snapshots ----------

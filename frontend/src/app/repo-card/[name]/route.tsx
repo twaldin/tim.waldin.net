@@ -2,14 +2,12 @@
 // the same terminal-window style as the root opengraph-image, one per GitHub
 // repo. The per-repo data (baked figlet lines, tagline, accent) lives in
 // ../cards.json — add a repo with scripts/add-repo-card.sh, which renders the
-// figlet and computes the fontSize for you. Accent is a terminalTheme color
-// name: 'primary' green is the default; use a project color only when it has
-// a strong identity (CS2 orange for trade-up-bot, leaderboard gold for
-// agentelo, the site scripts' own red/cyan picks for stm32-games/resume).
+// figlet and computes the fontSize for you. Accent is a generated theme color
+// name: green is the default; use a project color only for strong identities.
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { ImageResponse } from 'next/og';
-import { terminalTheme } from '@/config/terminal-theme';
+import { DEFAULT_DARK_THEME, themes } from '@/config/themes';
 import cardsJson from '../cards.json';
 
 type Card = {
@@ -22,7 +20,11 @@ type Card = {
 };
 
 const CARDS: Record<string, Card> = cardsJson;
-const themeColors: Record<string, string> = terminalTheme;
+const defaultTheme = themes[DEFAULT_DARK_THEME];
+const themeColors: Record<string, string> = {
+  ...defaultTheme,
+  primary: defaultTheme.green,
+};
 
 export const dynamic = 'force-static';
 
@@ -34,19 +36,19 @@ export async function GET(_req: Request, ctx: { params: Promise<{ name: string }
   const { name } = await ctx.params;
   const card = CARDS[name];
   if (!card) return new Response('not found', { status: 404 });
-  const accent = themeColors[card.accent] ?? terminalTheme.primary;
+  const accent = themeColors[card.accent] ?? defaultTheme.green;
   const fontData = readFileSync(
     join(process.cwd(), 'public/fonts/JetBrainsMonoNerdFontMono-Regular.ttf'),
   );
   return new ImageResponse(
     (
-      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: terminalTheme.background, fontFamily: 'JetBrainsMono Nerd Font Mono' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', width: 1160, border: `1px solid ${terminalTheme.brightBlack}`, borderRadius: 12, backgroundColor: terminalTheme.background }}>
-          <div style={{ display: 'flex', alignItems: 'center', padding: '14px 20px', borderBottom: `1px solid ${terminalTheme.brightBlack}` }}>
-            <div style={{ display: 'flex', width: 14, height: 14, borderRadius: 7, backgroundColor: terminalTheme.red, marginRight: 10 }} />
-            <div style={{ display: 'flex', width: 14, height: 14, borderRadius: 7, backgroundColor: terminalTheme.yellow, marginRight: 10 }} />
-            <div style={{ display: 'flex', width: 14, height: 14, borderRadius: 7, backgroundColor: terminalTheme.green, marginRight: 16 }} />
-            <div style={{ display: 'flex', color: terminalTheme.brightBlack, fontSize: 18 }}>{card.bar}</div>
+      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: defaultTheme.background, fontFamily: 'JetBrainsMono Nerd Font Mono' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', width: 1160, border: `1px solid ${defaultTheme.brightBlack}`, borderRadius: 12, backgroundColor: defaultTheme.background }}>
+          <div style={{ display: 'flex', alignItems: 'center', padding: '14px 20px', borderBottom: `1px solid ${defaultTheme.brightBlack}` }}>
+            <div style={{ display: 'flex', width: 14, height: 14, borderRadius: 7, backgroundColor: defaultTheme.red, marginRight: 10 }} />
+            <div style={{ display: 'flex', width: 14, height: 14, borderRadius: 7, backgroundColor: defaultTheme.yellow, marginRight: 10 }} />
+            <div style={{ display: 'flex', width: 14, height: 14, borderRadius: 7, backgroundColor: defaultTheme.green, marginRight: 16 }} />
+            <div style={{ display: 'flex', color: defaultTheme.brightBlack, fontSize: 18 }}>{card.bar}</div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', padding: '36px 40px 40px' }}>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -56,8 +58,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ name: string }
                 </div>
               ))}
             </div>
-            <div style={{ display: 'flex', color: terminalTheme.foreground, fontSize: 26, marginTop: 36 }}>{card.tagline}</div>
-            <div style={{ display: 'flex', color: terminalTheme.brightBlack, fontSize: 22, marginTop: 14 }}>{card.url}</div>
+            <div style={{ display: 'flex', color: defaultTheme.foreground, fontSize: 26, marginTop: 36 }}>{card.tagline}</div>
+            <div style={{ display: 'flex', color: defaultTheme.brightBlack, fontSize: 22, marginTop: 14 }}>{card.url}</div>
           </div>
         </div>
       </div>

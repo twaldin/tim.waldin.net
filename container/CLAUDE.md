@@ -11,8 +11,16 @@ container/
 ├── DOS_Rebel.flf           # Custom figlet font (copied to /usr/share/figlet/)
 ├── Univers.flf
 ├── blog/posts/             # Markdown blog posts (copied to /home/portfolio/blog/)
+└── fonts/                  # Curated legible figlet font pool (24 .flf, copied to /usr/share/figlet/custom/)
 └── scripts/                # Portfolio shell scripts (copied to /home/portfolio/scripts/)
     ├── shared-functions.sh # colors, typewriter, ascii_typewriter, create_box, emit_url
+    ├── boot.sh             # Session intro: random animation + random width-appropriate font,
+    │                       theme flicker, then welcome (initCommand for `/`)
+    ├── theme.sh            # Visitor theme picker (fzf live preview, OSC 9995/9996)
+    ├── themes.txt          # All 463 theme names (must match frontend themes.ts keys)
+    ├── fonts.txt           # Font pool manifest: `Display Name|width|height|flf` — boot picks by width class
+    ├── animations/         # Intro animations (braille-fire, starfield-warp, braille-plasma,
+    │                       logo-decode, font-cycle) — one picked randomly per boot
     ├── welcome.sh          # Home page (figlet "twaldin" + portfolio menu box)
     ├── auto-welcome.sh
     ├── projects.sh         # List of projects with descriptions
@@ -45,6 +53,10 @@ The Dockerfile builds a custom `.zshrc` that:
 3. Loads `shared-functions.sh` for `emit_url` (the OSC 9999 emitter).
 4. Defines a `preexec` hook that re-emits an OSC 9999 URL before every typed command so the browser URL tracks whatever the user typed. Same `SAFE_CMD_RE` and blocked-heads list as the frontend's `pathToCommand` (`websocket.ts`) — keep the two in sync.
 5. Initialises Oh My Posh with `pure-modified.omp.json`.
+
+## Boot intro (animations)
+
+`boot` is the initCommand for `/`. boot.sh picks a random animation AND a random font from the largest width class that fits the viewport (compact ≤46 cols for phones, medium, large), renders `twaldin` to `/tmp/boot-banner.txt`, plays the animation, then `exec`s welcome.sh with `WELCOME_SKIP_BANNER=1` (welcome prints below the standing banner instead of re-clearing). Animation end-contract: no `\033[2J` anywhere, final banner pinned to the top rows, cursor parked exactly one row below it — so scrollback reads prompt → banner → welcome. While a non-fire animation plays, boot runs a background loop emitting `OSC 9996 next` every 450ms (frontend cycles paired themes with near-black/near-white bgs); fire is excluded because its 256-color gradient needs a stable palette. Animations that measure text width need `LC_ALL=C.UTF-8` or `wc -L` counts bytes for block glyphs. On a resume/reattach the backend substitutes `welcome` for `boot` so the animation doesn't replay.
 
 ## URL emission protocol
 
