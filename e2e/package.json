@@ -1,0 +1,12 @@
+{
+  "name": "term-site-e2e",
+  "private": true,
+  "description": "Browser e2e + deploy gate for tim.waldin.net",
+  "scripts": {
+    "test": "playwright test",
+    "test:prod": "BASE_URL=https://tim.waldin.net playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}
