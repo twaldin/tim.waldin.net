@@ -1,11 +1,8 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { createWebSocketManager, WebSocketManager } from '@/lib/websocket';
-import { terminalTheme } from '@/config/terminal-theme';
-import AsciiContainerLoader from '@/components/AsciiContainerLoader';
-import type { LoaderMode } from '@/lib/ascii-loader';
 
 // xterm references browser globals (`self`) at module level — skip SSR.
 const Terminal = dynamic(() => import('@/components/Terminal'), { ssr: false });
@@ -13,9 +10,6 @@ const Terminal = dynamic(() => import('@/components/Terminal'), { ssr: false });
 export default function Home() {
   const wsManagerRef = useRef<WebSocketManager | null>(null);
   const terminalRef = useRef<{ writeToTerminal: (data: string) => void; clearTerminal: () => void; fitTerminal: () => void } | null>(null);
-  const [showSkeleton, setShowSkeleton] = useState(true);
-  const [containerReady, setContainerReady] = useState(false);
-  const [loaderMode, setLoaderMode] = useState<LoaderMode | null>(null);
   const firstOutputSeenRef = useRef(false);
   const firstPromptSeenRef = useRef(false);
   const welcomeSeenRef = useRef(false);
@@ -49,13 +43,6 @@ export default function Home() {
       mark('term:socket-connected');
     });
 
-    wsManager.onSessionStatus((status) => {
-      if (status.mode === 'resume') {
-        setLoaderMode('resume');
-      } else {
-        setLoaderMode('cold');
-      }
-    });
 
     wsManager.onDisconnect(() => {});
 
@@ -106,7 +93,6 @@ export default function Home() {
         mark('term:ready-for-input');
       }
 
-      setContainerReady(true);
       if (terminalRef.current) {
         terminalRef.current.writeToTerminal(data);
       }
@@ -119,12 +105,6 @@ export default function Home() {
     };
   }, []);
 
-  // Auto-dismiss skeleton after 10s so it never permanently blocks the
-  // terminal — if the WS is rate-limited or slow, xterm still shows.
-  useEffect(() => {
-    const t = setTimeout(() => setShowSkeleton(false), 10000);
-    return () => clearTimeout(t);
-  }, []);
 
 
   const handleTerminalData = useCallback((data: string) => {
@@ -135,27 +115,18 @@ export default function Home() {
     wsManagerRef.current?.resize(cols, rows);
   }, []);
 
-  const handleLoaderFinished = useCallback(() => {
-    setShowSkeleton(false);
-  }, []);
 
   return (
-    <div className="terminal-page w-full flex-1 bg-black" style={{ minHeight: 0, position: 'relative', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-      {showSkeleton && loaderMode && (
-        <div style={{
-          position: 'absolute', inset: 0, zIndex: 10,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: terminalTheme.background,
-          fontFamily: 'JetBrains Mono, monospace',
-          pointerEvents: 'none',
-        }}>
-          <AsciiContainerLoader
-            mode={loaderMode}
-            ready={containerReady}
-            onFinished={handleLoaderFinished}
-          />
-        </div>
-      )}
+    <div
+      className="terminal-page w-full flex-1"
+      style={{
+        minHeight: 0,
+        position: 'relative',
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch',
+        background: 'var(--color-bg)',
+      }}
+    >
       <Terminal
         ref={terminalRef}
         onData={handleTerminalData}

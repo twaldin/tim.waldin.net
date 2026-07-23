@@ -49,6 +49,8 @@ COPY scripts/ /home/portfolio/scripts/
 # Copy blog posts (read by /home/portfolio/scripts/blog.sh)
 COPY blog/ /home/portfolio/blog/
 COPY DOS_Rebel.flf /usr/share/figlet/DOS_Rebel.flf
+# Curated legible font pool for the boot banner (see scripts/fonts.txt).
+COPY fonts/ /usr/share/figlet/custom/
 
 # Install mdcat (primary markdown renderer). mdcat emits OSC 8 hyperlinks so
 # xterm.js in the browser renders clickable link TEXT without printing the raw
@@ -196,6 +198,8 @@ RUN cp /home/portfolio/.dotfiles/zsh/zshrc /home/portfolio/.zshrc && \
     echo "alias dotfiles='cd ~/.dotfiles && /home/portfolio/scripts/dotfiles.sh'" >> /home/portfolio/.zshrc && \
     echo "alias home='cd ~ && /home/portfolio/scripts/welcome.sh'" >> /home/portfolio/.zshrc && \
     echo "alias welcome='cd ~ && /home/portfolio/scripts/welcome.sh'" >> /home/portfolio/.zshrc && \
+    echo "alias boot='cd ~ && /home/portfolio/scripts/boot.sh'" >> /home/portfolio/.zshrc && \
+    echo "alias theme='/home/portfolio/scripts/theme.sh'" >> /home/portfolio/.zshrc && \
     echo "alias contact='cd ~ && /home/portfolio/scripts/contact.sh'" >> /home/portfolio/.zshrc && \
     echo "alias about='cd ~ && /home/portfolio/scripts/about.sh'" >> /home/portfolio/.zshrc && \
     echo "alias help='/home/portfolio/scripts/help.sh'" >> /home/portfolio/.zshrc && \
@@ -288,6 +292,8 @@ RUN echo 'export PATH="/home/portfolio/scripts:$PATH"' >> /home/portfolio/.bashr
     echo "alias dotfiles='cd ~/.dotfiles && /home/portfolio/scripts/dotfiles.sh'" >> /home/portfolio/.bashrc && \
     echo "alias home='cd ~ && /home/portfolio/scripts/welcome.sh'" >> /home/portfolio/.bashrc && \
     echo "alias welcome='cd ~ && /home/portfolio/scripts/welcome.sh'" >> /home/portfolio/.bashrc && \
+    echo "alias boot='cd ~ && /home/portfolio/scripts/boot.sh'" >> /home/portfolio/.bashrc && \
+    echo "alias theme='/home/portfolio/scripts/theme.sh'" >> /home/portfolio/.bashrc && \
     echo "alias contact='cd ~ && /home/portfolio/scripts/contact.sh'" >> /home/portfolio/.bashrc && \
     echo "alias about='cd ~ && /home/portfolio/scripts/about.sh'" >> /home/portfolio/.bashrc && \
     echo "alias help='/home/portfolio/scripts/help.sh'" >> /home/portfolio/.bashrc && \

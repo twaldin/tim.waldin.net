@@ -109,6 +109,7 @@ class SessionManager {
     }
 
     state.lease = result.lease;
+    state.mode = result.mode;
     socket.emit('session_status', { mode: result.mode });
     console.log(`Session ${socket.id} ${result.mode} (lease ${state.lease.leaseId})`);
 
@@ -221,7 +222,11 @@ class SessionManager {
     if (state.initCommand === '') { state.initCommandRun = true; return; }
 
     state.initCommandRun = true;
-    const cmd = state.initCommand || 'welcome';
+    let cmd = state.initCommand || 'welcome';
+    // 'boot' (intro animation + welcome) is a cold-start-only experience —
+    // on a resume/reattach the animation must not replay every refresh, so
+    // the repaint falls back to plain welcome.
+    if (state.mode === 'resume' && cmd === 'boot') cmd = 'welcome';
     setTimeout(() => this._autoType(socketId, cmd), 20);
   }
 

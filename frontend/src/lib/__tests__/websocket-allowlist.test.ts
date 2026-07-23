@@ -46,6 +46,11 @@ describe('URL command allowlist', () => {
     vi.unstubAllGlobals();
   });
 
+  it('boots the terminal from the root path', () => {
+    connectFrom('/');
+    expectInitCommand('boot');
+  });
+
   it('allows a navigation command', () => {
     connectFrom('/about');
     expectInitCommand('about');

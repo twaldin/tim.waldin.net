@@ -1,0 +1,24 @@
+Calvin S|19|3|Calvin_S.flf
+small|31|4|small.flf
+big|35|6|big.flf
+slant|36|5|slant.flf
+terminus|41|5|terminus.flf
+kompaktblk|41|3|kompaktblk.flf
+banner|42|7|banner.flf
+chunky|42|4|chunky.flf
+graffiti|47|6|graffiti.flf
+nancyj-fancy|50|6|nancyj-fancy.flf
+Soft|50|6|Soft.flf
+3d|52|8|3d.flf
+4Max|53|4|4Max.flf
+ANSI Shadow|56|6|ANSI_Shadow.flf
+larry3d|58|7|larry3d.flf
+basic|64|6|basic.flf
+univers|67|9|univers.flf
+roman|69|7|roman.flf
+DOS_Rebel|69|8|DOS_Rebel.flf
+Delta Corps Priest 1|72|9|Delta_Corps_Priest_1.flf
+starwars|75|6|starwars.flf
+3D-ASCII|76|7|3D-ASCII.flf
+Merlin1|80|7|Merlin1.flf
+Electronic|90|11|Electronic.flf

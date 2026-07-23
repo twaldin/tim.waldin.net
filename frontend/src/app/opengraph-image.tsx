@@ -1,11 +1,13 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { ImageResponse } from 'next/og';
-import { terminalTheme } from '@/config/terminal-theme';
+import { DEFAULT_DARK_THEME, themes } from '@/config/themes';
 
 export const alt = 'twaldin — interactive terminal portfolio';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
+const defaultTheme = themes[DEFAULT_DARK_THEME];
+
 
 // figlet -f DOS_Rebel "twaldin" — the same banner the container's welcome
 // script renders, baked in so the OG image doesn't need figlet at build time.
@@ -34,7 +36,7 @@ export default function OpenGraphImage() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: terminalTheme.background,
+          backgroundColor: defaultTheme.background,
           fontFamily: 'JetBrainsMono Nerd Font Mono',
         }}
       >
@@ -43,9 +45,9 @@ export default function OpenGraphImage() {
             display: 'flex',
             flexDirection: 'column',
             width: 1080,
-            border: `1px solid ${terminalTheme.brightBlack}`,
+            border: `1px solid ${defaultTheme.brightBlack}`,
             borderRadius: 12,
-            backgroundColor: terminalTheme.background,
+            backgroundColor: defaultTheme.background,
           }}
         >
           <div
@@ -53,13 +55,13 @@ export default function OpenGraphImage() {
               display: 'flex',
               alignItems: 'center',
               padding: '14px 20px',
-              borderBottom: `1px solid ${terminalTheme.brightBlack}`,
+              borderBottom: `1px solid ${defaultTheme.brightBlack}`,
             }}
           >
-            <div style={{ display: 'flex', width: 14, height: 14, borderRadius: 7, backgroundColor: terminalTheme.red, marginRight: 10 }} />
-            <div style={{ display: 'flex', width: 14, height: 14, borderRadius: 7, backgroundColor: terminalTheme.yellow, marginRight: 10 }} />
-            <div style={{ display: 'flex', width: 14, height: 14, borderRadius: 7, backgroundColor: terminalTheme.green, marginRight: 16 }} />
-            <div style={{ display: 'flex', color: terminalTheme.brightBlack, fontSize: 18 }}>
+            <div style={{ display: 'flex', width: 14, height: 14, borderRadius: 7, backgroundColor: defaultTheme.red, marginRight: 10 }} />
+            <div style={{ display: 'flex', width: 14, height: 14, borderRadius: 7, backgroundColor: defaultTheme.yellow, marginRight: 10 }} />
+            <div style={{ display: 'flex', width: 14, height: 14, borderRadius: 7, backgroundColor: defaultTheme.green, marginRight: 16 }} />
+            <div style={{ display: 'flex', color: defaultTheme.brightBlack, fontSize: 18 }}>
               tim.waldin.net — zsh
             </div>
           </div>
@@ -71,7 +73,7 @@ export default function OpenGraphImage() {
                   style={{
                     display: 'flex',
                     whiteSpace: 'pre',
-                    color: terminalTheme.primary,
+                    color: defaultTheme.green,
                     fontSize: 24,
                     lineHeight: 1.15,
                   }}
@@ -83,7 +85,7 @@ export default function OpenGraphImage() {
             <div
               style={{
                 display: 'flex',
-                color: terminalTheme.foreground,
+                color: defaultTheme.foreground,
                 fontSize: 26,
                 marginTop: 36,
               }}
@@ -93,7 +95,7 @@ export default function OpenGraphImage() {
             <div
               style={{
                 display: 'flex',
-                color: terminalTheme.brightBlack,
+                color: defaultTheme.brightBlack,
                 fontSize: 22,
                 marginTop: 14,
               }}

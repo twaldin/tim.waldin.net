@@ -11,6 +11,19 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { terminalConfig } from "../config/terminal-theme";
+import type { ThemeEntry } from "../config/themes";
+import {
+  applyNextFlickerTheme,
+  applySaved,
+  applyTheme,
+  getActiveTheme,
+  resetFlickerCycle,
+  resetThemeChoices,
+  resolvedMode,
+  setAndPersistTheme,
+  setMode,
+  subscribe,
+} from "../lib/theme-manager";
 import {
   getPromptVisibleScrollTarget,
   getScrollDeltaToKeepElementVisible,
@@ -33,7 +46,13 @@ const PROMPT_BROWSER_TOP_MARGIN_PX = 48;
 // FitAddon so box widths, figlet output, etc. scale naturally — narrow
 // screens get compact columns; ultrawide monitors get a much bigger,
 // readable font instead of wasting real estate on 200+ cols.
-function calculateFontSize(_container: HTMLElement): number {
+function toXtermTheme(theme: ThemeEntry): Partial<ThemeEntry> {
+  const xtermTheme: Partial<ThemeEntry> = { ...theme };
+  delete xtermTheme.mode;
+  return xtermTheme;
+}
+
+function calculateFontSize(): number {
   const viewportWidth = window.innerWidth;
   if (viewportWidth < MOBILE_BREAKPOINT) {
     // Derive target cols from actual usable width so we never exceed what
@@ -83,8 +102,13 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
       // Nerd Font finishes loading (preload in layout.tsx triggers the swap).
       if (!terminalRef.current) return;
 
-      const dynamicFontSize = calculateFontSize(terminalRef.current);
-      const dynamicConfig = { ...terminalConfig, fontSize: dynamicFontSize };
+      const dynamicFontSize = calculateFontSize();
+      const activeXtermTheme = toXtermTheme(getActiveTheme());
+      const dynamicConfig = {
+        ...terminalConfig,
+        fontSize: dynamicFontSize,
+        theme: activeXtermTheme,
+      };
 
       const xterm = new XTermTerminal(dynamicConfig);
       const fitAddon = new FitAddon();
@@ -141,6 +165,31 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
         } catch { /* malformed */ }
         return true;
       });
+      const oscEphemeralThemeDisposable = xterm.parser.registerOscHandler(9996, (data) => {
+        const arg = data.trim();
+        if (arg === "") {
+          resetFlickerCycle();
+          applySaved();
+        } else if (arg === "next") {
+          applyNextFlickerTheme();
+        } else {
+          applyTheme(arg);
+        }
+        return true;
+      });
+
+      const oscPersistentThemeDisposable = xterm.parser.registerOscHandler(9995, (data) => {
+        const arg = data.trim();
+        if (arg === "dark" || arg === "light") setMode(arg);
+        else if (arg === "reset") resetThemeChoices();
+        else if (arg) setAndPersistTheme(arg, resolvedMode());
+        return true;
+      });
+
+      const unsubscribeTheme = subscribe((entry) => {
+        xterm.options.theme = toXtermTheme(entry);
+      });
+
 
       // Flush buffered output that arrived before xterm was ready
       if (outputBufferRef.current.length > 0) {
@@ -328,7 +377,7 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
         clearTimeout(resizeTimeout);
         resizeTimeout = setTimeout(() => {
           if (terminalRef.current && xterm && fitAddon) {
-            const newFontSize = calculateFontSize(terminalRef.current);
+            const newFontSize = calculateFontSize();
             const currentFontSize =
               xterm.options.fontSize || dynamicConfig.fontSize;
             if (Math.abs(currentFontSize - newFontSize) > 1) {
@@ -375,6 +424,9 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
         () => oscUrlDisposable.dispose(),
         () => oscScrollTopDisposable.dispose(),
         () => oscNavigateDisposable.dispose(),
+        () => oscEphemeralThemeDisposable.dispose(),
+        () => oscPersistentThemeDisposable.dispose(),
+        unsubscribeTheme,
         () => xterm.dispose(),
       ];
 
@@ -442,7 +494,7 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
           // content area, so xterm's grid honors the reduced height.
           padding: "6px 14px",
           boxSizing: "border-box",
-          backgroundColor: terminalConfig.theme.background,
+          backgroundColor: "var(--color-bg)",
           position: "relative",
         }}
       >
@@ -455,7 +507,7 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
             margin: 0,
             padding: 0,
             boxSizing: "border-box",
-            backgroundColor: terminalConfig.theme.background,
+            backgroundColor: "var(--color-bg)",
           }}
         />
       </div>

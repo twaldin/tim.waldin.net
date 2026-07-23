@@ -36,7 +36,7 @@ const SAFE_CMD_RE = /^[A-Za-z0-9 ._/+=:,@-]+$/;
 
 function pathToCommand(pathname: string): string | undefined {
   let clean = pathname.replace(/^\/+|\/+$/g, '');
-  if (!clean) return 'welcome'; // '/' → always run welcome (also ensures restore reruns it)
+  if (!clean) return 'boot'; // '/' → play the intro, then run welcome
   // /t/<command> prefix forces live terminal (used by static blog pages)
   if (clean.startsWith('t/')) clean = clean.slice(2);
 
