@@ -84,6 +84,12 @@ class Admission {
         if (persistentLease.ip !== ip) {
           return { mode: 'denied', reason: 'ip-mismatch' };
         }
+        // Re-bind to THIS connection's output/close sinks. Without this, a
+        // refresh/reattach rebinds the live container stream to the PREVIOUS
+        // (now-dead) socket, so the new terminal gets session_status but no
+        // output — stuck in the "reattaching" view forever.
+        persistentLease.onOutput = onOutput;
+        persistentLease.onClose = onClose;
         return this._restore(persistentLease);
       }
     }

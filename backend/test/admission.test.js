@@ -177,6 +177,28 @@ test('same-IP zombie restore cancels grace destruction and rebinds the handle', 
   assert.deepEqual(lifecycle.destroyCalls, []);
 });
 
+test('restore rebinds the stream to the NEW connection sinks (regression: stale-sink reattach bug)', async () => {
+  const lifecycle = new FakeLifecycle();
+  const clock = makeFakeClock();
+  const admission = new Admission({ lifecycle, clock });
+  let aCalls = 0;
+  let bCalls = 0;
+  const onOutputA = () => { aCalls += 1; };
+  const onOutputB = () => { bCalls += 1; };
+
+  const acquired = await admission.tryAcquire('203.0.113.7', { persistentId: 'pid', onOutput: onOutputA, onClose: () => {} });
+  admission.zombify(acquired.lease.leaseId);
+
+  const restored = await admission.tryAcquire('203.0.113.7', { persistentId: 'pid', onOutput: onOutputB, onClose: () => {} });
+  assert.equal(restored.mode, 'resume');
+
+  const rebind = lifecycle.rebindCalls[lifecycle.rebindCalls.length - 1];
+  assert.equal(rebind.callbacks.onOutput, onOutputB, 'rebind must use the NEW socket output sink');
+  rebind.callbacks.onOutput('x');
+  assert.equal(bCalls, 1, 'output must reach the new sink');
+  assert.equal(aCalls, 0, 'the stale (previous) sink must never receive output after reattach');
+});
+
 test('connection rate limit allows 30 attempts per rolling minute then locks', async () => {
   const lifecycle = new FakeLifecycle();
   const clock = makeFakeClock(10_000);
