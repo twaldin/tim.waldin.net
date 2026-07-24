@@ -1,5 +1,6 @@
 export const KNOWN_COMMANDS = new Set([
   'welcome', 'about', 'contact', 'blog', 'projects', 'resume', 'help',
+  'boot', 'theme', 'home',
   'flt', 'agentelo', 'trade-up-bot', 'term-site',
   'stm32-games', 'dotfiles', 'hone', 'harness', 'studyspot',
 ]);

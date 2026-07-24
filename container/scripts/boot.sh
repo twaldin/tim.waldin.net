@@ -102,6 +102,14 @@ if [[ -n "$flick_pid" ]]; then
   kill "$flick_pid" 2>/dev/null
   wait "$flick_pid" 2>/dev/null
 fi
+
+# A keypress during the animation skips it — but a burst ('about' typed
+# mid-intro) would leave the remaining chars ('bout') to execute as a
+# mangled command. Drain everything buffered so skip lands on a clean
+# prompt. Intentional fast-typers lose their burst, which is the safe
+# tradeoff — the alternative is garbage commands + /bout 404 URLs.
+while read -rsn1 -t 0.05; do :; done
+
 printf '\033]9996;\007'   # restore the visitor's saved theme
 
 WELCOME_SKIP_BANNER=1 exec bash "$SCRIPTS/welcome.sh"

@@ -4,6 +4,9 @@ import { isValidPath, getPageMetadata } from '../routes';
 describe('isValidPath', () => {
   it('/ → true', () => expect(isValidPath('/')).toBe(true));
   it('/about → true', () => expect(isValidPath('/about')).toBe(true));
+  it('/boot → true (reload during intro animation)', () => expect(isValidPath('/boot')).toBe(true));
+  it('/theme → true', () => expect(isValidPath('/theme')).toBe(true));
+  it('/home → true', () => expect(isValidPath('/home')).toBe(true));
   it('/t/about → true', () => expect(isValidPath('/t/about')).toBe(true));
   it('/blog → true', () => expect(isValidPath('/blog')).toBe(true));
   it('/blog/some-post → true', () => expect(isValidPath('/blog/some-post')).toBe(true));

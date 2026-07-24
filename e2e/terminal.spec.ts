@@ -58,10 +58,10 @@ test.describe('terminal portfolio e2e', () => {
   test('typing a command produces terminal output', async ({ page }) => {
     await page.goto(BASE);
     await expect(page.locator('.xterm')).toBeVisible();
-    // Wait for the auto-run welcome to finish (welcome.sh exits -> the second
-    // prompt appears) before typing, else our input collides with the
-    // char-by-char welcome auto-type ("welcomehelp" -> command not found).
-    await expect.poll(async () => ((await outputText(page)).match(/❯/g) || []).length, { timeout: 20000 }).toBeGreaterThanOrEqual(2);
+    // Wait for the boot intro + welcome to finish before typing — the
+    // welcome box text is a deterministic end marker (a prompt-count race
+    // can fire early when the initial prompt redraws after resize).
+    await expect.poll(() => outputText(page), { timeout: 25000 }).toContain('portfolio terminal');
     await page.locator('.xterm').click();
     await page.keyboard.press('Control+u'); // clear any half-typed input
     await page.keyboard.type('help');
@@ -72,6 +72,10 @@ test.describe('terminal portfolio e2e', () => {
   test('refresh reattaches and keeps output flowing (reattach regression)', async ({ page }) => {
     await page.goto(BASE);
     await expect(page.locator('.xterm')).toBeVisible();
+    // The boot intro animation must finish first — typing while it plays
+    // gets eaten by its keypress-skip. Wait for the welcome box, the
+    // deterministic end-of-boot marker.
+    await expect.poll(() => outputText(page), { timeout: 25000 }).toContain('portfolio terminal');
     await page.locator('.xterm').click();
     await page.keyboard.type('about');
     await page.keyboard.press('Enter');
@@ -83,6 +87,17 @@ test.describe('terminal portfolio e2e', () => {
     await page.reload();
     await expect(page.locator('.xterm')).toBeVisible();
     await expect.poll(() => outputText(page), { timeout: 15000 }).toBeTruthy();
+  });
+
+  test('reload during the boot intro renders the terminal (/boot is a valid path)', async ({ page }) => {
+    await page.goto(BASE);
+    await expect(page.locator('.xterm')).toBeVisible();
+    // The auto-typed initCommand makes preexec emit /boot while the intro
+    // animation plays. Reloading in that window must not 404.
+    await expect.poll(() => page.url(), { timeout: 10000 }).toContain('/boot');
+    await page.reload();
+    await expect(page.locator('.xterm')).toBeVisible({ timeout: 10000 });
+    await expect.poll(() => outputText(page), { timeout: 20000 }).toBeTruthy();
   });
 
   for (const target of ['blog', 'projects', 'resume', 'about', 'contact', 'home']) {
