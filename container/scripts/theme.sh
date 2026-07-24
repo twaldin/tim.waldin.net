@@ -47,12 +47,17 @@ case "$cmd" in
     ;;
   "")
     # Interactive picker: highlight repaints the terminal live; enter keeps
-    # the theme, esc restores whatever you had saved.
+    # the theme, esc restores whatever you had saved. The preview hook is
+    # fzf's cursor-move mechanism (a change-bind only fires on query edits,
+    # so arrow-key browsing never previewed). The window is zero-height and
+    # borderless — fzf skips hidden windows entirely, so it must stay
+    # technically visible to execute.
     choice=$(
       fzf --reverse \
           --prompt='theme> ' \
           --header='enter: keep · esc: cancel (previews are live)' \
-          --bind "change:execute-silent(printf '\033]9996;%s\007' {} > /dev/tty)" \
+          --preview "printf '\033]9996;%s\007' {} > /dev/tty" \
+          --preview-window=down,0,noborder \
           < "$THEMES_FILE"
     ) || { emit_preview ""; exit 0; }   # esc → restore saved
     emit_persist "$choice"

@@ -165,24 +165,31 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
         } catch { /* malformed */ }
         return true;
       });
+      // Theme applications are queued out of the parser callback — mutating
+      // xterm.options.theme synchronously inside an OSC parse can freeze the
+      // renderer when previews arrive in rapid bursts (theme picker).
       const oscEphemeralThemeDisposable = xterm.parser.registerOscHandler(9996, (data) => {
         const arg = data.trim();
-        if (arg === "") {
-          resetFlickerCycle();
-          applySaved();
-        } else if (arg === "next") {
-          applyNextFlickerTheme();
-        } else {
-          applyTheme(arg);
-        }
+        setTimeout(() => {
+          if (arg === "") {
+            resetFlickerCycle();
+            applySaved();
+          } else if (arg === "next") {
+            applyNextFlickerTheme();
+          } else {
+            applyTheme(arg);
+          }
+        }, 0);
         return true;
       });
 
       const oscPersistentThemeDisposable = xterm.parser.registerOscHandler(9995, (data) => {
         const arg = data.trim();
-        if (arg === "dark" || arg === "light") setMode(arg);
-        else if (arg === "reset") resetThemeChoices();
-        else if (arg) setAndPersistTheme(arg, resolvedMode());
+        setTimeout(() => {
+          if (arg === "dark" || arg === "light") setMode(arg);
+          else if (arg === "reset") resetThemeChoices();
+          else if (arg) setAndPersistTheme(arg, resolvedMode());
+        }, 0);
         return true;
       });
 
