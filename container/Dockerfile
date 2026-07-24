@@ -137,8 +137,9 @@ RUN curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh |
 # GITHUB_TOKEN via build secret lifts bob's GitHub API rate limit (bob queries
 # the API unauthenticated otherwise, which rate-limits busy IPs on rebuild).
 # Build: docker build --secret id=github_token,src=<token-file> ...
-RUN --mount=type=secret,id=github_token,required=false \
-    export GITHUB_TOKEN="$(cat /run/secrets/github_token 2>/dev/null || true)" && \
+RUN --mount=type=secret,id=github_token,required=false,mode=0644 \
+    tok="$(cat /run/secrets/github_token 2>/dev/null || true)" && \
+    if [ -n "$tok" ]; then export GITHUB_TOKEN="$tok"; fi && \
     git clone https://github.com/twaldin/dotfiles.git /home/portfolio/.dotfiles && \
     ln -sf /home/portfolio/.dotfiles/nvim /home/portfolio/.config/nvim && \
     ln -sf /home/portfolio/.dotfiles/zsh/pure-modified.omp.json && \
