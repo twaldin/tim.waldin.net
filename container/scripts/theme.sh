@@ -52,7 +52,7 @@ case "$cmd" in
       fzf --reverse \
           --prompt='theme> ' \
           --header='enter: keep · esc: cancel (previews are live)' \
-          --bind "change:execute-silent(printf '\033]9996;%s\007' {q} > /dev/tty)" \
+          --bind "change:execute-silent(printf '\033]9996;%s\007' {} > /dev/tty)" \
           < "$THEMES_FILE"
     ) || { emit_preview ""; exit 0; }   # esc → restore saved
     emit_persist "$choice"

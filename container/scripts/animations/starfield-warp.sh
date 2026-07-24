@@ -207,11 +207,27 @@ for ((idx = 1; idx < nf; idx++)); do
   read -rsn1 -t "$((rem/1000000)).$(printf '%06d' "$((rem%1000000))")" && { skip=1; break; }
 done
 
-# Final frame: always the fully-settled banner. On skip we jump straight to it;
-# on natural finish it is already on screen, so we hold it statically >=1.2s.
-if (( skip )); then
-  printf '%s' "${F[nf-1]}"
-else
+# Final frame: the CRISP TEXT banner, not the braille rendition — the dots
+# read muddy to visitors. The braille mask and the text occupy the same
+# cells (mask col = 1 braille cell = 1 text col, both centered), so the
+# swap is nearly seamless: the converged dots sharpen into letters.
+draw_text_banner() {
+  local w pad r=0 line out=""
+  w=$(printf '%s' "$banner" | wc -L | tr -d ' ')
+  [[ "$w" =~ ^[0-9]+$ ]] || w=0
+  pad=$(( (cols - w) / 2 + 1 )); (( pad < 1 )) && pad=1
+  while IFS= read -r line; do
+    r=$((r+1))
+    out+="\033[${r};1H\033[2K\033[${r};${pad}H\033[1;32m${line}"
+  done <<< "$banner"
+  out+="\033[0m"
+  printf '%b' "$out"
+}
+
+# On skip we jump straight to it; on natural finish the braille arrival just
+# played, so we sharpen to text and hold statically >=1.2s.
+draw_text_banner
+if (( ! skip )); then
   read -rsn1 -t 1.3
 fi
 
