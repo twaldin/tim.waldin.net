@@ -222,11 +222,10 @@ class SessionManager {
     if (state.initCommand === '') { state.initCommandRun = true; return; }
 
     state.initCommandRun = true;
-    let cmd = state.initCommand || 'welcome';
-    // 'boot' (intro animation + welcome) is a cold-start-only experience —
-    // on a resume/reattach the animation must not replay every refresh, so
-    // the repaint falls back to plain welcome.
-    if (state.mode === 'resume' && cmd === 'boot') cmd = 'welcome';
+    // boot === welcome: the intro animation + welcome content is a single
+    // flow and replays on EVERY connect, including resume/refresh (both the
+    // animation and the welcome typewriter are keypress-skippable).
+    const cmd = state.initCommand || 'boot';
     setTimeout(() => this._autoType(socketId, cmd), 20);
   }
 
@@ -236,8 +235,8 @@ class SessionManager {
     if (!command || typeof command !== 'string') command = 'welcome';
     // Char whitelist — matches the frontend allowlist. Blocks shell metachars.
     if (!/^[a-z0-9 ._/+=:,@-]+$/i.test(command) || command.length > 200) {
-      console.warn(`Rejected initCommand for ${socketId} — falling back to welcome`);
-      command = 'welcome';
+      console.warn(`Rejected initCommand for ${socketId} — falling back to boot`);
+      command = 'boot';
     }
 
     const { handleId } = state.lease;

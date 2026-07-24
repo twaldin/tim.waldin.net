@@ -212,16 +212,19 @@ done
 # cells (mask col = 1 braille cell = 1 text col, both centered), so the
 # swap is nearly seamless: the converged dots sharpen into letters.
 draw_text_banner() {
-  local w pad r=0 line out=""
+  local w pad r=0 line
   w=$(printf '%s' "$banner" | wc -L | tr -d ' ')
   [[ "$w" =~ ^[0-9]+$ ]] || w=0
   pad=$(( (cols - w) / 2 + 1 )); (( pad < 1 )) && pad=1
+  # Escape sequences and banner content MUST NOT share a printf '%b': a
+  # banner row ending in '\' (3D-ASCII row 6) glues to the next \033 as
+  # '\\033', which %b renders as literal text — the row's own erase-line
+  # then fires at the un-moved cursor and wipes the row just drawn.
   while IFS= read -r line; do
     r=$((r+1))
-    out+="\033[${r};1H\033[2K\033[${r};${pad}H\033[1;32m${line}"
+    printf '\033[%d;1H\033[2K\033[%d;%dH\033[1;32m%s' "$r" "$r" "$pad" "$line"
   done <<< "$banner"
-  out+="\033[0m"
-  printf '%b' "$out"
+  printf '\033[0m'
 }
 
 # On skip we jump straight to it; on natural finish the braille arrival just
