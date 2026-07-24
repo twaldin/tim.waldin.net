@@ -63,23 +63,47 @@ if [[ -s "$HOME/.stars" ]]; then
   [[ -n "$stars" ]] && harness_stars=$stars
 fi
 
+# Paced reveal: after the banner, the copy types itself out line by line.
+# Line-granular (not per-char — per-char loops split ANSI escapes across
+# Socket.IO flushes and render "93m" fragments). Any keypress skips to
+# instant, draining the buffered burst so leftovers don't execute as
+# mangled commands (same tradeoff as the animation skip in boot.sh).
+# Non-tty stdin (captures/tests) hits EOF on read immediately → no stalls.
+WELCOME_PACE_COPY="${WELCOME_PACE_COPY:-0.40}"
+WELCOME_PACE_BOX="${WELCOME_PACE_BOX:-0.07}"
+WELCOME_PACE_BLANK="${WELCOME_PACE_BLANK:-0.18}"
+_wt_skip=0
+
+_wt_pace() {
+  (( _wt_skip )) && return 0
+  # Read from /dev/tty, NOT stdin: the box cascade feeds stdin a herestring,
+  # and a bare read would eat (then drain) the very content being printed.
+  if read -rsn1 -t "$1" < /dev/tty 2>/dev/null; then
+    _wt_skip=1
+    while read -rsn1 -t 0.05 < /dev/tty 2>/dev/null; do :; done
+  fi
+}
+wt() { printf '%b\n' "$1"; _wt_pace "${2:-$WELCOME_PACE_COPY}"; }
+wtblank() { echo ""; _wt_pace "$WELCOME_PACE_BLANK"; }
+
 # Social proof up top, everything clickable (OSC 8). Links stay OUT of
 # create_box content — the box measures width with color codes stripped but
 # doesn't know OSC 8 sequences are zero-width.
-echo ""
+wtblank
 proof_line="${DIM}$(hyperlink "󰊤 hone" "https://github.com/twaldin/hone" "$PURPLE")${DIM}★${hone_stars} ·"
 proof_line+="$(hyperlink "󰊤 harness" "https://github.com/twaldin/harness" "$PURPLE")${DIM}★${harness_stars} ·"
 proof_line+="$(hyperlink "benchmarked 155 agent combos on ~1B tokens" "https://tim.waldin.net/blog/2026-04-20-agentelo-155-combos" "$DIM")${DIM} ·"
 proof_line+=" agents @$(hyperlink "󰖟 lindy.ai" "https://lindy.ai" "$DIM")${RESET}"
-typewriter "$proof_line"
-echo ""
+wt "$proof_line"
+wtblank
 
-typewriter "${WHITE}i'm tim — i optimize ai agents at$(hyperlink "󰖟 lindy.ai" "https://lindy.ai" "$BLUE")${WHITE} in san francisco.${RESET}"
-typewriter "${WHITE}i built the coding-agent suite in the open:$(hyperlink "󰊤 harness" "https://github.com/twaldin/harness" "$PURPLE")${WHITE} ·$(hyperlink "󰊤 hone" "https://github.com/twaldin/hone" "$PURPLE")${WHITE} ·$(hyperlink "󰊤 flt" "https://github.com/twaldin/flt" "$PURPLE")${WHITE} ·$(hyperlink "󰊤 agentelo" "https://github.com/twaldin/agentelo" "$PURPLE")${WHITE}.${RESET}"
-typewriter "${WHITE}and then i got a job at$(hyperlink "󰖟 lindy" "https://lindy.ai" "$BLUE")${WHITE} — i took a leave from purdue for it.${RESET}"
+wt "${WHITE}i'm tim — i optimize ai agents at$(hyperlink "󰖟 lindy.ai" "https://lindy.ai" "$BLUE")${WHITE} in san francisco.${RESET}"
+wt "${WHITE}i built the coding-agent suite in the open:$(hyperlink "󰊤 harness" "https://github.com/twaldin/harness" "$PURPLE")${WHITE} ·$(hyperlink "󰊤 hone" "https://github.com/twaldin/hone" "$PURPLE")${WHITE} ·$(hyperlink "󰊤 flt" "https://github.com/twaldin/flt" "$PURPLE")${WHITE} ·$(hyperlink "󰊤 agentelo" "https://github.com/twaldin/agentelo" "$PURPLE")${WHITE}.${RESET}"
+wt "${WHITE}and then i got a job at$(hyperlink "󰖟 lindy" "https://lindy.ai" "$BLUE")${WHITE} — i took a leave from purdue for it.${RESET}"
 
-echo ""
-create_box "portfolio terminal" "  about       learn about me
+wtblank
+# The box cascades faster than the prose — menu items, not copy.
+box_out=$(create_box "portfolio terminal" "  about       learn about me
 
   contact     email + socials
 
@@ -93,9 +117,13 @@ create_box "portfolio terminal" "  about       learn about me
 
   gui         for mouse users (static page)
 
-  help        all available commands" "${PURPLE}"
-echo ""
+  help        all available commands" "${PURPLE}")
+while IFS= read -r _box_line; do
+  printf '%s\n' "$_box_line"
+  _wt_pace "$WELCOME_PACE_BOX"
+done <<< "$box_out"
+wtblank
 
-typewriter "${WHITE}this is a ${BOLD}real shell${RESET}${WHITE} in a real container — all yours.${RESET}"
-typewriter "${DIM}prove it: ${RESET}${CYAN}sudo rm -rf /${RESET}${DIM} (really) · ${RESET}${CYAN}htop${RESET}${DIM} · ${RESET}${CYAN}nvim projects/hone${RESET}${DIM} — type ${RESET}${CYAN}exit${RESET}${DIM} to reset${RESET}"
-echo ""
+wt "${WHITE}this is a ${BOLD}real shell${RESET}${WHITE} in a real container — all yours.${RESET}"
+wt "${DIM}prove it: ${RESET}${CYAN}sudo rm -rf /${RESET}${DIM} (really) · ${RESET}${CYAN}htop${RESET}${DIM} · ${RESET}${CYAN}nvim projects/hone${RESET}${DIM} — type ${RESET}${CYAN}exit${RESET}${DIM} to reset${RESET}"
+wtblank
