@@ -8,33 +8,41 @@ source "$(dirname "$0")/shared-functions.sh"
 emit_url "welcome"
 
 print_banner() {
-  # Instant figlet banner (no line-by-line animation). Prefers the font the
-  # boot animation used (recorded in /tmp/boot-font) so a resume re-render
-  # matches what the visitor saw at boot; falls back to DOS_Rebel, then to
-  # plain bold text on narrow terminals.
+  # Instant figlet banner (no line-by-line animation), CENTERED like the
+  # boot animations leave it. Prefers the font the boot animation used
+  # (/tmp/boot-font) so a resume re-render matches what the visitor saw —
+  # but re-validates the width: if the terminal got narrower since boot
+  # (resize → refresh), re-pick a font that fits instead of printing a
+  # wrapped/clipped banner.
   local cols=0 t
   t="$(tput cols 2>/dev/null)";                    [[ "$t" =~ ^[0-9]+$ ]] && (( t > cols )) && cols=$t
   t="$(stty size 2>/dev/null | awk '{print $2}')"; [[ "$t" =~ ^[0-9]+$ ]] && (( t > cols )) && cols=$t
   [[ "$COLUMNS" =~ ^[0-9]+$ ]]                  && (( COLUMNS > cols )) && cols=$COLUMNS
   (( cols < 10 )) && cols=80
 
-  local font_arg="DOS_Rebel"
+  local flf="" line w
   if [[ -s /tmp/boot-font ]]; then
-    local font_name flf
-    font_name=$(cat /tmp/boot-font)
-    flf=$(awk -F'|' -v n="$font_name" '$1 == n {print $4; exit}' /home/portfolio/scripts/fonts.txt 2>/dev/null)
-    [[ -n "$flf" ]] && font_arg="/usr/share/figlet/custom/$flf"
+    line=$(awk -F'|' -v n="$(cat /tmp/boot-font)" '$1 == n {print; exit}' "$FONTS_MANIFEST" 2>/dev/null)
+    if [[ -n "$line" ]]; then
+      w=$(printf '%s' "$line" | cut -d'|' -f2)
+      (( w <= cols - 2 )) && flf=$(printf '%s' "$line" | cut -d'|' -f4)
+    fi
+  fi
+  if [[ -z "$flf" ]]; then
+    line=$(pick_font_for_width $(( cols - 2 )) || true)
+    [[ -n "$line" ]] && flf=$(printf '%s' "$line" | cut -d'|' -f4)
   fi
 
-  local ascii_output max_width
-  ascii_output=$(figlet -f "$font_arg" twaldin 2>/dev/null || figlet twaldin)
-  max_width=$(printf '%s' "$ascii_output" | wc -L | tr -d ' ')
-  [[ "$max_width" =~ ^[0-9]+$ ]] || max_width=0
-  if (( max_width > cols - 2 )) || (( cols < 24 )); then
+  local ascii_output=""
+  [[ -n "$flf" ]] && ascii_output=$(render_banner twaldin "$flf")
+  if [[ -z "$ascii_output" ]] && (( cols >= 62 )); then
+    ascii_output=$(figlet -f DOS_Rebel twaldin 2>/dev/null | trim_trailing_blank_lines)
+  fi
+  if [[ -z "$ascii_output" ]]; then
     printf '%b\n' "${BOLD}${PURPLE}twaldin${RESET}"
     return
   fi
-  printf '%b%s%b\n' "${PURPLE}" "$ascii_output" "${RESET}"
+  printf '%s\n' "$ascii_output" | print_centered "${PURPLE}"
 }
 
 if [[ -z "${WELCOME_SKIP_BANNER:-}" ]]; then

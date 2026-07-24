@@ -192,13 +192,13 @@ draw_banner() {                        # $1=array name $2=width $3=label(or "")
   h=${#B[@]}
   left=$(( (cols - w) / 2 + 1 )); [ "$left" -lt 1 ] && left=1
   for ((r = 0; r < h; r++)); do
-    printf '\033[%d;1H\033[2K\033[%d;%dH\033[92m%s' $((r + 1)) $((r + 1)) "$left" "${B[r]}"
+    printf '\033[%d;1H\033[2K\033[%d;%dH\033[32m%s' $((r + 1)) $((r + 1)) "$left" "${B[r]}"
   done
   used=$h; lr=0
   if [ -n "$label" ]; then
     lr=$(( h + 2 ))
     ll=$(( (cols - ${#label}) / 2 + 1 )); [ "$ll" -lt 1 ] && ll=1
-    printf '\033[%d;1H\033[2K\033[%d;%dH\033[2;92m%s' "$lr" "$lr" "$ll" "$label"
+    printf '\033[%d;1H\033[2K\033[%d;%dH\033[2;32m%s' "$lr" "$lr" "$ll" "$label"
     used=$lr
   fi
   for ((r = h + 1; r <= occupied; r++)); do   # clear rows gone stale

@@ -11,7 +11,7 @@
 # Colors: a GLOWING 256-color band (green->cyan->blue->teal, high brightness
 # floor, seamless palindromic hue cycle) with bright light-cyan sparkle on the
 # densest plasma crests. Contour bands are tightened for crisper structure.
-# The persisted final banner is drawn in ANSI *slot* color 92 so the
+# The persisted final banner is drawn in ANSI *slot* color 32 so the
 # theme-strobe finale (OSC 9996, external) can re-color it.
 #
 # v3 end-contract: NEVER clears the screen with \033[2J. The banner text comes
@@ -67,13 +67,13 @@ done
 
 # ---- precompute the clean, banner-only final frame --------------------------
 # Every row is cleared with \033[2K (no \033[2J) so the full-screen plasma is
-# wiped; the banner is drawn top-pinned and centered in slot color 92.
+# wiped; the banner is drawn top-pinned and centered in slot color 32.
 padstr=''; (( pad > 0 )) && printf -v padstr '%*s' "$pad" ''
 final=''
 for ((r = 1; r <= lines; r++)); do
   final+="${E}[${r};1H${E}[2K"
   if (( r >= banner_top && r < banner_top + bh )); then
-    final+="${padstr}${E}[0;92m${banner[r - banner_top]}${E}[0m"
+    final+="${padstr}${E}[0;32m${banner[r - banner_top]}${E}[0m"
   fi
 done
 
@@ -99,9 +99,9 @@ BEGIN {
   for (i = ng-1; i >= 2; i--) CYC[NC++] = g[i]
   for (k = 0; k < NC; k++) PC[k] = "\033[38;5;" CYC[k] "m"
   HL = "\033[38;5;159m"                                   # bright light-cyan crest sparkle
-  # banner materialization gradient (dim -> bright brand green, ends on slot 92)
+  # banner materialization gradient (dim -> bright brand green, ends on slot 32)
   BC[0] = "\033[38;5;22m"; BC[1] = "\033[38;5;28m"; BC[2] = "\033[38;5;34m"
-  BC[3] = "\033[38;5;40m"; BC[4] = "\033[38;5;46m"; BC[5] = "\033[92m"
+  BC[3] = "\033[38;5;40m"; BC[4] = "\033[38;5;46m"; BC[5] = "\033[32m"
 }
 { bl[NR] = $0 }
 END {

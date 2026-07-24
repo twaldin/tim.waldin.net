@@ -97,8 +97,8 @@ function pickcol(  x) {
   x = rand()                                         # green body, leans mid/bright
   if (x < 0.30) return "2;32"
   if (x < 0.62) return "32"
-  if (x < 0.85) return "2;92"
-  return "92"
+  if (x < 0.85) return "2;32"
+  return "32"
 }
 # resolve a normalized cell byte to its display glyph + byte length
 function glyphof(ch, g) {
@@ -152,7 +152,7 @@ END {
         } else if (f < lk + FL) {                      # lock flash
           col = "1;97"
         } else {                                       # just settled
-          col = (g == "░" ? "2;32" : "92")
+          col = (g == "░" ? "2;32" : "32")
         }
         put(top + r - 1, scol, col, g, gb)
       }
@@ -169,7 +169,7 @@ END {
     for (c = 1; c <= W; c++) {
       scol = left + c - 1; if (scol > cols) break
       g = glyphof(substr(B[r], c, 1)); gb = GB_
-      col = (g == "░" ? "2;32" : "92")
+      col = (g == "░" ? "2;32" : "32")
       put(top + r - 1, scol, col, g, gb)
     }
   printf "F%s\n", out

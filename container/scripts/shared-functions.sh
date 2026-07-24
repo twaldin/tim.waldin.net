@@ -1,13 +1,16 @@
 #!/bin/bash
-CYAN='\033[96m'    # colour14 (bright cyan)
-GREEN='\033[92m'   # colour10 (bright green)
-WHITE='\033[97m'   # colour15 (bright white / foreground)
-YELLOW='\033[93m'  # colour11 (bright yellow)
+# Slot choice is light-mode driven: bright slots (9–15) wash out on light
+# themes (slot15 is ~1:1 on white!), so text colors stay in slots 0–8 plus
+# the default foreground — themes keep those readable in both modes.
+CYAN='\033[34m'    # colour4  (blue; bright cyan washes out on light themes)
+GREEN='\033[32m'   # colour2  (green; bright green washes out on light)
+WHITE='\033[39m'   # default foreground (bright white is INVISIBLE on light)
+YELLOW='\033[35m'  # colour5  (magenta; bright yellow washes out on light)
 BLUE='\033[34m'    # colour4  (blue)
 RED='\033[31m'     # colour1  (red)
 MAGENTA='\033[35m' # colour5  (magenta)
 PURPLE='\033[32m'  # colour2  (primary accent; legacy alias)
-ORANGE='\033[93m'  # colour11 (bright yellow, closest ANSI slot to orange)
+ORANGE='\033[35m'  # colour5  (magenta; brightest readable stand-in)
 GRAY='\033[90m'    # colour8  (bright black / dark gray)
 BG='\033[40m'      # colour0  background
 FG='\033[39m'      # default foreground
@@ -42,6 +45,61 @@ emit_scroll_top() {
 # emit_url (OSC 9999) which only updates the URL bar via pushState.
 emit_navigate() {
   printf '\033]9997;%s\033\\' "${1-}"
+}
+
+# ---- banner font pool (boot + welcome share this) ------------------------
+
+FONTS_MANIFEST=${FONTS_MANIFEST:-/home/portfolio/scripts/fonts.txt}
+FIGLET_FONTS_DIR=${FIGLET_FONTS_DIR:-/usr/share/figlet/custom}
+
+# pick_font_for_width <maxw>
+# Prints one random manifest line (`Name|width|height|flf`) from the LARGEST
+# width class that fits (desktop rolls the big fonts, phones the compact
+# ones). Prints nothing if no font fits.
+pick_font_for_width() {
+  local maxw=$1 class_floor
+  local -a pool=()
+  for class_floor in 67 47 21; do
+    if (( maxw >= class_floor )); then
+      mapfile -t pool < <(awk -F'|' -v lo="$class_floor" -v hi="$maxw" \
+        '$2+0 >= lo && $2+0 <= hi {print}' "$FONTS_MANIFEST" 2>/dev/null)
+      if (( ${#pool[@]} > 0 )); then
+        printf '%s' "${pool[$((RANDOM % ${#pool[@]}))]}"
+        return 0
+      fi
+    fi
+  done
+  mapfile -t pool < <(awk -F'|' -v hi="$maxw" '$2+0 <= hi {print}' "$FONTS_MANIFEST" 2>/dev/null)
+  (( ${#pool[@]} > 0 )) && { printf '%s' "${pool[$((RANDOM % ${#pool[@]}))]}"; return 0; }
+  return 1
+}
+
+# trim_trailing_blank_lines — figlet pads renders with empty rows.
+trim_trailing_blank_lines() {
+  awk '{l[NR]=$0} END{last=NR; while(last>0 && l[last] ~ /^[[:space:]]*$/) last--; for(i=1;i<=last;i++) print l[i]}'
+}
+
+# render_banner <text> <flf-basename>
+# figlet render from the custom font dir, trimmed; empty on failure.
+render_banner() {
+  figlet -f "$FIGLET_FONTS_DIR/$2" -w 400 "$1" 2>/dev/null | trim_trailing_blank_lines
+}
+
+# print_centered <color> — center stdin lines horizontally for the terminal
+# width (multibyte-safe via wc -L).
+print_centered() {
+  local color=$1 cols
+  cols=$(tput cols 2>/dev/null || echo 80)
+  local input maxw pad
+  input=$(cat)
+  maxw=$(printf '%s' "$input" | wc -L | tr -d ' ')
+  [[ "$maxw" =~ ^[0-9]+$ ]] || maxw=0
+  pad=$(( (cols - maxw) / 2 )); (( pad < 0 )) && pad=0
+  printf '%b' "$color"
+  printf '%s\n' "$input" | while IFS= read -r line; do
+    printf '%*s%s\n' "$pad" '' "$line"
+  done
+  printf '%b' "$RESET"
 }
 
 typewriter() {

@@ -13,8 +13,6 @@
 set -u
 SCRIPTS=/home/portfolio/scripts
 ANIM_DIR="$SCRIPTS/animations"
-MANIFEST="$SCRIPTS/fonts.txt"
-FONTS_DIR=/usr/share/figlet/custom
 BANNER_FILE=/tmp/boot-banner.txt
 FONT_FILE=/tmp/boot-font
 
@@ -24,40 +22,18 @@ ANIMATIONS=(braille-fire starfield-warp braille-plasma logo-decode font-cycle)
 # 256-color and needs a stable palette, so it's excluded.
 FLICKER_OK=(starfield-warp braille-plasma logo-decode font-cycle)
 
+source "$SCRIPTS/shared-functions.sh"
+
 cols=${COLUMNS:-$(tput cols 2>/dev/null || echo 80)}
 (( cols < 10 )) && cols=80
 
 # --- pick the font: largest width class that fits, random within class ---
-# manifest: Display Name|width|height|flf_filename  (width = render cols)
-maxw=$(( cols - 2 ))
-pick_font_line() {
-  local class_floor line
-  for class_floor in 67 47 21; do
-    if (( maxw >= class_floor )); then
-      mapfile -t pool < <(awk -F'|' -v lo="$class_floor" -v hi="$maxw" \
-        '$2+0 >= lo && $2+0 <= hi {print}' "$MANIFEST" 2>/dev/null)
-      if (( ${#pool[@]} > 0 )); then
-        printf '%s' "${pool[$((RANDOM % ${#pool[@]}))]}"
-        return 0
-      fi
-    fi
-  done
-  # anything that fits at all
-  mapfile -t pool < <(awk -F'|' -v hi="$maxw" '$2+0 <= hi {print}' "$MANIFEST" 2>/dev/null)
-  (( ${#pool[@]} > 0 )) && { printf '%s' "${pool[$((RANDOM % ${#pool[@]}))]}"; return 0; }
-  return 1
-}
-
-trim_blanks() { # strip trailing blank lines
-  awk '{l[NR]=$0} END{last=NR; while(last>0 && l[last] ~ /^[[:space:]]*$/) last--; for(i=1;i<=last;i++) print l[i]}'
-}
-
 : > "$BANNER_FILE"
-font_line=$(pick_font_line || true)
+font_line=$(pick_font_for_width $(( cols - 2 )) || true)
 if [[ -n "$font_line" ]]; then
   font_name=${font_line%%|*}
   flf=${font_line##*|}
-  if figlet -f "$FONTS_DIR/$flf" -w 400 twaldin 2>/dev/null | trim_blanks > "$BANNER_FILE" && [[ -s "$BANNER_FILE" ]]; then
+  if render_banner twaldin "$flf" > "$BANNER_FILE" && [[ -s "$BANNER_FILE" ]]; then
     printf '%s' "$font_name" > "$FONT_FILE"
   else
     : > "$BANNER_FILE"
@@ -66,8 +42,8 @@ fi
 # Fallback: incumbent font, then plain text (animations handle empty file).
 if [[ ! -s "$BANNER_FILE" ]]; then
   if (( cols >= 62 )); then
-    figlet -f DOS_Rebel -w 400 twaldin 2>/dev/null | trim_blanks > "$BANNER_FILE" || true
-    echo "DOS Rebel" > "$FONT_FILE"
+    figlet -f DOS_Rebel -w 400 twaldin 2>/dev/null | trim_trailing_blank_lines > "$BANNER_FILE" || true
+    echo "DOS_Rebel" > "$FONT_FILE"
   else
     echo "twaldin" > "$BANNER_FILE"
     echo "plain" > "$FONT_FILE"
