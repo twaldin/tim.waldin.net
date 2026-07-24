@@ -89,7 +89,7 @@ BEGIN {
   BB[1,0]=8; BB[1,1]=16; BB[1,2]=32; BB[1,3]=128;
   # brightness rank — brighter colour wins when two stars share a sub-cell
   RANK["90"]=0; RANK["37"]=1; RANK["95"]=2; RANK["94"]=3;
-  RANK["93"]=4; RANK["92"]=5; RANK["97"]=6; RANK["1;92"]=7; RANK["1;97"]=8;
+  RANK["93"]=4; RANK["32"]=5; RANK["97"]=6; RANK["1;32"]=7; RANK["1;97"]=8;
 
   # --- banner targets ---------------------------------------------------
   nm = split(M, MR, "\n"); MW = 0;
@@ -123,7 +123,7 @@ BEGIN {
     p = rand();                     # rich multi-hued field (few gray)
     if      (p < 0.05) CO[i] = "95";   # magenta/purple (rare)
     else if (p < 0.18) CO[i] = "93";   # amber-yellow
-    else if (p < 0.33) CO[i] = "92";   # lime green
+    else if (p < 0.33) CO[i] = "32";   # lime green
     else if (p < 0.52) CO[i] = "94";   # vivid cyan (Hardcore brightBlue)
     else if (p < 0.70) CO[i] = "37";   # soft white
     else               CO[i] = "97";   # bright white
@@ -142,7 +142,7 @@ BEGIN {
       r = R0[i] + S[i]*D; r -= int(r/RMAX)*RMAX;
       x = CX + r*CA[i]; y = CY + r*SA[i];
       lit = (t >= IG[i]);            # latched: once ignited, stays green
-      co = lit ? "1;92" : CO[i];
+      co = lit ? "1;32" : CO[i];
       if (r < 10) co = "90";                       # dim near the core
       plot(x, y, co);
       sl = S[i]*v;                                 # streak trail toward center
@@ -152,7 +152,7 @@ BEGIN {
           rr = r - k; if (rr < 2) break;
           # trail inherits a dim echo of the head: green when ignited
           plot(CX + rr*CA[i], CY + rr*SA[i], \
-               seg == 0 ? (lit ? "92" : "37") : "90");
+               seg == 0 ? (lit ? "32" : "37") : "90");
           seg++;
         }
       }
@@ -164,7 +164,7 @@ BEGIN {
   # --- phase 2: decelerate + converge onto banner (green streaks) ---------
   for (f = 1; f <= F2; f++) {
     u = f/F2; e = 1 - (1-u)*(1-u)*(1-u);           # ease-out (decelerating)
-    co = (u > 0.94) ? "1;97" : "1;92";             # green streaks, whiten only as they lock
+    co = (u > 0.94) ? "1;39" : "1;32";             # green streaks, whiten only as they lock
     for (i = 1; i <= N; i++)
       plot(LX[i] + (TX[i]-LX[i])*e, LY[i] + (TY[i]-LY[i])*e, co);
     emit();
@@ -173,7 +173,7 @@ BEGIN {
   # --- phase 3: crisp white arrival flash, settle to bold brand green ------
   for (f = 0; f < F3; f++) {
     for (i = 1; i <= N; i++) {
-      co = "1;92";                                 # bold bright brand green
+      co = "1;32";                                 # bold bright brand green
       if (f == 0) co = "1;97";                      # arrival flash (bold white)
       else if (f == 1) co = "97";                   # flash decay
       else if (rand() < 0.02) co = "1;97";          # occasional sparkle glint

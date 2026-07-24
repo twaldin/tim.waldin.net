@@ -57,7 +57,7 @@ pad=$(( (cols - bw) / 2 )); (( pad < 0 )) && pad=0
 below_row=$(( banner_top + bh ))        # EXACTLY one row below the last banner line
 (( below_row > lines )) && below_row=$lines
 
-draw_banner() { # $1 = SGR params (e.g. "1;92")
+draw_banner() { # $1 = SGR params (e.g. "1;32")
   local sgr=$1 out='' i
   for i in "${!banner[@]}"; do
     out+="${E}[$(( banner_top + i ));$(( pad + 1 ))H${banner[i]}${E}[K"
@@ -71,7 +71,7 @@ draw_banner() { # $1 = SGR params (e.g. "1;92")
 # The cursor ends parked EXACTLY one row below the last banner line so
 # welcome.sh prints there.
 final_frame() {
-  draw_banner '1;92'
+  draw_banner '1;32'
   printf '%s[%d;1H%s[0J' "$E" "$below_row" "$E"
 }
 
@@ -161,7 +161,7 @@ while IFS= read -r -u3 frame; do
   printf '%s' "$frame"
   # banner forge arc: dim -> red-hot -> orange -> bright yellow -> quenched green.
   # Redrawn every frame so any transient stream-chunking glitch self-heals.
-  if   (( f >= 32 )); then draw_banner '1;92'
+  if   (( f >= 32 )); then draw_banner '1;32'
   elif (( f >= 25 )); then draw_banner '93'
   elif (( f >= 19 )); then draw_banner '33'
   elif (( f >= 12 )); then draw_banner '31'

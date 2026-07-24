@@ -134,7 +134,12 @@ RUN curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh |
 
 # Clone dotfiles and project repositories directly into container
 # Note: term-site is private — clone will fail silently, make it public to fix
-RUN git clone https://github.com/twaldin/dotfiles.git /home/portfolio/.dotfiles && \
+# GITHUB_TOKEN via build secret lifts bob's GitHub API rate limit (bob queries
+# the API unauthenticated otherwise, which rate-limits busy IPs on rebuild).
+# Build: docker build --secret id=github_token,src=<token-file> ...
+RUN --mount=type=secret,id=github_token,required=false \
+    export GITHUB_TOKEN="$(cat /run/secrets/github_token 2>/dev/null || true)" && \
+    git clone https://github.com/twaldin/dotfiles.git /home/portfolio/.dotfiles && \
     ln -sf /home/portfolio/.dotfiles/nvim /home/portfolio/.config/nvim && \
     ln -sf /home/portfolio/.dotfiles/zsh/pure-modified.omp.json && \
     # The OMP template renders `{{ .UserName }} {{ .Path }}` — replace the
