@@ -11,7 +11,7 @@ i'm tim waldin. i optimize production ai agents at [lindy](https://lindy.ai) in 
 
 ## the story
 
-i took a leave from purdue and moved to sf for this job. for now the interesting work is at lindy.
+for now the interesting work is at lindy.
 
 also shipped: [harness](https://github.com/twaldin/harness) · [hone](https://github.com/twaldin/hone) · [flt](https://github.com/twaldin/flt) · [agentelo](https://github.com/twaldin/agentelo)
 
