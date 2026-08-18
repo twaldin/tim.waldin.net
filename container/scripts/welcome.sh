@@ -99,7 +99,7 @@ wtblank
 
 wt "${WHITE}i'm tim — i optimize ai agents at$(hyperlink "󰖟 lindy.ai" "https://lindy.ai" "$BLUE")${WHITE} in san francisco.${RESET}"
 wt "${WHITE}i built the coding-agent suite in the open:$(hyperlink "󰊤 harness" "https://github.com/twaldin/harness" "$PURPLE")${WHITE} ·$(hyperlink "󰊤 hone" "https://github.com/twaldin/hone" "$PURPLE")${WHITE} ·$(hyperlink "󰊤 flt" "https://github.com/twaldin/flt" "$PURPLE")${WHITE} ·$(hyperlink "󰊤 agentelo" "https://github.com/twaldin/agentelo" "$PURPLE")${WHITE}.${RESET}"
-wt "${WHITE}and then i got a job at$(hyperlink "󰖟 lindy" "https://lindy.ai" "$BLUE")${WHITE} — i took a leave from purdue for it.${RESET}"
+wt "${WHITE}and then i got a job at$(hyperlink "󰖟 lindy" "https://lindy.ai" "$BLUE")${WHITE} — i took a leave from purdue and moved to sf for it.${RESET}"
 
 wtblank
 # The box cascades faster than the prose — menu items, not copy.

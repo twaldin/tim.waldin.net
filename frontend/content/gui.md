@@ -12,13 +12,13 @@ i'm tim waldin, software engineer at [lindy](https://lindy.ai) in san francisco.
 ## the open-source suite
 
 - [harness](https://github.com/twaldin/harness) — one interface to 13 coding-agent CLIs, so you never have to learn 13 sets of flags.
-- [hone](https://github.com/twaldin/hone) — GEPA prompt optimizer. +20pp solve rate on bugs it never trained on.
-- [flt](https://github.com/twaldin/flt) — multi-agent orchestrator for running fleets of coding agents.
-- [agentelo](https://github.com/twaldin/agentelo) — Bradley-Terry coding-agent leaderboard: 155 combos run on ~1B tokens ($642); ships a 148-agent baseline snapshot.
+- [hone](https://github.com/twaldin/hone) — GEPA prompt optimizer. coding CLIs via harness as mutator. haiku 4.5 65%→85% (6/9→8/9) on held-out github bugs, ~$1 mutator tokens
+- [flt](https://github.com/twaldin/flt) — multi-agent orchestrator for 6 coding CLIs. raw-ANSI TUI
+- [agentelo](https://github.com/twaldin/agentelo) — Bradley-Terry, 155 combos / 148-agent baseline, 6 harnesses, real github PRs, ~1B tokens, $642, 3.5K runs. snapshot at /agentelo
 
 ## the story
 
-i built the suite in the open, and then i got a job at [lindy](https://lindy.ai) — i took a leave of absence from purdue for it.
+i built the suite in the open, and then i got a job at [lindy](https://lindy.ai) — i took a leave of absence from purdue and moved to sf for it.
 
 ## links
 
