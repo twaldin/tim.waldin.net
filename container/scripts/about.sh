@@ -7,8 +7,6 @@ create_box "About Me" "Hi, I'm Tim. I optimize production AI agents at lindy.ai 
 
 I also build in public when something is real enough to show. For now the interesting work is at Lindy.
 
-all anyone ever needs is tmux, raw nvim on the new native vim.pack (try my cfg!), and a sprinkle of coding agent cli.
-
 fun fact: I took a leave from Purdue and moved to SF for this job.
 
 type projects to see what I've shipped
