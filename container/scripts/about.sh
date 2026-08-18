@@ -3,12 +3,12 @@ source "$(dirname "$0")/shared-functions.sh"
 emit_url "about"
 
 echo ""
-create_box "About Me" "Hi, I'm Tim. I optimize AI agents at lindy.ai in San Francisco.
+create_box "About Me" "Hi, I'm Tim. I optimize production AI agents at lindy.ai in San Francisco — evals, prompt optimization, making sure a change actually generalizes.
 
-Outside work I build open-source tooling for coding agents — try typing 'hone', 'harness', 'flt', or 'agentelo' to see the suite. I also play CS2 (type 'trade-up-bot'!), and I think all anyone ever needs is tmux, raw nvim on the new native vim.pack (try my cfg!), and a sprinkle of coding agent cli.
+I also build in public when something is real enough to show. For now the interesting work is at Lindy.
 
-fun fact: building that suite got me the job — i took a leave from purdue and moved to sf for it.
+fun fact: I took a leave from Purdue and moved to SF for this job.
 
-type projects to see what I'm working on
+type projects to see what I've shipped
 type contact to get in touch" "$PURPLE" 80
 echo ""

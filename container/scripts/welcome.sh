@@ -51,18 +51,6 @@ if [[ -z "${WELCOME_SKIP_BANNER:-}" ]]; then
   print_banner
 fi
 
-# Star counts are snapshotted at image build time (the runtime container has
-# NetworkMode: none) — see the .stars layer in container/Dockerfile. Fall back
-# to a hardcoded count when the file is missing or the fetch failed.
-hone_stars=44
-harness_stars=18
-if [[ -s "$HOME/.stars" ]]; then
-  stars=$(sed -n 's/^hone=\([0-9][0-9]*\)$/\1/p' "$HOME/.stars")
-  [[ -n "$stars" ]] && hone_stars=$stars
-  stars=$(sed -n 's/^harness=\([0-9][0-9]*\)$/\1/p' "$HOME/.stars")
-  [[ -n "$stars" ]] && harness_stars=$stars
-fi
-
 # Paced reveal: after the banner, the copy types itself out line by line.
 # Line-granular (not per-char — per-char loops split ANSI escapes across
 # Socket.IO flushes and render "93m" fragments). Any keypress skips to
@@ -86,20 +74,13 @@ _wt_pace() {
 wt() { printf '%b\n' "$1"; _wt_pace "${2:-$WELCOME_PACE_COPY}"; }
 wtblank() { echo ""; _wt_pace "$WELCOME_PACE_BLANK"; }
 
-# Social proof up top, everything clickable (OSC 8). Links stay OUT of
-# create_box content — the box measures width with color codes stripped but
-# doesn't know OSC 8 sequences are zero-width.
-wtblank
-proof_line="${DIM}$(hyperlink "󰊤 hone" "https://github.com/twaldin/hone" "$PURPLE")${DIM}★${hone_stars} ·"
-proof_line+="$(hyperlink "󰊤 harness" "https://github.com/twaldin/harness" "$PURPLE")${DIM}★${harness_stars} ·"
-proof_line+="$(hyperlink "benchmarked 155 agent combos on ~1B tokens" "https://tim.waldin.net/blog/2026-04-20-agentelo-155-combos" "$DIM")${DIM} ·"
-proof_line+=" agents @$(hyperlink "󰖟 lindy.ai" "https://lindy.ai" "$DIM")${RESET}"
-wt "$proof_line"
+# Links stay OUT of create_box content — the box measures width with color
+# codes stripped but doesn't know OSC 8 sequences are zero-width.
 wtblank
 
-wt "${WHITE}i'm tim — i optimize ai agents at$(hyperlink "󰖟 lindy.ai" "https://lindy.ai" "$BLUE")${WHITE} in san francisco.${RESET}"
-wt "${WHITE}i built the coding-agent suite in the open:$(hyperlink "󰊤 harness" "https://github.com/twaldin/harness" "$PURPLE")${WHITE} ·$(hyperlink "󰊤 hone" "https://github.com/twaldin/hone" "$PURPLE")${WHITE} ·$(hyperlink "󰊤 flt" "https://github.com/twaldin/flt" "$PURPLE")${WHITE} ·$(hyperlink "󰊤 agentelo" "https://github.com/twaldin/agentelo" "$PURPLE")${WHITE}.${RESET}"
-wt "${WHITE}and then i got a job at$(hyperlink "󰖟 lindy" "https://lindy.ai" "$BLUE")${WHITE} — i took a leave from purdue for it.${RESET}"
+wt "${WHITE}i'm tim — i optimize production ai agents at$(hyperlink "󰖟 lindy.ai" "https://lindy.ai" "$BLUE")${WHITE} in san francisco.${RESET}"
+wt "${WHITE}evals, prompt optimization, scoring real traces — the job is \"did it actually get better.\"${RESET}"
+wt "${WHITE}i took a leave from purdue and moved to sf for it.${RESET}"
 
 wtblank
 # The box cascades faster than the prose — menu items, not copy.
