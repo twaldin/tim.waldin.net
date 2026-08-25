@@ -1,5 +1,6 @@
 #!/bin/bash
 source "$(dirname "$0")/shared-functions.sh"
+source "$(dirname "$0")/also.sh"
 emit_url "projects"
 
 clear
@@ -19,6 +20,11 @@ ENTRIES=(
   'studyspot|studyspot|co-founded AI study platform — RAG + Claude over course docs|Next.js, Cloudflare Workers, pgvector'
   'stm32-games|stm32 games|complete snake in bare-metal C on an stm32 blue pill + lcd|C, st7789 lcd, libopencm3'
   'dotfiles|dotfiles|development environment configs|raw nvim (native vim.pack), zsh, tmux, ghostty'
+  'tetrio-tui|tetrio-tui|TETR.IO TUI — protocol/engine; --offline solo|TypeScript, truecolor TUI'
+  'deck|deck|local operator-attended software factory / Prime Agent|TypeScript, Bun, Prime Agent'
+  'hone-a-drone|hone-a-drone|hone-evolved drone racing controllers|Python, hone/GEPA, lsy_drone_racing'
+  'gepa-ts|gepa-ts|1-1 TS port of gepa.optimize_anything — zero deps|TypeScript, published @twaldin/gepa-ts'
+  'also|also|the rest of github.com/twaldin|hackathons, archived predecessors, forks'
 )
 
 # Same width detection as ascii_typewriter — COLUMNS is what xterm forwards.
@@ -89,12 +95,19 @@ if (( CELL_W >= 46 )); then
   grid_row 2 3
   grid_row 4 5
   grid_row 6 7
-  grid_row 8
+  grid_row 8 9
+  grid_row 10 11
+  grid_row 12 13
 else
   CELL_W=$(( cols - 2 ))
-  single_card 0; single_card 1; single_card 2; single_card 3
-  single_card 4; single_card 5; single_card 6; single_card 7; single_card 8
+  for i in 0 1 2 3 4 5 6 7 8 9 10 11 12 13; do
+    single_card "$i"
+  done
 fi
+
+echo ""
+print_also_list
+echo ""
 
 typewriter "${RED}You are now in the projects/ directory${RESET}"
 typewriter "${DIM}Use ls, cd, nvim, or your other favorite commands to explore my projects,${RESET}"

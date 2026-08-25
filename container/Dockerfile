@@ -173,7 +173,16 @@ RUN --mount=type=secret,id=github_token,required=false,mode=0644 \
     ln -sf /home/portfolio/scripts/harness.sh /home/portfolio/projects/harness/harness.sh && \
     ln -sf /home/portfolio/scripts/studyspot.sh /home/portfolio/projects/studyspot/studyspot.sh && \
     ln -sf /home/portfolio/scripts/dotfiles.sh /home/portfolio/.dotfiles/dotfiles.sh && \
-    ln -sf /home/portfolio/.dotfiles /home/portfolio/projects/dotfiles
+    ln -sf /home/portfolio/.dotfiles /home/portfolio/projects/dotfiles && \
+    mkdir -p /home/portfolio/projects/tetrio-tui \
+             /home/portfolio/projects/deck \
+             /home/portfolio/projects/hone-a-drone \
+             /home/portfolio/projects/gepa-ts && \
+    ln -sf /home/portfolio/scripts/tetrio-tui.sh /home/portfolio/projects/tetrio-tui/tetrio-tui.sh && \
+    ln -sf /home/portfolio/scripts/deck.sh /home/portfolio/projects/deck/deck.sh && \
+    ln -sf /home/portfolio/scripts/hone-a-drone.sh /home/portfolio/projects/hone-a-drone/hone-a-drone.sh && \
+    ln -sf /home/portfolio/scripts/gepa-ts.sh /home/portfolio/projects/gepa-ts/gepa-ts.sh && \
+    ln -sf /home/portfolio/scripts/also.sh /home/portfolio/projects/also.sh
 
 # Pre-install nvim plugins declared in dotfiles/nvim/init.lua (vim.pack.add).
 # Container has no internet at runtime, so plugins must be baked into the
@@ -202,6 +211,11 @@ RUN cp /home/portfolio/.dotfiles/zsh/zshrc /home/portfolio/.zshrc && \
     echo "alias harness='cd ~/projects/harness && /home/portfolio/scripts/harness.sh'" >> /home/portfolio/.zshrc && \
     echo "alias studyspot='cd ~/projects/studyspot && /home/portfolio/scripts/studyspot.sh'" >> /home/portfolio/.zshrc && \
     echo "alias dotfiles='cd ~/.dotfiles && /home/portfolio/scripts/dotfiles.sh'" >> /home/portfolio/.zshrc && \
+    echo "alias tetrio-tui='cd ~/projects/tetrio-tui && /home/portfolio/scripts/tetrio-tui.sh'" >> /home/portfolio/.zshrc && \
+    echo "alias deck='cd ~/projects/deck && /home/portfolio/scripts/deck.sh'" >> /home/portfolio/.zshrc && \
+    echo "alias hone-a-drone='cd ~/projects/hone-a-drone && /home/portfolio/scripts/hone-a-drone.sh'" >> /home/portfolio/.zshrc && \
+    echo "alias gepa-ts='cd ~/projects/gepa-ts && /home/portfolio/scripts/gepa-ts.sh'" >> /home/portfolio/.zshrc && \
+    echo "alias also='cd ~/projects && /home/portfolio/scripts/also.sh'" >> /home/portfolio/.zshrc && \
     echo "alias home='cd ~ && /home/portfolio/scripts/boot.sh'" >> /home/portfolio/.zshrc && \
     echo "alias welcome='cd ~ && /home/portfolio/scripts/boot.sh'" >> /home/portfolio/.zshrc && \
     echo "alias boot='cd ~ && /home/portfolio/scripts/boot.sh'" >> /home/portfolio/.zshrc && \
@@ -231,7 +245,7 @@ RUN cp /home/portfolio/.dotfiles/zsh/zshrc /home/portfolio/.zshrc && \
     echo "  # pretty URL instead of the raw alias name." >> /home/portfolio/.zshrc && \
     echo "  case \"\$cmd\" in" >> /home/portfolio/.zshrc && \
     echo "    welcome|home)         emit_url \"\"; return ;;" >> /home/portfolio/.zshrc && \
-    echo "    flt|agentelo|hone|harness|term-site|trade-up-bot|studyspot|stm32-games|dotfiles)" >> /home/portfolio/.zshrc && \
+    echo "    flt|agentelo|hone|harness|term-site|trade-up-bot|studyspot|stm32-games|dotfiles|tetrio-tui|deck|hone-a-drone|gepa-ts|also)" >> /home/portfolio/.zshrc && \
     echo "                          emit_url \"projects/\$cmd\"; return ;;" >> /home/portfolio/.zshrc && \
     echo "  esac" >> /home/portfolio/.zshrc && \
     echo "  # Universal: url-encode spaces, leave everything else literal." >> /home/portfolio/.zshrc && \
@@ -296,6 +310,11 @@ RUN echo 'export PATH="/home/portfolio/scripts:$PATH"' >> /home/portfolio/.bashr
     echo "alias term-site='cd ~/projects/term-site && /home/portfolio/scripts/term-site.sh'" >> /home/portfolio/.bashrc && \
     echo "alias trade-up-bot='cd ~/projects/trade-up-bot && /home/portfolio/scripts/trade-up-bot.sh'" >> /home/portfolio/.bashrc && \
     echo "alias dotfiles='cd ~/.dotfiles && /home/portfolio/scripts/dotfiles.sh'" >> /home/portfolio/.bashrc && \
+    echo "alias tetrio-tui='cd ~/projects/tetrio-tui && /home/portfolio/scripts/tetrio-tui.sh'" >> /home/portfolio/.bashrc && \
+    echo "alias deck='cd ~/projects/deck && /home/portfolio/scripts/deck.sh'" >> /home/portfolio/.bashrc && \
+    echo "alias hone-a-drone='cd ~/projects/hone-a-drone && /home/portfolio/scripts/hone-a-drone.sh'" >> /home/portfolio/.bashrc && \
+    echo "alias gepa-ts='cd ~/projects/gepa-ts && /home/portfolio/scripts/gepa-ts.sh'" >> /home/portfolio/.bashrc && \
+    echo "alias also='cd ~/projects && /home/portfolio/scripts/also.sh'" >> /home/portfolio/.bashrc && \
     echo "alias home='cd ~ && /home/portfolio/scripts/boot.sh'" >> /home/portfolio/.bashrc && \
     echo "alias welcome='cd ~ && /home/portfolio/scripts/boot.sh'" >> /home/portfolio/.bashrc && \
     echo "alias boot='cd ~ && /home/portfolio/scripts/boot.sh'" >> /home/portfolio/.bashrc && \
