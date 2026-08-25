@@ -8,9 +8,10 @@ ascii_typewriter "harness" "DOS_Rebel" "${PURPLE}"
 
 echo ""
 
-create_box "Description" "Unified python interface for invoking 6 AI coding CLIs as subprocesses
-— claude-code, opencode, codex, gemini, aider, swe-agent — behind one
-\`RunSpec -> RunResult\` contract. Each CLI's quirks (env setup, flag
+create_box "Description" "Unified python+ts interface for invoking 13 AI coding CLIs as
+subprocesses — claude-code, openclaude, opencode, codex, gemini, aider,
+swe-agent, qwen, continue-cli, pi, factory-droid, kilo, crush — behind
+one \`RunSpec -> RunResult\` contract. Each CLI's quirks (env setup, flag
 munging, cost/token parsing) lives in exactly one adapter file." "${PURPLE}"
 
 echo ""
