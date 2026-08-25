@@ -9,10 +9,9 @@ echo ""
 
 # One entry per project: command|display name|description|stack.
 # Copy stays grid-cell short (≤ ~60 cols) so the wide layout never wraps.
-# Entries 1-4 are the coding-agent suite and render as their own group.
 ENTRIES=(
   'harness|harness|one python+ts interface to 13 coding-agent CLIs|Python, TypeScript, per-CLI adapters'
-  'hone|hone|GEPA prompt optimizer — +20pp solve rate on unseen bugs|Python, GEPA/dspy, harness'
+  'hone|hone|GEPA prompt optimizer — 6/9 to 8/9 on unseen bugs|Python, GEPA/dspy, harness'
   'flt|flt|spawn + orchestrate fleets of coding agents in tmux|TypeScript, Bun, raw ANSI TUI'
   'agentelo|agentelo|Bradley-Terry leaderboard for coding agents (148-agent baseline)|TypeScript, Next.js, SQLite, Bun'
   'term-site|term site|this site — every visitor gets their own docker container|next.js, node.js, socket.IO, docker'
@@ -84,24 +83,16 @@ single_card() {
   echo ""
 }
 
-typewriter "${BOLD}${PURPLE}the coding-agent suite${RESET}"
-typewriter "${DIM}harness (substrate) -> hone (optimizer) -> flt (orchestrator) -> agentelo (leaderboard)${RESET}"
-echo ""
-
 if (( CELL_W >= 46 )); then
-  # Wide terminal: 2-up grid — suite on rows 1-2, everything else below.
+  # Wide terminal: 2-up grid of shipped projects, no suite pipeline framing.
   grid_row 0 1
   grid_row 2 3
-  animated_separator "+" $(( CELL_W * 2 + GUTTER )) "${PURPLE}"
-  echo ""
   grid_row 4 5
   grid_row 6 7
   grid_row 8
 else
   CELL_W=$(( cols - 2 ))
   single_card 0; single_card 1; single_card 2; single_card 3
-  animated_separator "+" $(( cols > 60 ? 60 : cols - 2 )) "${PURPLE}"
-  echo ""
   single_card 4; single_card 5; single_card 6; single_card 7; single_card 8
 fi
 
