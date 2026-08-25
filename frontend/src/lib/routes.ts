@@ -3,11 +3,13 @@ export const KNOWN_COMMANDS = new Set([
   'boot', 'theme', 'home',
   'flt', 'agentelo', 'trade-up-bot', 'term-site',
   'stm32-games', 'dotfiles', 'hone', 'harness', 'studyspot',
+  'tetrio-tui', 'deck', 'hone-a-drone', 'gepa-ts', 'also',
 ]);
 
 export const PROJECT_ALIASES = new Set([
   'flt', 'agentelo', 'trade-up-bot', 'term-site',
   'stm32-games', 'dotfiles', 'hone', 'harness', 'studyspot',
+  'tetrio-tui', 'deck', 'hone-a-drone', 'gepa-ts', 'also',
 ]);
 
 export const BLOG_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
@@ -43,7 +45,7 @@ export function getOgImage(pathname: string): { url: string; width: number; heig
   if (p.startsWith('t/')) p = p.slice(2);
   else if (p.startsWith('projects/')) p = p.slice('projects/'.length);
   const cmd = p.split('/')[0];
-  if (PROJECT_ALIASES.has(cmd)) {
+  if (PROJECT_ALIASES.has(cmd) && cmd !== 'also') {
     const card = cmd === 'term-site' ? 'tim.waldin.net' : cmd;
     return { url: `/repo-card/${card}`, width: 1280, height: 640 };
   }

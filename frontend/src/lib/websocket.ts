@@ -7,6 +7,7 @@ import { io, Socket } from 'socket.io-client';
 const PROJECT_ALIASES = new Set([
   'flt', 'agentelo', 'trade-up-bot',
   'term-site', 'stm32-games', 'dotfiles', 'hone', 'harness', 'studyspot',
+  'tetrio-tui', 'deck', 'hone-a-drone', 'gepa-ts', 'also',
 ]);
 
 const NAVIGATION_COMMANDS: Record<string, true> = {
@@ -28,6 +29,11 @@ const NAVIGATION_COMMANDS: Record<string, true> = {
   studyspot: true,
   'stm32-games': true,
   dotfiles: true,
+  'tetrio-tui': true,
+  deck: true,
+  'hone-a-drone': true,
+  'gepa-ts': true,
+  also: true,
 };
 
 // Safe char set for a full command string (first word + args combined).
