@@ -1,6 +1,6 @@
 # frontend/
 
-Next.js 15 (App Router, Turbopack) + React 19 client that renders the xterm.js terminal and brokers Socket.IO traffic to the backend. Tailwind 4 for the chrome around the terminal. The static pages (blog, `/gui`, share cards) read the same `--color-*` variables as the terminal so cold and hot views match.
+Next.js 15 (App Router, Turbopack) + React 19 client that renders the xterm.js terminal and brokers Socket.IO traffic to the backend. Tailwind 4 for the chrome around the terminal. The static HTML pages (blog, `/gui`) read the same `--color-*` variables as the terminal so cold and hot views match; the share-card images bake `DEFAULT_DARK_THEME` in directly.
 
 ## Layout
 
@@ -27,7 +27,7 @@ src/
 │   └── PageviewBeacon.tsx              # sendBeacon('/pv') once per load (nginx → backend); skipped on doNotTrack
 ├── config/
 │   ├── themes.ts                       # 463 generated Ghostty palettes + DEFAULT_DARK_THEME / DEFAULT_LIGHT_THEME
-│   └── terminal-theme.ts               # terminalConfig: font, cursor, scrollback — no colors
+│   └── terminal-theme.ts               # terminalConfig: xterm typography + behaviour options — no colors
 └── lib/
     ├── websocket.ts                    # Socket.IO client, pathToCommand() allowlist, handshake auth
     ├── routes.ts                       # isValidPath(), getPageMetadata(), getOgImage(), KNOWN_COMMANDS / PROJECT_ALIASES
@@ -38,39 +38,39 @@ src/
     ├── xterm-touch.ts                  # attachTouchScroll(): drag + momentum scrolling for the canvas
     ├── markdown-components.tsx         # react-markdown components + CSS-var color names for static pages
     └── __tests__/                      # Vitest: websocket-allowlist, routes, safe-url, theme-manager, mobile-viewport
-content/gui.md                          # Body for /gui, read from disk at request time
+content/gui.md                          # Body for /gui, read from disk by app/gui/page.tsx
 public/                                 # fonts/ (JetBrainsMono Nerd Font woff2 + ttf), resume.pdf, blog-snapshots/*.ansi (scripts/capture-blog-snapshots.sh; nothing in src/ reads them)
 blog-posts → ../container/blog/posts    # gitignored dev symlink; Dockerfile.production COPYs the directory instead
 ```
 
 ## URL → command routing (allowlist)
 
-Two frontend gates, then a backend re-check. There is no denylist anywhere in this app.
+Two frontend gates, then a backend re-check. The frontend has no denylist (the container's outbound `preexec` skip list is a separate concern — see Things to watch).
 
-1. **Render gate** — `app/[...slug]/page.tsx` calls `isValidPath()` (`lib/routes.ts`) and 404s anything that is not `/`, a `KNOWN_COMMANDS` entry, `/blog/<slug>` matching `BLOG_SLUG_PATTERN`, or `/projects/<alias>`. `/t/` and `/projects/` prefixes are stripped first. Valid paths render the same `<Home>` as `/`.
+1. **Render gate** — `app/[...slug]/page.tsx` calls `isValidPath()` (`lib/routes.ts`), which strips a leading `/t/` or `/projects/`, requires the first segment to be in `KNOWN_COMMANDS`, and allows a second segment only as a `blog` slug matching `BLOG_SLUG_PATTERN` (or `projects/<known command>`). Everything else 404s; valid paths render the same `<Home>` as `/`.
 2. **Command gate** — `pathToCommand()` (`lib/websocket.ts`) turns `window.location.pathname` into the `initCommand` sent in the Socket.IO handshake:
    - `/` → `boot` (intro animation, then welcome — see container/CLAUDE.md).
    - `/t/<cmd>` → drop the prefix and keep going (forces the live terminal; used by the blog pages and the header).
    - `/projects/<alias>` → `<alias>` when it is in `PROJECT_ALIASES` (legacy pretty URL).
    - Otherwise: URL-decode, cap at 200 chars, require `SAFE_CMD_RE` (`/^[A-Za-z0-9 ._/+=:,@-]+$/`), and if the string has no whitespace but contains `/`, turn the first `/` into a space (`/blog/foo` → `blog foo`). The result must then be a `NAVIGATION_COMMANDS` key or match `/^blog [A-Za-z0-9._-]+$/`. Anything else → `undefined`.
-3. **Backend** — `_maybeRunInitCommand` (`backend/session.js`) types `boot` when `initCommand` is falsy, so an unlisted path just boots. `_autoType` re-checks the character set and length as defence-in-depth and also falls back to `boot`.
+3. **Backend** — `_maybeRunInitCommand` (`backend/session.js`) types `boot` when `initCommand` is falsy, so a path that passes the render gate but not `pathToCommand()` (e.g. `/theme`) just boots. `_autoType` re-checks the character set and length as defence-in-depth and also falls back to `boot`.
 
 ## Socket.IO client (`lib/websocket.ts`)
 
 - `createWebSocketManager()` connects to `NEXT_PUBLIC_API_URL`, else the page origin (nginx proxies `/socket.io/`), else `http://localhost:3001`. `transports: ['websocket']`, `reconnection: false`; each `connect_error` schedules another `socket.connect()` 3 s later instead.
 - Handshake `auth: { initCommand, sessionId }`. `sessionId` is a lazily generated `crypto.randomUUID()` persisted in `localStorage['terminal-session-id']`; it is what lets the backend reattach the same container across a refresh.
 - `boot` replays on every connect, including resume/refresh — nothing substitutes `welcome` for it. The animation and the welcome typewriter are keypress-skippable instead.
-- Emits `visibility` (`{ hidden: document.hidden }`) on connect and on every `visibilitychange` so the backend relaxes its 60 s no-input bot-kill to 5 min while the tab is visible. Passive like `resize` — it never resets the idle keystroke timer.
+- Emits `visibility` (`{ hidden: document.hidden }`) on connect and on every `visibilitychange` so the backend relaxes its 60 s no-input bot-kill to 5 min while the tab is visible. Passive like `resize` (see Things to watch).
 - The last `resize` is buffered in `lastResize` and re-emitted on `connect`, because xterm's first fit fires before the socket is ready.
-- `session_status` carries `{ mode: 'cold' | 'resume', restoredType }`. `tti` phases become `performance.mark` entries in `app/page.tsx` (`term:*`, mirrored on `window.__termTti` for `scripts/tti-playwright.mjs`).
-- `session_end` (container exited) removes the stored `sessionId` and disconnects; `app/page.tsx` then `replaceState`s the URL to `/`, clears the terminal, and reconnects after 1.5 s. Resetting the URL is what stops `/exit` from being re-typed into the next session.
+- `session_status` carries `{ mode: 'cold' | 'resume' }` (the client type also declares an optional `restoredType` the backend never sends). `app/page.tsx` records `performance.mark`s (`term:*`, mirrored on `window.__termTti` for `scripts/tti-playwright.mjs`) from socket connect, first-output/prompt sniffing, and the `tti` event's `welcome-enter-sent` phase.
+- `session_end` (container exited) removes the stored `sessionId` and disconnects; `app/page.tsx` then `replaceState`s the URL to `/`, clears the terminal, and reconnects after 1.5 s, so the next session starts from `/` rather than whatever path the shell last pushed (e.g. `/exit`).
 
 ## Terminal component (`components/Terminal.tsx`)
 
 - Single xterm.js instance, mounted client-side only (`dynamic(() => import('@/components/Terminal'), { ssr: false })` in `app/page.tsx`). Output that arrives before mount is buffered in `outputBufferRef` and flushed on open.
 - Addons: `FitAddon`; `WebglAddon` inside a try/catch and disposed on context loss (either way xterm falls back to its default DOM renderer — there is no canvas addon in `package.json`); `WebLinksAddon` loaded on the host's first `mouseover` to keep TTI cheap.
 - Font: JetBrainsMono Nerd Font Mono. `@font-face` in `app/globals.css` (woff2 with ttf fallback), preloaded from `app/layout.tsx` with `crossOrigin="anonymous"`. xterm opens before the font is guaranteed loaded; `document.fonts.ready` triggers a re-fit once the swap changes glyph widths.
-- `calculateFontSize()`: viewport-width-driven, clamped `MIN_FONT_SIZE`–`MAX_FONT_SIZE` (10–28 px). Below `MOBILE_BREAKPOINT` (768 px) it derives a 40–80 col target from `usableWidth / (MIN_FONT_SIZE * CHAR_WIDTH_RATIO)`; desktop is `round(viewportWidth / 80)`. Cols/rows fall out of `FitAddon` rather than being set explicitly so figlet boxes scale naturally. `terminalConfig` (`config/terminal-theme.ts`) supplies font, cursor, and scrollback options only — palettes come from theme-manager.
+- `calculateFontSize()`: viewport-width-driven, clamped `MIN_FONT_SIZE`–`MAX_FONT_SIZE` (10–28 px). Below `MOBILE_BREAKPOINT` (768 px) it derives a 40–80 col target from `usableWidth / (MIN_FONT_SIZE * CHAR_WIDTH_RATIO)`; desktop is `round(viewportWidth / 80)`. Cols/rows fall out of `FitAddon` rather than being set explicitly so figlet boxes scale naturally. `terminalConfig` (`config/terminal-theme.ts`) supplies xterm typography and behaviour (font, line height, cursor, scrollback, `macOptionIsMeta`, proposed-API flag, default cols/rows) — palettes come from theme-manager.
 - Mobile keyboard: `visualViewport` resize/scroll listeners write `--app-visual-viewport-height` (consumed by `body:has(.terminal-host)` in `globals.css`) and re-fit on the `KEYBOARD_UPDATE_DELAYS_MS` ladder; the pure math (`getPromptVisibleScrollTarget`, `getScrollDeltaToKeepElementVisible`, `shouldEmitTerminalResize`) lives in `lib/mobile-viewport.ts`. Touch drag/momentum scrolling is `attachTouchScroll()` in `lib/xterm-touch.ts`.
 
 ## OSC handlers — URL ↔ command sync
@@ -79,7 +79,7 @@ The container's portfolio scripts and zsh `preexec` hook emit OSC sequences (`em
 
 - **OSC 9999 `<path>`** — `history.pushState` to `/<path>` (leading slashes collapse to one, so `//evil.com` becomes `/evil.com`); no-op when the pathname already matches.
 - **OSC 9998** — `xterm.scrollToTop()`.
-- **OSC 9997 `<path>`** — hard-navigate with `location.assign`, used when the shell wants the browser to leave the terminal page (e.g. `blog <slug>` → the static post). Rejects backslashes, `scheme:` prefixes, and protocol-relative paths, then resolves against `window.location.origin` and refuses anything cross-origin.
+- **OSC 9997 `<path>`** — hard-navigate with `location.assign`, used when the shell wants the browser to leave the terminal page (e.g. `blog <slug>` → the static post). Collapses leading slashes so `//evil.com` becomes the same-origin `/evil.com`, rejects backslashes and `scheme:` prefixes, then resolves against `window.location.origin` and refuses anything cross-origin.
 - **OSC 9996 `<name>`** — ephemeral palette switch for animations. Empty payload → `applySaved()`; `next` → `applyNextFlickerTheme()` through `FLICKER_PAIRS` (paired near-black/near-white themes so the flicker follows the visitor's mode).
 - **OSC 9995 `<name>`** — persist the visitor's theme for the current mode (`setAndPersistTheme`); `dark`/`light` → `setMode`; `reset` → `resetThemeChoices`.
 - **OSC 8** hyperlinks (mdcat output): `xterm.options.linkHandler.activate` and the `WebLinksAddon` share `handleLinkActivate`, which opens a new tab (`noopener,noreferrer`) only if `isSafeExternalUrl()` (`lib/safe-url.ts`) accepts the scheme — `http:`, `https:`, `mailto:`. `allowNonHttpProtocols: true` is what lets `mailto:` reach that check.
@@ -95,20 +95,20 @@ The two theme handlers apply via `setTimeout(…, 0)`: mutating `xterm.options.t
 ## Blog: static cold + live hot
 
 - Posts are markdown in `container/blog/posts`; the frontend reads them from `./blog-posts` (`POSTS_DIR` in `lib/blog-posts.ts`) — a gitignored symlink in dev, a `COPY` in `Dockerfile.production`. `listPostSlugs()` returns `[]` when the directory is missing, so a fresh checkout builds with an empty blog.
-- `app/blog/page.tsx` is the static index; `app/blog/[slug]/page.tsx` renders `BlogUnifiedPage` (statically generated per slug) and 301s an unknown slug through `resolveSlugAlias()` when it matches exactly one post. Typing `blog` in the live terminal pushes `/blog` via OSC 9999 without a reload, so these pages only render on cold loads.
-- The handoff to the live terminal is the embedded prompt, not a link: `BlogUnifiedPage` mounts a 3-row xterm below the article, buffers keystrokes, and on Enter does `location.assign('/t/' + encodeURIComponent(cmd))`. The live page then routes that path through `pathToCommand()` like any other — allowlisted commands run, anything else boots. Footer links go to `/`, `/t/blog`, `/t/projects`, `/t/resume`.
+- `app/blog/page.tsx` is the static index; `app/blog/[slug]/page.tsx` renders `BlogUnifiedPage` (statically generated per slug) and sends an unknown slug through `resolveSlugAlias()` to a `permanentRedirect()` (HTTP 308) when it matches exactly one post. Typing `blog` in the live terminal pushes `/blog` via OSC 9999 without a reload, so these pages only render on cold loads.
+- The handoff to the live terminal is the embedded prompt, not a link: `BlogUnifiedPage` mounts a 3-row xterm below the article, buffers keystrokes, and on Enter does `location.assign('/t/' + encodeURIComponent(cmd))`. That path then goes through both routing gates like any other: allowlisted commands run, commands unknown to `isValidPath()` 404, and the few that pass the render gate but not `pathToCommand()` boot. Footer links go to `/`, `/t/blog`, `/t/projects`, `/t/resume`.
 - The empty-string `initCommand` sentinel in `_maybeRunInitCommand` (`backend/session.js`) is backend-only; `pathToCommand()` never returns `''`.
 
 ## Static pages, share cards, SEO
 
-- `/gui` (`app/gui/page.tsx`) renders `content/gui.md` through `react-markdown` at request time; `Dockerfile.production` copies `content/` alongside `blog-posts/`.
-- Share cards are `next/og` `ImageResponse`s that read `public/fonts/JetBrainsMonoNerdFontMono-Regular.ttf` from disk: `app/opengraph-image.tsx` (root, baked figlet), `app/blog/[slug]/opengraph-image.tsx` (per post), `app/repo-card/[name]/route.tsx` (1280×640 per repo from `cards.json`, `force-static`; add repos with `scripts/add-repo-card.sh`). `getOgImage()` in `lib/routes.ts` picks the repo card for project paths and the root card otherwise.
+- `/gui` (`app/gui/page.tsx`) renders `content/gui.md` through `react-markdown`, reading it with `readFileSync` from `process.cwd()`; `Dockerfile.production` copies `content/` alongside `blog-posts/` so the file is present wherever Next renders the page.
+- Share cards are `next/og` `ImageResponse`s that read `public/fonts/JetBrainsMonoNerdFontMono-Regular.ttf` from disk: `app/opengraph-image.tsx` (root, baked figlet), `app/blog/[slug]/opengraph-image.tsx` (per post), `app/repo-card/[name]/route.tsx` (1280×640 per repo from `cards.json`, `force-static`; add repos with `scripts/add-repo-card.sh`). `getOgImage()` in `lib/routes.ts` picks the repo card for project aliases (except `also`, which has no card; `term-site` maps to the `tim.waldin.net` card) and the root card otherwise.
 - `app/sitemap.ts` lists `/`, `/gui`, `/blog`, every post, and `/projects/<alias>`; `app/robots.ts` allows everything and points at it. `getPageMetadata()` supplies titles/descriptions for `layout.tsx` and the catch-all.
 - `next.config.ts`: `output: "standalone"` (what the Dockerfile ships) and a permanent `/resume.html` → `/resume.pdf` redirect (nginx has the same rule).
 
 ## SiteHeader
 
-`NAV_ITEMS` link to `/`, `/t/blog`, `/t/projects`, `/t/resume`, `/t/about`, `/t/contact`; `hardNav()` forces a full reload so every navigation gets a fresh session + initCommand. Colors come from the `--color-*` vars so the header re-themes live; the right-hand button shows the resolved mode and calls `setMode()` to flip it. Below Tailwind's `sm` breakpoint (640 px) the nav collapses into a `<details>` dropdown (closes on outside click / Escape) — the header must stay one row on phones.
+`NAV_ITEMS` link to `/`, `/t/blog`, `/t/projects`, `/t/resume`, `/t/about`, `/t/contact`; `hardNav()` forces a full reload so every navigation opens a new socket with that path's `initCommand` (the stored `sessionId` reattaches the same container). Colors come from the `--color-*` vars so the header re-themes live; the right-hand button shows the resolved mode and calls `setMode()` to flip it. Below Tailwind's `sm` breakpoint (640 px) the nav collapses into a `<details>` dropdown (closes on outside click / Escape) — the header must stay one row on phones.
 
 ## Dev / build / tests
 
