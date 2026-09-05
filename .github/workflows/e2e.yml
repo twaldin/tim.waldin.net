@@ -34,8 +34,11 @@ jobs:
         env:
           BASE_URL: ${{ vars.E2E_BASE_URL || 'https://tim.waldin.net' }}
         run: npx playwright test
-      - name: Upload report on failure
-        if: failure()
+      # Uploaded for every finished run, not only failures: a flaky pass (the
+      # first-visit check tripping the nginx limiter on attempt 1) keeps the
+      # failed attempt's trace in the report, and that is the TWA-55 signal.
+      - name: Upload report
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-attempt-${{ github.run_attempt }}
