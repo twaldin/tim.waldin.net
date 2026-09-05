@@ -159,6 +159,55 @@ test('the second tab disconnecting right after the rebind leaves the lease in th
   assertOutputReaches(docker, lease.handleId, refreshed, [first, second]);
 });
 
+test('a refresh that takes the lease before a disconnected takeover\'s continuation runs keeps it', async (t) => {
+  const { clock, docker, lifecycle, mgr } = makeManager(t);
+  const first = fakeSocket(mgr, 'tab-1', 'browser-a');
+  await mgr.handleConnect(first);
+  const { lease } = mgr.conns.get('tab-1');
+
+  const second = fakeSocket(mgr, 'tab-2', 'browser-a');
+  const takingOver = mgr.handleConnect(second);
+  second.disconnect();
+  const refreshed = fakeSocket(mgr, 'tab-1-refreshed', 'browser-a');
+  const refreshing = mgr.handleConnect(refreshed);
+  await Promise.all([takingOver, refreshing]);
+  assert.equal(statusOf(refreshed), 'resume');
+
+  await clock.advance(30_000);
+  assert.equal(lease.state, 'active');
+  assert.ok(lifecycle.handles.has(lease.handleId));
+  assert.deepEqual(docker.removedIds, []);
+  assert.deepEqual([...mgr.conns.keys()], ['tab-1-refreshed']);
+  assertOutputReaches(docker, lease.handleId, refreshed, [first, second]);
+});
+
+test('a tab that resumes a cold lease whose socket left, before that acquire\'s continuation runs, keeps it', async (t) => {
+  const { clock, docker, lifecycle, mgr } = makeManager(t, { poolSize: 0 });
+  const releaseAttach = hold(docker, 'attach');
+  const gone = fakeSocket(mgr, 'tab-1', 'browser-a');
+  const acquiring = mgr.handleConnect(gone);
+  gone.disconnect();
+  releaseAttach();
+  // Step microtasks until the lease is active but handleConnect has not resumed.
+  for (let steps = 0; mgr.admission.activeLeases.size === 0; steps += 1) {
+    assert.ok(steps < 50, 'the lease never became active');
+    await null;
+  }
+  const [lease] = mgr.admission.activeLeases.values();
+
+  const resumed = fakeSocket(mgr, 'tab-2', 'browser-a');
+  const resuming = mgr.handleConnect(resumed);
+  await Promise.all([acquiring, resuming]);
+  assert.equal(statusOf(resumed), 'resume');
+
+  await clock.advance(30_000);
+  assert.equal(lease.state, 'active');
+  assert.ok(lifecycle.handles.has(lease.handleId));
+  assert.deepEqual(docker.removedIds, []);
+  assert.deepEqual([...mgr.conns.keys()], ['tab-2']);
+  assertOutputReaches(docker, lease.handleId, resumed, [gone]);
+});
+
 test('the first tab left open: its idle and no-input timers cannot end the shared shell', async (t) => {
   const { docker, lifecycle, mgr } = makeManager(t);
   // The first tab's windows, scaled down (ms stand in for s); the second tab

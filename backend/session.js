@@ -88,7 +88,7 @@ class SessionManager {
     const onClose = () => this._handleStreamClose(socket.id);
     // A later connection presenting the same sessionId (a second tab in the
     // same browser) takes the stream; Admission calls this in the same tick.
-    const onSuperseded = () => this._retire(socket.id);
+    const onSuperseded = () => this._retire(state);
 
     let result;
     try {
@@ -232,17 +232,20 @@ class SessionManager {
   // refresh there takes the lease back — but never session_end: the client
   // would drop the browser-wide sessionId and reconnect cold, evicting the tab
   // that just took over.
-  _retire(socketId) {
-    const s = this.conns.get(socketId);
-    if (!s) return;
-    console.log(`Session ${socketId} superseded${s.lease ? ` (lease ${s.lease.leaseId})` : ''}`);
-    this._clearTimers(s);
-    s.superseded = true;
+  _retire(state) {
+    // Marked even when the conn is already gone (its socket left before the
+    // takeover): the pending handleConnect must leave the lease to its new
+    // holder instead of zombifying it.
+    state.superseded = true;
+    const { socket } = state;
+    if (this.conns.get(socket.id) !== state) return;
+    console.log(`Session ${socket.id} superseded${state.lease ? ` (lease ${state.lease.leaseId})` : ''}`);
+    this._clearTimers(state);
     // Socket.IO raises `disconnect` synchronously: the conn must already be
     // gone so handleDisconnect does not zombify the lease.
-    this.conns.delete(socketId);
-    try { s.socket.emit('output', '\r\n[session moved to a newer tab — refresh here to take it back]\r\n'); } catch { /* ignore */ }
-    try { s.socket.disconnect(); } catch { /* ignore */ }
+    this.conns.delete(socket.id);
+    try { socket.emit('output', '\r\n[session moved to a newer tab — refresh here to take it back]\r\n'); } catch { /* ignore */ }
+    try { socket.disconnect(); } catch { /* ignore */ }
   }
 
   // Run the initCommand only once the prompt has appeared AND the first resize
