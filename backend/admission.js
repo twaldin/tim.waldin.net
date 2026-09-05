@@ -95,8 +95,8 @@ class Admission {
 
     // A same-IP connection without a matching persistent id replaces that IP's
     // live lease. destroy() drops the old lease from the session count before
-    // its first await, so the replacement inherits the slot; the old handle is
-    // fully destroyed before lifecycle.lease starts for the replacement.
+    // its first await, so the replacement inherits the slot; the evicted
+    // lease's handle is torn down before lifecycle.lease starts for it.
     const existingLeaseId = this.ipLeases.get(ip);
     let eviction;
     if (existingLeaseId) {
@@ -132,6 +132,9 @@ class Admission {
         this._endPendingLease(lease);
         return { mode: 'denied', reason: 'eviction-failed' };
       }
+      // A later same-IP connection may have evicted this lease during the
+      // teardown; leasing a container for it would only create one to destroy.
+      if (lease.state !== 'pending') return { mode: 'denied', reason: 'cancelled' };
     }
 
     const operation = this._fulfillLease(lease);
