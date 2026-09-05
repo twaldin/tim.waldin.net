@@ -83,13 +83,10 @@ class Admission {
         if (persistentLease.ip !== ip) {
           return { mode: 'denied', reason: 'ip-mismatch' };
         }
-        // Re-bind to THIS connection's output/close sinks. Without this, a
-        // refresh/reattach rebinds the live container stream to the PREVIOUS
-        // (now-dead) socket, so the new terminal gets session_status but no
-        // output — stuck in the "reattaching" view forever.
-        persistentLease.onOutput = onOutput;
-        persistentLease.onClose = onClose;
-        return this._restore(persistentLease);
+        // Rebind to THIS connection's sinks, passed explicitly: two restores
+        // of one lease can overlap (the zombie path awaits an eviction), and
+        // each must bind the sinks of the socket it then hands the lease to.
+        return this._restore(persistentLease, { onOutput, onClose });
       }
     }
 
@@ -271,7 +268,7 @@ class Admission {
     return null;
   }
 
-  async _restore(lease) {
+  async _restore(lease, { onOutput, onClose }) {
     if (lease.state === 'zombie') {
       const zombie = this.zombieLeases.get(lease.leaseId);
       if (!zombie) return { mode: 'denied', reason: 'not-found' };
@@ -291,7 +288,7 @@ class Admission {
 
     lease.lastActivity = this.clock();
     try {
-      await this.lifecycle.rebind(lease.handleId, this._callbacksFor(lease.leaseId, lease.onOutput, lease.onClose));
+      await this.lifecycle.rebind(lease.handleId, this._callbacksFor(lease.leaseId, onOutput, onClose));
     } catch {
       return { mode: 'denied', reason: 'rebind-failed' };
     }
