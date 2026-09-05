@@ -75,11 +75,11 @@ The Dockerfile copies the dotfiles `zsh/zshrc` to `~/.zshrc` and appends:
 | `dotfiles` | `cd ~/.dotfiles && dotfiles.sh` |
 | `theme`, `help`, `blog`, `gui` | `<name>.sh` — no `cd` |
 
-Adding a command means touching this block, `help.sh`, and the frontend allowlists — `NAVIGATION_COMMANDS` / `PROJECT_ALIASES` in `frontend/src/lib/websocket.ts` and `KNOWN_COMMANDS` / `PROJECT_ALIASES` in `frontend/src/lib/routes.ts`. A new project alias also needs the `preexec` case that maps it to `projects/<alias>`.
+Adding a command means touching this block and `help.sh`, plus — if a URL should reach it — the frontend allowlists: `NAVIGATION_COMMANDS` in `frontend/src/lib/websocket.ts` lets the path auto-type the command, `KNOWN_COMMANDS` in `frontend/src/lib/routes.ts` lets it render instead of 404 (the two already differ for `theme` and `gui`; see `frontend/CLAUDE.md`). A new project alias additionally goes into both files' `PROJECT_ALIASES` sets and the `preexec` case that maps it to `projects/<alias>`.
 
 ## Boot intro (animations)
 
-`boot` is what the frontend sends as `initCommand` for `/` (`pathToCommand` in `frontend/src/lib/websocket.ts`) and what `_maybeRunInitCommand` (`backend/session.js`) falls back to when the handshake carries no command; other paths type their own command (`/about` → `about`). Every connect on `/` replays it, including resume/refresh — the backend never substitutes `welcome` (and the `welcome`/`home` aliases run `boot.sh` anyway); the animation and the welcome reveal are keypress-skippable instead.
+`boot` is what the frontend sends as `initCommand` for `/` (`pathToCommand` in `frontend/src/lib/websocket.ts`) and what `_maybeRunInitCommand` (`backend/session.js`) falls back to when the handshake carries no command; other allowlisted paths type their own command (`/about` → `about`), while a path that renders but fails `pathToCommand` (e.g. `/theme`) boots too. Every connect on `/` replays the intro, including resume/refresh — the backend never substitutes `welcome` (and the `welcome`/`home` aliases run `boot.sh` anyway); the animation and the welcome reveal are keypress-skippable instead.
 
 `boot.sh` (`boot <anim>` forces an animation):
 
