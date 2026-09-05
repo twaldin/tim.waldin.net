@@ -19,76 +19,93 @@ Browser (xterm.js) → Nginx (reverse proxy, SSL, rate limiting)
 
 ## Tech Stack
 
-- **Frontend**: Next.js 15, React 19, xterm.js 5.5, Socket.IO client
-- **Backend**: Node.js 18, Express, Socket.IO, dockerode
+- **Frontend**: Next.js 15, React 19, xterm.js 5.5 (fit, web-links, webgl addons), Socket.IO client
+- **Backend**: Node.js 24, Express 5, Socket.IO 4, dockerode 4
 - **Container**: Ubuntu 24.04, zsh, Oh My Posh, Nerd Fonts, figlet
-- **Infrastructure**: Docker Compose, Nginx, Let's Encrypt SSL
-- **Theme**: Gruvbox Dark with JetBrainsMono Nerd Font
+- **Infrastructure**: Docker Compose, Nginx, Let's Encrypt SSL, Tecnativa docker-socket-proxy, Playwright e2e on GitHub Actions
+- **Theme**: 463 Ghostty color schemes; defaults to iTerm2 Tango Dark or Light following `prefers-color-scheme`; JetBrainsMono Nerd Font
 
 ## Project Structure
 
 ```
 term-site/
-├── frontend/              # Next.js app with xterm.js terminal
-│   ├── src/
-│   │   ├── components/    # Terminal.tsx (dynamic font sizing, OSC 8 links)
-│   │   ├── config/        # Gruvbox Dark theme
-│   │   └── lib/           # Socket.IO client manager
-│   └── public/            # Static assets (fonts, resume.pdf)
-├── backend/               # Node.js server that manages Docker containers
-│   ├── server.js          # Socket.IO server with rate limiting
-│   └── session.js         # Container lifecycle, auto-welcome, cleanup
-├── container/             # Ubuntu Docker container with portfolio content
-│   ├── Dockerfile         # Container setup (repos, dotfiles, Oh My Posh)
-│   ├── scripts/           # Portfolio navigation scripts
-│   │   ├── welcome.sh     # Home page with ASCII art
-│   │   ├── projects.sh    # Project listing
-│   │   ├── stm32-games.sh # Project pages with git activity
-│   │   ├── term-site.sh
-│   │   ├── trade-up-bot.sh
-│   │   ├── dotfiles.sh
-│   │   ├── resume.sh      # Resume with clickable link
-│   │   ├── about.sh
-│   │   ├── contact.sh     # OSC 8 hyperlinks for email/socials
-│   │   ├── help.sh
-│   │   └── shared-functions.sh  # Colors, typewriter, ASCII art, boxes
-├── docker-compose.yml     # Service orchestration
-├── nginx.conf             # Reverse proxy, SSL, rate limiting
-└── deploy.sh              # Automated deployment script
+├── frontend/                  # Next.js app
+│   ├── src/app/               # Routes: terminal page for / and every command URL, blog/, gui/, repo-card/, OG image, sitemap
+│   ├── src/components/        # Terminal.tsx (xterm.js, OSC handlers, font sizing, clipboard)
+│   ├── src/config/            # themes.ts (463-theme table + defaults), terminal-theme.ts (typography)
+│   ├── src/lib/               # websocket.ts (URL → command, session id), theme-manager.ts, xterm-touch.ts
+│   ├── content/               # gui.md
+│   └── public/                # Fonts, resume.pdf, blog snapshots
+├── backend/                   # Node.js session control plane
+│   ├── server.js              # Express + Socket.IO wiring, audit log, /pv beacon, /admin
+│   ├── session.js             # Per-connection timers, initCommand auto-typing, resize gate
+│   ├── admission.js           # Leases: one session per IP, capacity cap, rate limit, reconnect grace
+│   ├── lifecycle.js           # dockerode adapter, warm pool, attach/rebind
+│   ├── sandbox-policy.js      # The container spec (limits, capabilities, network)
+│   ├── admin.js, pageviews.js, logger.js
+│   ├── proxy-validator/       # Body-validating Docker proxy: built and unit-tested, not in the data path
+│   └── test/                  # Unit tests
+├── container/                 # The Ubuntu image every visitor gets
+│   ├── Dockerfile             # Tools, dotfiles, pre-cloned repos, aliases, zsh preexec URL sync
+│   ├── scripts/               # scripts/*.sh — one per portfolio page
+│   │   ├── shared-functions.sh, boot.sh, help.sh, theme.sh, blog.sh
+│   │   └── animations/        # Boot intro animations
+│   ├── blog/posts/            # Markdown posts
+│   └── fonts/                 # figlet font pool for the banner
+├── e2e/                       # Playwright suite (run by .github/workflows/e2e.yml)
+├── scripts/                   # Ops scripts: deploy, VPS, blog, repo cards, fonts, themes
+├── docker-compose.yml         # nginx, frontend, backend, socket-proxy
+├── docker-compose.local.yml   # Local override (port 8088, nginx-local.conf)
+├── nginx.conf                 # Reverse proxy, SSL, rate limiting
+└── deploy.sh                  # Build images, then swap the stack
 ```
 
 ## Security
 
-Each user gets an isolated Docker container with:
-- 512MB RAM limit, 0.5 CPU limit, 100 process limit
+Each visitor gets an isolated Docker container with:
+- 512 MB RAM limit, 0.5 CPU limit, 100 process limit, 100 MB `noexec,nosuid` tmpfs on `/tmp`
 - No network access (`NetworkMode: none`)
-- Non-root user with all capabilities dropped
-- `no-new-privileges` security option
-- 15-minute inactivity timeout with auto-cleanup
-- Docker Socket Proxy restricts API access (no networks/volumes/build)
+- Non-root `portfolio` user; all capabilities dropped, then only `SETUID` and `SETGID` added back for the `sudo` demo
+- Docker Socket Proxy restricts the backend's API access to containers, images, POST, info, and ping (no networks, volumes, build, exec)
+
+Session limits (`backend/session.js`, `backend/admission.js`):
+- Pre-warmed pool of 5 containers; hard cap of 40 concurrent sessions
+- One live session per IP: a new connection from the same IP replaces the old one; at most 30 connections per IP per minute
+- Idle kill after 5 minutes without a keystroke
+- Bot kill: a session that never receives input is freed after 60 s, relaxed to 5 minutes while the page reports itself visible
+- 30-second reconnect grace after a disconnect; a refresh within it resumes the same container (same IP only)
+- Nginx: 10 requests/s per IP (burst 20), 10 concurrent connections per IP
 
 Users can run destructive commands like `rm -rf /` or fork bombs - they only affect their own container, not the host.
 
 ## Terminal Commands
 
-Custom portfolio navigation:
-- `welcome` / `home` - Home page with ASCII art
-- `projects` - Browse all projects
-- `about` - About me
+Portfolio navigation (`help` prints this list inside the terminal):
+- `about` - Learn about me
 - `contact` - Email and social links
 - `resume` - View my resume
+- `projects` - Explore all projects
+- `blog` - Posts I've written; `blog <slug>` opens a post
+- `<project>` - Jump straight to a project page: `harness`, `hone`, `flt`, `agentelo`, `term-site`, `trade-up-bot`, `studyspot`, `stm32-games`, `dotfiles`, `tetrio-tui`, `deck`, `hone-a-drone`, `gepa-ts`, `also`
+- `theme` - Re-theme the site with a live fzf preview over 463 schemes; `theme <name>`, `theme dark|light`, `theme reset`
+- `boot` - Replay the intro animation; `boot <name>` picks one
+- `gui` - The point-and-click version, for mouse users
 - `help` - Show available commands
-- `stm32-games`, `term-site`, `trade-up-bot`, `dotfiles` - Jump to project repos
+- `home` / `welcome` - Back to the main page (same as `boot`)
 
 Plus standard Linux tools: `ls`, `cd`, `cat`, `nvim`, `git`, `grep`, `rg`, `fzf`, `tree`, `htop`, `bat`, etc.
 
 ## Features
 
-- Dynamic font sizing to fit ASCII art on any screen width
-- Gruvbox Dark color scheme across terminal, vim, and bat
+- Boot intro on every connect: one of five random animations with a random figlet banner font sized to the terminal width, then the `welcome` page types out; any key skips it
+- URL ↔ command sync: opening `/about` runs `about`, `/projects/<name>` opens that project, `/blog/<slug>` opens a post; typing a command updates the browser URL (zsh `preexec` emits OSC 9999)
+- Theme switcher: 463 color schemes with live preview, saved separately for dark and light mode
+- Font size derived from viewport width (10–28 px) so ASCII art fits on any screen; touch scrolling with momentum on mobile
+- Refresh resumes the same container within the 30-second reconnect grace
 - Clickable hyperlinks via OSC 8 protocol
-- Animated typewriter text and ASCII art (figlet with DOS_Rebel font)
-- Auto-typed `welcome` command on connect
-- Pre-cloned git repos with live git activity display
+- Blog posts written in Markdown, listed by `blog` in the terminal and rendered as HTML pages at `/blog`
+- `gui` hands off to a point-and-click page for mouse users
+- Pre-cloned git repos with recent-commit display on project pages
 - Oh My Posh shell prompt with Nerd Font icons
-- Copy/paste support, tab completion
+- Copy/paste (Ctrl/Cmd+C, Ctrl/Cmd+V), tab completion
+- Social preview cards per project (`/repo-card/<name>`) and per blog post
