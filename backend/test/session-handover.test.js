@@ -1,0 +1,309 @@
+'use strict';
+
+// Same-browser lease handover through the production composition: the real
+// SessionManager over the real Admission and SessionLifecycle, with the
+// in-memory Docker adapter underneath. A second tab presents the browser's
+// persistent sessionId and resumes the first tab's lease; the first tab must
+// lose every way of ending that lease (TWA-53).
+
+const assert = require('node:assert/strict');
+const test = require('node:test');
+const SessionManager = require('../session');
+const { Admission } = require('../admission');
+const SessionLifecycle = require('../lifecycle');
+const LifecycleFake = require('./lifecycle-fake');
+const { makeFakeClock } = require('./fake-clock');
+
+const IP = '203.0.113.1';
+const FOREVER = 60_000_000;
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Holds every call of one LifecycleFake method until `release()`. */
+function hold(docker, method) {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const original = docker[method].bind(docker);
+  docker[method] = async (...args) => { await gate; return original(...args); };
+  return release;
+}
+
+function makeManager(t, { poolSize = 5 } = {}) {
+  const clock = makeFakeClock();
+  const docker = new LifecycleFake();
+  const lifecycle = new SessionLifecycle({ docker, poolSize });
+  const admission = new Admission({ lifecycle, maxSessions: 40, clock });
+  const mgr = new SessionManager({ lifecycle, admission });
+  mgr.sessionTimeout = FOREVER;
+  mgr.noInputTimeout = FOREVER;
+  mgr.noInputTimeoutVisible = FOREVER;
+  t.after(() => { for (const state of mgr.conns.values()) mgr._clearTimers(state); });
+  return { clock, docker, lifecycle, mgr };
+}
+
+/**
+ * A socket as server.js wires it: Socket.IO raises `disconnect` synchronously
+ * whether the client or the server closed the socket, and server.js routes it
+ * to handleDisconnect.
+ */
+function fakeSocket(mgr, id, sessionId) {
+  const socket = {
+    id,
+    connected: true,
+    handshake: { headers: { 'x-real-ip': IP }, auth: { sessionId, initCommand: '' } },
+    emitted: [],
+    emit(ev, payload) { socket.emitted.push({ ev, payload }); },
+    disconnect() {
+      if (!socket.connected) return;
+      socket.connected = false;
+      mgr.handleDisconnect(id);
+    },
+  };
+  return socket;
+}
+
+const statusOf = (socket) => socket.emitted.find(({ ev }) => ev === 'session_status')?.payload.mode;
+const outputOf = (socket) => socket.emitted.filter(({ ev }) => ev === 'output').map(({ payload }) => payload);
+
+/** The old tab was told and hung up by the server, and never sent session_end. */
+function assertRetired(socket) {
+  assert.equal(socket.connected, false, `${socket.id} must be disconnected by the server`);
+  assert.ok(outputOf(socket).some((line) => line.includes('moved to a newer tab')), `${socket.id} must be told`);
+  assert.ok(!socket.emitted.some(({ ev }) => ev === 'session_end'), `${socket.id} must not get session_end`);
+}
+
+/** Container output reaches `owner` and none of the `others`. */
+function assertOutputReaches(docker, handleId, owner, others) {
+  docker.push(handleId, 'still here');
+  assert.ok(outputOf(owner).includes('still here'), `output must reach ${owner.id}`);
+  for (const socket of others) {
+    assert.ok(!outputOf(socket).includes('still here'), `output must not reach ${socket.id}`);
+  }
+}
+
+/** The lease is live and its container untouched. */
+function assertShellAlive({ lease, lifecycle, docker }) {
+  assert.equal(lease.state, 'active');
+  assert.ok(lifecycle.handles.has(lease.handleId), 'the container handle must survive');
+  assert.deepEqual(docker.removedIds, []);
+}
+
+test('the first tab is hung up at takeover; closing it and its 30 s grace cannot end the shared shell', async (t) => {
+  const { clock, docker, lifecycle, mgr } = makeManager(t);
+  const first = fakeSocket(mgr, 'tab-1', 'browser-a');
+  await mgr.handleConnect(first);
+  const { lease } = mgr.conns.get('tab-1');
+  const { handleId } = lease;
+
+  const second = fakeSocket(mgr, 'tab-2', 'browser-a');
+  await mgr.handleConnect(second);
+  assert.equal(statusOf(second), 'resume');
+  assert.equal(mgr.conns.get('tab-2').lease, lease);
+  assertRetired(first);
+  assert.deepEqual([...mgr.conns.keys()], ['tab-2']);
+
+  // The visitor closes the first tab (already hung up), then the reconnect
+  // grace it would have started passes.
+  first.disconnect();
+  await clock.advance(30_000);
+  assertShellAlive({ lease, lifecycle, docker });
+  assertOutputReaches(docker, handleId, second, [first]);
+
+  // Only the second tab can end the session now.
+  second.disconnect();
+  assert.equal(lease.state, 'zombie');
+  await clock.advance(30_000);
+  assert.equal(lease.state, 'ended');
+  assert.deepEqual(docker.removedIds, [handleId]);
+});
+
+// The rebind happens synchronously inside tryAcquire; handleConnect's
+// continuation runs later. Ownership must already have moved by the time
+// anything else runs in between, so a disconnect in that gap is handled like
+// one after the takeover.
+test('the first tab disconnecting right after the rebind, before the resume continuation, cannot end the shell', async (t) => {
+  const { clock, docker, lifecycle, mgr } = makeManager(t);
+  const first = fakeSocket(mgr, 'tab-1', 'browser-a');
+  await mgr.handleConnect(first);
+  const { lease } = mgr.conns.get('tab-1');
+
+  const second = fakeSocket(mgr, 'tab-2', 'browser-a');
+  const connecting = mgr.handleConnect(second);
+  first.disconnect();
+  await connecting;
+  assert.equal(statusOf(second), 'resume');
+
+  await clock.advance(30_000);
+  assertShellAlive({ lease, lifecycle, docker });
+  assert.deepEqual([...mgr.conns.keys()], ['tab-2']);
+  assertOutputReaches(docker, lease.handleId, second, [first]);
+});
+
+test('the second tab disconnecting right after the rebind leaves the lease in the grace window, restorable by a refresh', async (t) => {
+  const { clock, docker, lifecycle, mgr } = makeManager(t);
+  const first = fakeSocket(mgr, 'tab-1', 'browser-a');
+  await mgr.handleConnect(first);
+  const { lease } = mgr.conns.get('tab-1');
+
+  const second = fakeSocket(mgr, 'tab-2', 'browser-a');
+  const connecting = mgr.handleConnect(second);
+  second.disconnect();
+  await connecting;
+  assertRetired(first);
+  assert.deepEqual([...mgr.conns.keys()], []);
+  assert.equal(lease.state, 'zombie');
+
+  const refreshed = fakeSocket(mgr, 'tab-1-refreshed', 'browser-a');
+  await mgr.handleConnect(refreshed);
+  assert.equal(statusOf(refreshed), 'resume');
+  await clock.advance(30_000);
+  assertShellAlive({ lease, lifecycle, docker });
+  assertOutputReaches(docker, lease.handleId, refreshed, [first, second]);
+});
+
+test('a refresh that takes the lease before a disconnected takeover\'s continuation runs keeps it', async (t) => {
+  const { clock, docker, lifecycle, mgr } = makeManager(t);
+  const first = fakeSocket(mgr, 'tab-1', 'browser-a');
+  await mgr.handleConnect(first);
+  const { lease } = mgr.conns.get('tab-1');
+
+  const second = fakeSocket(mgr, 'tab-2', 'browser-a');
+  const takingOver = mgr.handleConnect(second);
+  second.disconnect();
+  const refreshed = fakeSocket(mgr, 'tab-1-refreshed', 'browser-a');
+  const refreshing = mgr.handleConnect(refreshed);
+  await Promise.all([takingOver, refreshing]);
+  assert.equal(statusOf(refreshed), 'resume');
+
+  await clock.advance(30_000);
+  assertShellAlive({ lease, lifecycle, docker });
+  assert.deepEqual([...mgr.conns.keys()], ['tab-1-refreshed']);
+  assertOutputReaches(docker, lease.handleId, refreshed, [first, second]);
+});
+
+test('a tab that resumes a cold lease whose socket left, before that acquire\'s continuation runs, keeps it', async (t) => {
+  const { clock, docker, lifecycle, mgr } = makeManager(t, { poolSize: 0 });
+  const releaseAttach = hold(docker, 'attach');
+  const gone = fakeSocket(mgr, 'tab-1', 'browser-a');
+  const acquiring = mgr.handleConnect(gone);
+  gone.disconnect();
+  releaseAttach();
+  // Step microtasks until the lease is active but handleConnect has not resumed.
+  for (let steps = 0; mgr.admission.activeLeases.size === 0; steps += 1) {
+    assert.ok(steps < 50, 'the lease never became active');
+    await null;
+  }
+  const [lease] = mgr.admission.activeLeases.values();
+
+  const resumed = fakeSocket(mgr, 'tab-2', 'browser-a');
+  const resuming = mgr.handleConnect(resumed);
+  await Promise.all([acquiring, resuming]);
+  assert.equal(statusOf(resumed), 'resume');
+
+  await clock.advance(30_000);
+  assertShellAlive({ lease, lifecycle, docker });
+  assert.deepEqual([...mgr.conns.keys()], ['tab-2']);
+  assertOutputReaches(docker, lease.handleId, resumed, [gone]);
+});
+
+test('the first tab left open: its idle and no-input timers cannot end the shared shell', async (t) => {
+  const { docker, lifecycle, mgr } = makeManager(t);
+  // The first tab's windows, scaled down (ms stand in for s); the second tab
+  // connects with the defaults so only the first tab's timers are due here.
+  mgr.sessionTimeout = 40;
+  mgr.noInputTimeout = 40;
+  const first = fakeSocket(mgr, 'tab-1', 'browser-a');
+  await mgr.handleConnect(first);
+  const { lease } = mgr.conns.get('tab-1');
+  const { handleId } = lease;
+  mgr.sessionTimeout = FOREVER;
+  mgr.noInputTimeout = FOREVER;
+
+  const second = fakeSocket(mgr, 'tab-2', 'browser-a');
+  await mgr.handleConnect(second);
+  assert.equal(statusOf(second), 'resume');
+  await sleep(120);
+
+  assertShellAlive({ lease, lifecycle, docker });
+  assertOutputReaches(docker, handleId, second, [first]);
+  assert.ok(!outputOf(second).includes('\r\n[session idle — closed]\r\n'));
+  assert.ok(!outputOf(first).includes('\r\n[session idle — closed]\r\n'));
+  assert.deepEqual([...mgr.conns.keys()], ['tab-2']);
+});
+
+test('a refresh after the tab closed restores the zombie lease with nothing to retire', async (t) => {
+  const { clock, docker, lifecycle, mgr } = makeManager(t);
+  const before = fakeSocket(mgr, 'tab-1', 'browser-b');
+  await mgr.handleConnect(before);
+  const { lease } = mgr.conns.get('tab-1');
+  before.disconnect();
+  assert.equal(lease.state, 'zombie');
+
+  const after = fakeSocket(mgr, 'tab-1-refreshed', 'browser-b');
+  await mgr.handleConnect(after);
+  await clock.advance(30_000);
+
+  assert.equal(statusOf(after), 'resume');
+  assertShellAlive({ lease, lifecycle, docker });
+  assert.deepEqual([...mgr.conns.keys()], ['tab-1-refreshed']);
+  assert.ok(!before.emitted.some(({ ev }) => ev === 'session_end'));
+});
+
+test('restoring a zombie evicts another browser\'s lease on the IP without waiting for its teardown; a second restore leaves one owner', async (t) => {
+  const { docker, mgr } = makeManager(t);
+  const closed = fakeSocket(mgr, 'tab-a1', 'browser-a');
+  await mgr.handleConnect(closed);
+  const { lease } = mgr.conns.get('tab-a1');
+  closed.disconnect();
+  assert.equal(lease.state, 'zombie');
+
+  // Another browser on the same IP takes a lease beside the zombie.
+  const other = fakeSocket(mgr, 'tab-b', 'browser-b');
+  await mgr.handleConnect(other);
+  const evicted = mgr.conns.get('tab-b').lease;
+  assert.equal(statusOf(other), 'cold');
+
+  // The restore evicts that lease. Its teardown is held: the restore must not
+  // wait for it, or a disconnect or second restore could interleave.
+  const releaseKill = hold(docker, 'kill');
+  const early = fakeSocket(mgr, 'tab-a2', 'browser-a');
+  await Promise.race([
+    mgr.handleConnect(early),
+    sleep(200).then(() => { throw new Error('the restore waited for the evicted container\'s teardown'); }),
+  ]);
+  assert.equal(statusOf(early), 'resume');
+  assert.equal(evicted.state, 'ended');
+  assert.deepEqual(docker.killedIds, []);
+
+  const late = fakeSocket(mgr, 'tab-a3', 'browser-a');
+  await mgr.handleConnect(late);
+  assert.equal(statusOf(late), 'resume');
+  releaseKill();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const owners = [...mgr.conns].filter(([, state]) => state.lease === lease).map(([id]) => id);
+  assert.deepEqual(owners, ['tab-a3']);
+  assertRetired(early);
+  assertOutputReaches(docker, lease.handleId, late, [early]);
+  assert.equal(lease.state, 'active');
+  assert.deepEqual(docker.removedIds, [evicted.handleId]);
+});
+
+test('a socket that leaves while its cold lease is being created does not keep the lease', async (t) => {
+  const { clock, docker, lifecycle, mgr } = makeManager(t, { poolSize: 0 });
+  const releaseAttach = hold(docker, 'attach');
+  const gone = fakeSocket(mgr, 'tab-1', 'browser-a');
+  const connecting = mgr.handleConnect(gone);
+  gone.disconnect();
+  releaseAttach();
+  await connecting;
+
+  // The lease waits in the reconnect grace like any disconnect, then frees.
+  const [handleId] = docker.startedIds;
+  assert.deepEqual([...mgr.conns.keys()], []);
+  assert.ok(lifecycle.handles.has(handleId));
+  await clock.advance(29_999);
+  assert.deepEqual(docker.removedIds, []);
+  await clock.advance(1);
+  assert.deepEqual(docker.removedIds, [handleId]);
+  assert.ok(!lifecycle.handles.has(handleId));
+});

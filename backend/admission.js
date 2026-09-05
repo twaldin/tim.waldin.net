@@ -11,8 +11,10 @@ require('./sandbox-policy');
  *   opaque process-local id and passes it to SessionLifecycle as the session id.
  * - The injectable clock is callable (Date.now-compatible). Tests may additionally
  *   provide clock.setTimeout/clock.clearTimeout; native timers are the fallback.
- * - No transport output sink is present in Admission's public interface, so lease
- *   and rebind receive a no-op output sink. A lifecycle close destroys the lease.
+ * - The caller's sinks travel with tryAcquire: onOutput / onClose are bound to
+ *   the container stream (a lifecycle close destroys the lease), and
+ *   onSuperseded is remembered on the lease so a later restore can tell the
+ *   connection it displaces.
  */
 
 /**
@@ -67,12 +69,16 @@ class Admission {
   }
 
   /**
-   * Acquire a new lease or resume a persistent one.
+   * Acquire a new lease or resume a persistent one. The sinks belong to the
+   * calling connection: `onOutput` / `onClose` are bound to the container
+   * stream; `onSuperseded` fires synchronously, in the same tick as the rebind,
+   * when a later connection resumes the lease this one holds.
    * @param {string} ip
-   * @param {{persistentId?: string, initCommand?: string}} options
+   * @param {{persistentId?: string, initCommand?: string, onOutput?: function(string): void,
+   *   onClose?: function(): void, onSuperseded?: function(): void}} options
    * @returns {Promise<{mode: 'cold'|'resume', lease: Lease}|{mode: 'denied', reason: string}>}
    */
-  async tryAcquire(ip, { persistentId, initCommand, onOutput, onClose } = {}) {
+  async tryAcquire(ip, { persistentId, initCommand, onOutput, onClose, onSuperseded } = {}) {
     // Command execution is deliberately outside the frozen lifecycle interface.
     // Accept it here so the public Admission signature remains exact.
     void initCommand;
@@ -83,13 +89,7 @@ class Admission {
         if (persistentLease.ip !== ip) {
           return { mode: 'denied', reason: 'ip-mismatch' };
         }
-        // Re-bind to THIS connection's output/close sinks. Without this, a
-        // refresh/reattach rebinds the live container stream to the PREVIOUS
-        // (now-dead) socket, so the new terminal gets session_status but no
-        // output — stuck in the "reattaching" view forever.
-        persistentLease.onOutput = onOutput;
-        persistentLease.onClose = onClose;
-        return this._restore(persistentLease);
+        return this._restore(persistentLease, { onOutput, onClose, onSuperseded });
       }
     }
 
@@ -117,6 +117,7 @@ class Admission {
       persistentId,
       onOutput,
       onClose,
+      onSuperseded,
       state: 'pending',
       acquiredAt: now,
       lastActivity: now,
@@ -271,30 +272,42 @@ class Admission {
     return null;
   }
 
-  async _restore(lease) {
+  async _restore(lease, { onOutput, onClose, onSuperseded }) {
     if (lease.state === 'zombie') {
       const zombie = this.zombieLeases.get(lease.leaseId);
       if (!zombie) return { mode: 'denied', reason: 'not-found' };
 
       this.clearTimer(zombie.timer);
       this.zombieLeases.delete(lease.leaseId);
-      // Reactivate before any await so the lease never leaves the session count.
+      // Reactivate synchronously so the lease never leaves the session count.
       lease.state = 'active';
       this.activeLeases.set(lease.leaseId, lease);
 
+      // Another browser on this IP may have leased while the tab was closed;
+      // the one-live-lease rule evicts it. Its teardown is not awaited: the
+      // restore stays free of real I/O, so no disconnect, timer or second
+      // restore can interleave before the rebind below hands over the stream.
+      // A failed teardown leaves an orphan for reclaimOrphans.
       const otherLeaseId = this.ipLeases.get(lease.ip);
       this.ipLeases.set(lease.ip, lease.leaseId);
       if (otherLeaseId && otherLeaseId !== lease.leaseId) {
-        await this.destroy(otherLeaseId);
+        void this.destroy(otherLeaseId).catch(() => {});
       }
     }
 
     lease.lastActivity = this.clock();
+    // This call's own sinks, never fields on the shared lease: the restore that
+    // rebinds is the one that hands the lease over. rebind is synchronous, and
+    // the previous holder is told in the same tick, so nothing can observe it
+    // still owning the lease after the stream changed hands.
     try {
-      await this.lifecycle.rebind(lease.handleId, this._callbacksFor(lease.leaseId, lease.onOutput, lease.onClose));
+      this.lifecycle.rebind(lease.handleId, this._callbacksFor(lease.leaseId, onOutput, onClose));
     } catch {
       return { mode: 'denied', reason: 'rebind-failed' };
     }
+    const superseded = lease.onSuperseded;
+    lease.onSuperseded = onSuperseded;
+    try { superseded?.(); } catch { /* caller sink failure is non-fatal */ }
     return { mode: 'resume', lease };
   }
 
