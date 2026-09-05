@@ -80,6 +80,13 @@ function assertOutputReaches(docker, handleId, owner, others) {
   }
 }
 
+/** The lease is live and its container untouched. */
+function assertShellAlive({ lease, lifecycle, docker }) {
+  assert.equal(lease.state, 'active');
+  assert.ok(lifecycle.handles.has(lease.handleId), 'the container handle must survive');
+  assert.deepEqual(docker.removedIds, []);
+}
+
 test('the first tab is hung up at takeover; closing it and its 30 s grace cannot end the shared shell', async (t) => {
   const { clock, docker, lifecycle, mgr } = makeManager(t);
   const first = fakeSocket(mgr, 'tab-1', 'browser-a');
@@ -98,9 +105,7 @@ test('the first tab is hung up at takeover; closing it and its 30 s grace cannot
   // grace it would have started passes.
   first.disconnect();
   await clock.advance(30_000);
-  assert.equal(lease.state, 'active');
-  assert.ok(lifecycle.handles.has(handleId), 'the container handle must survive the first tab');
-  assert.deepEqual(docker.removedIds, []);
+  assertShellAlive({ lease, lifecycle, docker });
   assertOutputReaches(docker, handleId, second, [first]);
 
   // Only the second tab can end the session now.
@@ -128,9 +133,7 @@ test('the first tab disconnecting right after the rebind, before the resume cont
   assert.equal(statusOf(second), 'resume');
 
   await clock.advance(30_000);
-  assert.equal(lease.state, 'active');
-  assert.ok(lifecycle.handles.has(lease.handleId));
-  assert.deepEqual(docker.removedIds, []);
+  assertShellAlive({ lease, lifecycle, docker });
   assert.deepEqual([...mgr.conns.keys()], ['tab-2']);
   assertOutputReaches(docker, lease.handleId, second, [first]);
 });
@@ -153,9 +156,7 @@ test('the second tab disconnecting right after the rebind leaves the lease in th
   await mgr.handleConnect(refreshed);
   assert.equal(statusOf(refreshed), 'resume');
   await clock.advance(30_000);
-  assert.equal(lease.state, 'active');
-  assert.ok(lifecycle.handles.has(lease.handleId));
-  assert.deepEqual(docker.removedIds, []);
+  assertShellAlive({ lease, lifecycle, docker });
   assertOutputReaches(docker, lease.handleId, refreshed, [first, second]);
 });
 
@@ -174,9 +175,7 @@ test('a refresh that takes the lease before a disconnected takeover\'s continuat
   assert.equal(statusOf(refreshed), 'resume');
 
   await clock.advance(30_000);
-  assert.equal(lease.state, 'active');
-  assert.ok(lifecycle.handles.has(lease.handleId));
-  assert.deepEqual(docker.removedIds, []);
+  assertShellAlive({ lease, lifecycle, docker });
   assert.deepEqual([...mgr.conns.keys()], ['tab-1-refreshed']);
   assertOutputReaches(docker, lease.handleId, refreshed, [first, second]);
 });
@@ -201,9 +200,7 @@ test('a tab that resumes a cold lease whose socket left, before that acquire\'s 
   assert.equal(statusOf(resumed), 'resume');
 
   await clock.advance(30_000);
-  assert.equal(lease.state, 'active');
-  assert.ok(lifecycle.handles.has(lease.handleId));
-  assert.deepEqual(docker.removedIds, []);
+  assertShellAlive({ lease, lifecycle, docker });
   assert.deepEqual([...mgr.conns.keys()], ['tab-2']);
   assertOutputReaches(docker, lease.handleId, resumed, [gone]);
 });
@@ -226,9 +223,7 @@ test('the first tab left open: its idle and no-input timers cannot end the share
   assert.equal(statusOf(second), 'resume');
   await sleep(120);
 
-  assert.equal(lease.state, 'active');
-  assert.ok(lifecycle.handles.has(handleId), 'the container handle must survive the first tab\'s timers');
-  assert.deepEqual(docker.removedIds, []);
+  assertShellAlive({ lease, lifecycle, docker });
   assertOutputReaches(docker, handleId, second, [first]);
   assert.ok(!outputOf(second).includes('\r\n[session idle — closed]\r\n'));
   assert.ok(!outputOf(first).includes('\r\n[session idle — closed]\r\n'));
@@ -248,9 +243,7 @@ test('a refresh after the tab closed restores the zombie lease with nothing to r
   await clock.advance(30_000);
 
   assert.equal(statusOf(after), 'resume');
-  assert.equal(lease.state, 'active');
-  assert.ok(lifecycle.handles.has(lease.handleId));
-  assert.deepEqual(docker.removedIds, []);
+  assertShellAlive({ lease, lifecycle, docker });
   assert.deepEqual([...mgr.conns.keys()], ['tab-1-refreshed']);
   assert.ok(!before.emitted.some(({ ev }) => ev === 'session_end'));
 });
