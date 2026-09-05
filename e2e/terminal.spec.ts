@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { serveImmutableAssetsFromCache } from './immutable-assets';
 
 // E2E for the terminal portfolio. Targets the live site by default (BASE_URL)
 // or a local/preview build in CI. Verifies the user-facing contract: terminal
@@ -46,7 +47,10 @@ async function outputText(page: Page): Promise<string> {
 }
 
 test.describe('terminal portfolio e2e', () => {
-  test.beforeEach(async ({ page }) => { await captureFrames(page); });
+  test.beforeEach(async ({ page }) => {
+    await serveImmutableAssetsFromCache(page);
+    await captureFrames(page);
+  });
 
   test('homepage loads under budget and renders the terminal', async ({ page }) => {
     const start = Date.now();

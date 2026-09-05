@@ -83,7 +83,7 @@ The audit log (`events.jsonl`, with daily pageview rollups appended to it) lives
 - `cd backend && npm start` (port 3001; needs `DOCKER_HOST` or a local docker socket). `npm test` runs every suite in `backend/test/` and `backend/proxy-validator/test/` with no daemon: `lifecycle.test.js` drives the real `SessionLifecycle` over the in-memory Docker adapter in `test/lifecycle-fake.js`; the admission and controller suites use fakes at the module seams.
 - Full local stack: `docker compose -f docker-compose.yml -f docker-compose.local.yml up`. The local file is an override fragment (`nginx-local.conf` on port 8088, `linux/amd64` platforms), not a standalone compose file.
 - The container image is built with `container/build.sh` → tags `twaldin/terminal-portfolio:latest`, the tag `SANDBOX_POLICY.image` requests. Nothing checks for it at startup; a missing image surfaces as a failed lease.
-- Playwright e2e in `e2e/` runs against the deployed site on PRs, pushes to `main`, and nightly (`.github/workflows/e2e.yml`).
+- Playwright e2e in `e2e/` runs against the deployed site on PRs, pushes to `main`, and nightly (`.github/workflows/e2e.yml`). A cold page load is 24–26 requests, right at the nginx per-IP limit above, so `e2e/immutable-assets.ts` replays the immutable assets (`/_next/static/` chunks and `/fonts/`) from a per-worker cache instead of re-downloading them in every test's fresh browser context; without it the limiter answers the trailing Terminal chunk with 503 and `.xterm` never renders. Failed runs upload the html report with traces.
 
 ## Pointers
 
