@@ -52,7 +52,7 @@ build/
 # Docker
 .dockerignore
 .playwright-mcp/
-mobile-blog-*.png
+/*.png
 state.md
 
 # dev symlink to container/blog/posts for Next.js
