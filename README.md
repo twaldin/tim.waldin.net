@@ -32,7 +32,7 @@ term-site/
 ├── frontend/                  # Next.js app
 │   ├── src/app/               # Routes: terminal page for / and every command URL, blog/, gui/, repo-card/, OG image, sitemap
 │   ├── src/components/        # Terminal.tsx (xterm.js, OSC handlers, font sizing, clipboard)
-│   ├── src/config/            # themes.ts (463-theme table + defaults), terminal-theme.ts (typography)
+│   ├── src/config/            # themes.ts (theme table + defaults), terminal-theme.ts (typography)
 │   ├── src/lib/               # websocket.ts (URL → command, session id), theme-manager.ts, xterm-touch.ts
 │   ├── content/               # gui.md
 │   └── public/                # Fonts, resume.pdf, blog snapshots
@@ -80,7 +80,7 @@ Users can run destructive commands like `rm -rf /` or fork bombs - they only aff
 
 ## Terminal Commands
 
-Portfolio navigation (`help` prints this list inside the terminal):
+Custom portfolio navigation:
 - `about` - Learn about me
 - `contact` - Email and social links
 - `resume` - View my resume
@@ -97,15 +97,15 @@ Plus standard Linux tools: `ls`, `cd`, `cat`, `nvim`, `git`, `grep`, `rg`, `fzf`
 
 ## Features
 
-- Boot intro on every connect: one of five random animations with a random figlet banner font sized to the terminal width, then the `welcome` page types out; any key skips it
-- URL ↔ command sync: opening `/about` runs `about`, `/projects/<name>` opens that project, `/blog/<slug>` opens a post; typing a command updates the browser URL (zsh `preexec` emits OSC 9999)
-- Theme switcher: 463 color schemes with live preview, saved separately for dark and light mode
+- Landing on `/` plays a boot intro: one of five random animations with a random figlet banner font sized to the terminal width, then the `welcome` page types out; any key skips it, and it replays on refresh
+- Navigation commands sync with the browser URL: typing `about` moves the URL to `/about` (zsh `preexec` emits OSC 9999), and opening `/about`, `/projects/<name>`, or `/blog/<slug>` runs the matching command on connect
+- Theme switcher with live preview, saved separately for dark and light mode
 - Font size derived from viewport width (10–28 px) so ASCII art fits on any screen; touch scrolling with momentum on mobile
-- Refresh resumes the same container within the 30-second reconnect grace
+- Refresh resumes the same container within the reconnect grace
 - Clickable hyperlinks via OSC 8 protocol
 - Blog posts written in Markdown, listed by `blog` in the terminal and rendered as HTML pages at `/blog`
 - `gui` hands off to a point-and-click page for mouse users
 - Pre-cloned git repos with recent-commit display on project pages
 - Oh My Posh shell prompt with Nerd Font icons
 - Copy/paste (Ctrl/Cmd+C, Ctrl/Cmd+V), tab completion
-- Social preview cards per project (`/repo-card/<name>`) and per blog post
+- Social preview cards per repository (`/repo-card/<name>`) and per blog post
