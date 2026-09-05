@@ -25,7 +25,6 @@ function makeManager() {
     pruneStaleRateLimits: () => {},
   };
   const lifecycle = {
-    capacityUsed: () => 0,
     reclaimOrphans: async () => {},
     write: () => {},
     resize: async () => {},

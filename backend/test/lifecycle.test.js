@@ -70,10 +70,10 @@ async function test(name, fn) {
   await test('pool refills in the background after a lease', async () => {
     const docker = new LifecycleFake();
     const lifecycle = new SessionLifecycle({ docker, poolSize: 1 });
-    await waitFor(() => lifecycle.capacityUsed() === 1, 'initial pool did not warm');
+    await waitFor(() => lifecycle.pool.length === 1, 'initial pool did not warm');
 
     await lifecycle.lease('socket-from-pool', { onOutput() {}, onClose() {} });
-    await waitFor(() => lifecycle.capacityUsed() === 2, 'pool did not refill after lease');
+    await waitFor(() => lifecycle.pool.length === 1, 'pool did not refill after lease');
 
     assert.strictEqual(docker.createdSpecs.length, 2);
     assert.strictEqual(docker.createdSpecs[0].Labels.session, 'pool');
@@ -93,10 +93,10 @@ async function test(name, fn) {
     };
     const lifecycle = new SessionLifecycle({ docker, poolSize: 1 });
     await waitFor(() => lifecycle.poolWarming === 0, 'failed warm did not release its slot');
-    assert.strictEqual(lifecycle.capacityUsed(), 0);
+    assert.strictEqual(lifecycle.pool.length, 0);
 
     await lifecycle.lease('after-failed-warm', { onOutput() {}, onClose() {} });
-    await waitFor(() => lifecycle.capacityUsed() === 2, 'pool did not refill after the failed warm');
+    await waitFor(() => lifecycle.pool.length === 1, 'pool did not refill after the failed warm');
 
     assert.strictEqual(docker.createdSpecs.length, 2);
     assert.strictEqual(docker.createdSpecs[0].Labels.session, 'after-failed-warm');
@@ -164,7 +164,7 @@ async function test(name, fn) {
     docker.close(handle.handleId);
     assert.strictEqual(closeCalls, 1);
     assert.strictEqual(await lifecycle.destroy(handle.handleId), true);
-    assert.strictEqual(lifecycle.capacityUsed(), 0);
+    assert.strictEqual(lifecycle.handles.size, 0);
     assert.ok(docker.killedIds.includes(handle.handleId));
     assert.ok(docker.removedIds.includes(handle.handleId));
     assert.strictEqual(await lifecycle.destroy(handle.handleId), false);

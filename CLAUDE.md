@@ -28,7 +28,7 @@ Paths relative to `frontend/`.
 
 ## Runtime model: pre-warmed pool + IP-pinned sessions
 
-`SessionLifecycle` keeps **5 warm containers** ready (`poolSize`, set where `SessionManager` constructs it) so a new connection skips container creation. `Admission` enforces `maxSessions` = **40**, computed as reservations (held by connections still acquiring a container) + `SessionLifecycle.capacityUsed()` (live handles + pooled containers). An active lease keeps its reservation, so each live session counts twice: with a full pool the 19th concurrent visitor is denied (`Server is at capacity`). Every lease is an opaque `leaseId` → container `handleId` pair; `server.js` is socket wiring, the HTTP routes, and the audit log (`logger.js`).
+`SessionLifecycle` keeps **5 warm containers** ready (`poolSize`, set where `SessionManager` constructs it) so a new connection skips container creation. `Admission` enforces `maxSessions` = **40** visitor sessions — leases still acquiring a container, active leases, and zombies in their grace window; the warm spares are extra. The 41st concurrent visitor is denied (`Server is at capacity`). Every lease is an opaque `leaseId` → container `handleId` pair; `server.js` is socket wiring, the HTTP routes, and the audit log (`logger.js`).
 
 Disconnect without `exit` (browser close, network drop) → `Admission.zombify` keeps the lease for a **30 s** grace window (`ZOMBIE_GRACE_MS`, at most one zombie per IP) so a quick reconnect can reattach without losing shell state.
 
@@ -80,7 +80,7 @@ The audit log (`events.jsonl`, with daily pageview rollups appended to it) lives
 ## Local dev
 
 - `cd frontend && pnpm dev` (Next 15 with Turbopack, port 3000). Vitest suites in `src/lib/__tests__/`.
-- `cd backend && npm start` (port 3001; needs `DOCKER_HOST` or a local docker socket). `npm test` runs every suite in `backend/test/` and `backend/proxy-validator/test/` with no daemon: `lifecycle.test.js` drives the real `SessionLifecycle` over the in-memory Docker adapter in `test/lifecycle-fake.js`; the admission and controller suites use fakes at the module seams.
+- `cd backend && npm start` (port 3001; needs `DOCKER_HOST` or a local docker socket). `npm test` runs every suite in `backend/test/` and `backend/proxy-validator/test/` with no daemon: `lifecycle.test.js` and the capacity cases in `admission.test.js` drive the real modules over the in-memory Docker adapter in `test/lifecycle-fake.js`; the other admission cases and the controller suites use fakes at the module seams.
 - Full local stack: `docker compose -f docker-compose.yml -f docker-compose.local.yml up`. The local file is an override fragment (`nginx-local.conf` on port 8088, `linux/amd64` platforms), not a standalone compose file.
 - The container image is built with `container/build.sh` → tags `twaldin/terminal-portfolio:latest`, the tag `SANDBOX_POLICY.image` requests. Nothing checks for it at startup; a missing image surfaces as a failed lease.
 - Playwright e2e in `e2e/` runs against the deployed site on PRs, pushes to `main`, and nightly (`.github/workflows/e2e.yml`). A cold page load is 24–26 requests, right at the nginx per-IP limit above, so `e2e/immutable-assets.ts` replays the immutable assets (`/_next/static/` chunks and `/fonts/`) from a per-worker cache instead of re-downloading them in every test's fresh browser context; without it the limiter answers the trailing Terminal chunk with 503 and `.xterm` never renders. Failed runs upload the html report with traces.
