@@ -1,6 +1,6 @@
 'use strict';
 // Minimal regression tests for admin basicAuth — no test framework required.
-// Run: node backend/test-admin-auth.js
+// Run: node backend/test/admin-auth.test.js (or `npm test` in backend/)
 const assert = require('assert');
 
 let passed = 0;
@@ -17,7 +17,7 @@ function ok(label, fn) {
 }
 
 // ── safeEqual unit tests ──────────────────────────────────────────────────────
-const { _safeEqual: safeEqual } = require('./admin.js');
+const { _safeEqual: safeEqual } = require('../admin.js');
 
 ok('safeEqual: identical strings match', () =>
   assert.strictEqual(safeEqual('abc', 'abc'), true));
@@ -45,7 +45,7 @@ process.env.ADMIN_EMAIL = 'admin@example.com';
 process.env.ADMIN_PASSWORD = 'correct-password';
 
 // Re-require after env is set so the module picks up the env vars at call time
-const { _basicAuth: basicAuth } = require('./admin.js');
+const { _basicAuth: basicAuth } = require('../admin.js');
 
 function makeReq(authHeader) {
   return { headers: { authorization: authHeader || '' } };
