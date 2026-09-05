@@ -12,32 +12,43 @@ xterm.js 5.5    ←──    Express + Socket.IO     ←──  per visitor IP
                        dockerode → socket-proxy     (zsh + scripts)
 ```
 
-- **`frontend/`** — Next.js 15 / React 19 app. Renders xterm.js with Gruvbox Dark + JetBrainsMono Nerd Font, a Socket.IO client, and a URL ↔ command sync layer (typing `projects` updates the URL to `/projects/...`; visiting `/blog/<slug>` auto-types `blog <slug>`). See `frontend/CLAUDE.md`.
-- **`backend/`** — Node.js + Express + Socket.IO + dockerode. Manages a pre-warmed pool of containers, leases one per visitor IP, handles input/output streaming, resize, idle/no-input timeouts, zombie-reconnect, and admin auth. See `backend/CLAUDE.md`.
-- **`container/`** — Ubuntu 24.04 image (`twaldin/terminal-portfolio:latest`) with zsh, Oh My Posh, neovim (nightly via bob), figlet/mdcat/glow, and `scripts/*.sh` for the portfolio (welcome, projects, blog, resume, contact, etc.). See `container/CLAUDE.md`.
+- **`frontend/`** — Next.js 15 / React 19 app. Renders xterm.js with JetBrainsMono Nerd Font and 463 Ghostty themes (`src/config/themes.ts`, defaults `iTerm2 Tango Dark` / `Light` following `prefers-color-scheme`; `src/lib/theme-manager.ts` persists the pick per mode), a Socket.IO client, and a URL ↔ command sync layer.
+- **`backend/`** — Node.js + Express + Socket.IO + dockerode, split into three modules: `session.js` (`SessionManager`: per-connection timers, initCommand auto-typing gated on the prompt and first resize), `admission.js` (`Admission`: one lease per IP, capacity cap, connection rate limit, reconnect grace), `lifecycle.js` (`SessionLifecycle`: every dockerode call, the warm pool, attach/rebind). `sandbox-policy.js` is the single source of the container spec.
+- **`container/`** — Ubuntu 24.04 image (`twaldin/terminal-portfolio:latest`) with zsh, Oh My Posh, neovim (nightly via bob), figlet/mdcat/glow, and `scripts/*.sh` for the portfolio (welcome, projects, blog, resume, contact, etc.).
+
+## Frontend routing
+
+Paths relative to `frontend/`.
+
+- `src/app/page.tsx` mounts the terminal for `/`; `src/app/[...slug]/page.tsx` renders the same page for every command URL that passes `isValidPath` (`src/lib/routes.ts`) and 404s the rest.
+- On connect, `pathToCommand` (`src/lib/websocket.ts`) turns the current path into the `initCommand` sent in the Socket.IO handshake `auth`: `/` → `boot` (intro animation, then `welcome`), `/about` → `about`, `/projects/<alias>` → `<alias>`, `/t/<cmd>` → `<cmd>` (so `/t/blog/<slug>` becomes `blog <slug>`). The backend re-validates the string (`SessionManager._autoType`) and falls back to `boot`.
+- `/blog` and `/blog/<slug>` are static routes (`src/app/blog/`) that win over the catch-all: Markdown rendered for crawlers and cold loads, handing over to the live terminal through `/t/…` links and an embedded prompt that navigates to `/t/<cmd>`. `/gui` is the no-terminal page.
+- The reverse direction uses OSC (operating-system-command) escape sequences: the container's zsh `preexec` hook and portfolio scripts emit OSC 9999 (`emit_url` in `container/scripts/shared-functions.sh`); `src/components/Terminal.tsx` handles 9999 (`history.pushState`), 9998 (scroll to top), 9997 (`location.assign`, same-origin only), 9996/9995 (ephemeral / persisted theme), and OSC 8 hyperlinks via `linkHandler`.
+- The Socket.IO client targets `NEXT_PUBLIC_API_URL` when that was inlined at build time, otherwise the page's own origin — in production, nginx's `/socket.io/` route.
 
 ## Runtime model: pre-warmed pool + IP-pinned sessions
 
-The backend keeps **5 warm containers** ready (`SessionManager.poolSize`, `backend/session.js:31`) so new connections skip the 1–2s `createContainer` latency. Hard cap of **40 concurrent sessions** (`maxSessions`, `backend/session.js:17`).
+`SessionLifecycle` keeps **5 warm containers** ready (`poolSize`, set where `SessionManager` constructs it) so a new connection skips container creation. `Admission` enforces `maxSessions` = **40**, computed as reservations (held by connections still acquiring a container) + `SessionLifecycle.capacityUsed()` (live handles + pooled containers). An active lease keeps its reservation, so each live session counts twice: with a full pool the 19th concurrent visitor is denied (`Server is at capacity`). Every lease is an opaque `leaseId` → container `handleId` pair; `server.js` is socket wiring, the HTTP routes, and the audit log (`logger.js`).
 
-Each visitor IP holds **one live session at a time**. A new Socket.IO connection from the same IP immediately closes the old one — see `ipSessions` map in `backend/server.js:54` and the kick logic in `backend/server.js:116-131`. Concretely:
+Disconnect without `exit` (browser close, network drop) → `Admission.zombify` keeps the lease for a **30 s** grace window (`ZOMBIE_GRACE_MS`, at most one zombie per IP) so a quick reconnect can reattach without losing shell state.
 
-- Open a second tab from the same IP → the old tab's session is collapsed into the new tab (old socket gets `[replaced by a new session from this ip]` and disconnects). The container is reused only when the new tab presents the same `localStorage` `sessionId` (persistent-session restore, `backend/session.js:677`); otherwise the old container is destroyed and a fresh one is leased.
-- Refresh the same tab → the persistent `sessionId` is sent in the Socket.IO handshake auth, the existing container is reattached, the URL's `initCommand` is re-run so the visible output repaints. Backend rule of thumb: *one IP = one slot*.
-- Type `exit` → container is killed, slot is freed.
+Each visitor IP holds **one live session at a time** (`Admission.ipLeases`). What a second Socket.IO connection from the same IP does depends on the persistent `sessionId` the browser sends in the handshake (`localStorage` key `terminal-session-id`):
 
-Disconnect without `exit` (browser close, network drop) → session is **zombified** with a 30s grace window (`zombifySession`, `backend/session.js:871`) so a quick reconnect from the same IP/sessionId can reattach without losing shell state.
+- **Same `sessionId`** (refresh, or a second tab in the same browser) → `Admission._restore` rebinds the existing container's stream to the new socket (`SessionLifecycle.rebind`), whether the old lease is still active or in its zombie window. The client gets `session_status: { mode: 'resume' }` and the URL's `initCommand` is re-run after the first resize so the output repaints. Watch: if the old tab is still open, its `SessionManager` entry keeps pointing at the now-shared lease, so its own disconnect (`Admission.zombify`, then the 30 s grace) or idle timer ends the container under the new tab.
+- **Different `sessionId`** (another browser on the same IP) → `Admission.tryAcquire` evicts the old lease (`Admission.destroy` → `SessionLifecycle.destroy`), which unbinds the old socket's stream listeners before ending the stream. The old tab is not told; it stops receiving output and its `SessionManager` entry lingers until its own timer fires. A `sessionId` presented from a different IP than its owner is denied (`ip-mismatch`) rather than resumed.
+- Type `exit` → the container stream closes, `SessionManager._handleStreamClose` emits `session_end`, the client clears its stored `sessionId`, and the slot is freed.
 
-Idle / bot timers, all in `backend/session.js`:
+Timers in `SessionManager` (`backend/session.js`), rate limit in `Admission` (`backend/admission.js`):
 
-- **5 min idle** without keystrokes → kill (`sessionTimeout`, line 21).
-- **60 s no-input** from connect → kill (`noInputTimeout`, line 24) — kills bots and background tabs that never engage. Relaxed to **5 min** (`noInputTimeoutVisible`, line 30) while the client reports its page visible via the `visibility` socket event; never-reported (no-JS bots) stays 60 s.
-- **30 connection attempts/min per IP** rate-limit at the Socket.IO layer (`backend/server.js:47`).
+- **5 min idle** without keystrokes → kill (`sessionTimeout`).
+- **60 s no-input** after the lease is granted → kill (`noInputTimeout`) — kills bots and background tabs that never engage. Relaxed to **5 min** (`noInputTimeoutVisible`) while the client reports its page visible via the `visibility` socket event; never-reported (no-JS bots) stays 60 s. Resize and visibility never reset the idle timer, though a visibility change re-arms the no-input countdown until the first keystroke.
+- **30 connection attempts/min per IP** (`Admission.checkConnectionRate`; `MAX_CONNECTIONS_PER_IP`, `RATE_LIMIT_WINDOW_MS`), checked before any lease work.
 
 ## Sandbox / security
 
-- Each session container runs as non-root `portfolio` user with `CapDrop: ALL` (only `SETUID/SETGID` re-added for sudo demo), `NetworkMode: none`, `PidsLimit: 100`, 512 MB RAM, 0.5 CPU, `tmpfs /tmp` (noexec, nosuid). Spec: `backend/session.js:46`. Visitors can run `sudo rm -rf /` or fork-bombs — only their own container is affected, never the host.
-- `tecnativa/docker-socket-proxy` exposes the Docker API to the backend over `tcp://socket-proxy:2375` with a strict allowlist: `CONTAINERS=1, IMAGES=1, POST=1` and everything else (`NETWORKS, VOLUMES, BUILD, EXEC, SERVICES, SWARM`) disabled. The backend never gets a raw `/var/run/docker.sock`. See `docker-compose.yml:40-62`.
+- Every session container is built from `SANDBOX_POLICY` by `buildContainerSpec` (`backend/sandbox-policy.js`), the only place the spec exists: non-root `portfolio` user, `CapDrop: ALL` with only `SETUID`/`SETGID` re-added for the sudo demo, `NetworkMode: 'none'`, `PidsLimit: 100`, 512 MB RAM, 0.5 CPU (`CpuQuota: 50000`), `tmpfs /tmp` (rw, noexec, nosuid, 100 MB), label `app=terminal-portfolio` so orphan reclaim never touches other tenants' containers. Visitors can run `sudo rm -rf /` or fork-bombs and affect only their own container; isolation from the host rests on the dropped capabilities plus Docker's default seccomp/AppArmor at the daemon (daemon-level hardening still open — userns-remap, storage quota — is listed in `sandbox-policy.js`).
+- `tecnativa/docker-socket-proxy` exposes the Docker API to the backend over `tcp://socket-proxy:2375` with a strict allowlist (`socket-proxy` service in `docker-compose.yml`): `CONTAINERS`, `IMAGES`, `POST`, `INFO`, `PING` enabled; `NETWORKS`, `VOLUMES`, `SERVICES`, `TASKS`, `NODES`, `SWARM`, `BUILD`, `EXEC` disabled. The backend never gets a raw `/var/run/docker.sock`; `DockerodeAdapter` (`backend/lifecycle.js`) forces plain HTTP.
+- `backend/proxy-validator/` is a body-validating Docker proxy that checks requests against the same `SANDBOX_POLICY`. It is built and unit-tested but deliberately **not in the data path**: its HTTP forwarder cannot relay the raw two-way socket that Docker's `attach` endpoint "hijacks" from the HTTP connection (see the comment above `socket-proxy` in `docker-compose.yml`).
 
 ## Deployment shape
 
@@ -50,22 +61,35 @@ Idle / bot timers, all in `backend/session.js`:
 | `backend`      | `backend/Dockerfile`                    | backend + docker (internal) |
 | `socket-proxy` | `tecnativa/docker-socket-proxy`         | docker (internal)           |
 
-Nginx terminates TLS via Let's Encrypt (`/etc/letsencrypt` mounted read-only), enforces global rate limits (10 r/s, burst 20), proxies `/socket.io/` with WebSocket upgrade, caches `/fonts/` aggressively, and blocks the Next.js CVE-2025-29927 middleware-bypass header. Session containers themselves are spawned dynamically by the backend on the host's default bridge — they're not declared in compose.
+Session containers are not declared in compose: the backend creates them through the proxy with `NetworkMode: 'none'`, so they are attached to no Docker network at all.
 
-`deploy.sh` is the production deploy entry point.
+Nginx (`nginx.conf`) terminates TLS via Let's Encrypt (`/etc/letsencrypt` mounted read-only), enforces global rate limits (10 r/s, burst 20; `limit_conn` 10 per IP), and blocks the Next.js CVE-2025-29927 middleware-bypass header. Routes:
+
+- `/socket.io/` → backend, WebSocket upgrade, 24 h read timeout.
+- `/pv` → backend, first-party pageview beacon (`pageviews.handlePageview`).
+- `/admin` → backend, Basic-auth panel over the audit log (`ADMIN_PASSWORD` from the environment).
+- `/health`, `/stats` → backend, private networks only.
+- `/fonts/` → frontend with immutable cache headers.
+- `/agentelo*` → a separate compose stack on the shared `term-site_external-net`.
+- A 444 blocklist for common exploit probes; `/resume.html` → `/resume.pdf`; every other path → frontend.
+
+The audit log (`events.jsonl`, with daily pageview rollups appended to it) lives in the `backend_data` volume at `/app/data`.
+
+`deploy.sh` is the production deploy entry point: builds the container image and service images first, then swaps the stack.
 
 ## Local dev
 
-- `cd frontend && pnpm dev` (Next 15 with Turbopack, port 3000).
-- `cd backend && npm start` (port 3001; needs `DOCKER_HOST` or a local docker socket).
-- For a full local stack: `docker compose -f docker-compose.local.yml up`.
-- The container image is built with `container/build.sh` → tags `twaldin/terminal-portfolio:latest`. The backend looks up the image by exact tag in `backend/session.js:240` and warns if it's missing locally.
+- `cd frontend && pnpm dev` (Next 15 with Turbopack, port 3000). Vitest suites in `src/lib/__tests__/`.
+- `cd backend && npm start` (port 3001; needs `DOCKER_HOST` or a local docker socket). `npm test` runs every suite in `backend/test/` and `backend/proxy-validator/test/` with no daemon: `lifecycle.test.js` drives the real `SessionLifecycle` over the in-memory Docker adapter in `test/lifecycle-fake.js`; the admission and controller suites use fakes at the module seams.
+- Full local stack: `docker compose -f docker-compose.yml -f docker-compose.local.yml up`. The local file is an override fragment (`nginx-local.conf` on port 8088, `linux/amd64` platforms), not a standalone compose file.
+- The container image is built with `container/build.sh` → tags `twaldin/terminal-portfolio:latest`, the tag `SANDBOX_POLICY.image` requests. Nothing checks for it at startup; a missing image surfaces as a failed lease.
+- Playwright e2e in `e2e/` runs against the deployed site on PRs, pushes to `main`, and nightly (`.github/workflows/e2e.yml`).
 
 ## Pointers
 
-- **`frontend/CLAUDE.md`** — Terminal component, dynamic font sizing, OSC 8 / OSC 9999 URL sync, Socket.IO handshake, blog static pages.
-- **`backend/CLAUDE.md`** — Session lifecycle, pool warming, IP-pinned session + tab-collapse, zombie reconnect, admin panel.
-- **`container/CLAUDE.md`** — Dockerfile shape, portfolio scripts, Oh My Posh prompt, baked-in nvim plugins, OSC URL emit hook in zshrc.
+- **`frontend/CLAUDE.md`** — URL → command allowlist, Socket.IO client, Terminal component (font sizing, mobile keyboard), OSC handlers (URL ↔ command sync, theme protocol), themes, blog pages (server-rendered vs. live terminal), share cards and SEO.
+- **`backend/CLAUDE.md`** — Module layout, warm pool and one lease per IP, timers and limits, container spec, boot sequence for a new visitor, initCommand validation, orphan reclaim, tests.
+- **`container/CLAUDE.md`** — Layout and script inventory, image build (bob nightly nvim with baked-in plugins, Oh My Posh prompt), `.zshrc` wiring and aliases, boot intro, blog handoff, terminal control sequences (the OSC table).
 
 ## Conventions
 
