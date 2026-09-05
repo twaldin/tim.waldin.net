@@ -220,10 +220,6 @@ class SessionLifecycle {
     return true;
   }
 
-  capacityUsed() {
-    return this.handles.size + this.pool.length;
-  }
-
   /**
    * Reclaim only portfolio-labeled containers that are neither active nor pooled.
    * This deliberately does not call either Docker prune endpoint.

@@ -28,7 +28,7 @@ Paths relative to `frontend/`.
 
 ## Runtime model: pre-warmed pool + IP-pinned sessions
 
-`SessionLifecycle` keeps **5 warm containers** ready (`poolSize`, set where `SessionManager` constructs it) so a new connection skips container creation. `Admission` enforces `maxSessions` = **40**, computed as reservations (held by connections still acquiring a container) + `SessionLifecycle.capacityUsed()` (live handles + pooled containers). An active lease keeps its reservation, so each live session counts twice: with a full pool the 19th concurrent visitor is denied (`Server is at capacity`). Every lease is an opaque `leaseId` → container `handleId` pair; `server.js` is socket wiring, the HTTP routes, and the audit log (`logger.js`).
+`SessionLifecycle` keeps **5 warm containers** ready (`poolSize`, set where `SessionManager` constructs it) so a new connection skips container creation. `Admission` enforces `maxSessions` = **40** visitor sessions — leases still acquiring a container, active leases, and zombies in their grace window; the warm spares are extra. The 41st concurrent visitor is denied (`Server is at capacity`). Every lease is an opaque `leaseId` → container `handleId` pair; `server.js` is socket wiring, the HTTP routes, and the audit log (`logger.js`).
 
 Disconnect without `exit` (browser close, network drop) → `Admission.zombify` keeps the lease for a **30 s** grace window (`ZOMBIE_GRACE_MS`, at most one zombie per IP) so a quick reconnect can reattach without losing shell state.
 

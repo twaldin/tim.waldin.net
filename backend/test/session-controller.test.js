@@ -30,7 +30,7 @@ function makeFakes() {
     pruneStaleRateLimits: () => {},
   };
   const lifecycle = {
-    capacityUsed: () => 0, reclaimOrphans: async () => {},
+    reclaimOrphans: async () => {},
     write: (id, d) => { calls.write.push([id, d]); },
     resize: async (id, c, r) => { calls.resize.push([id, c, r]); },
     destroy: async () => true,

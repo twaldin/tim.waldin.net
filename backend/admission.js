@@ -54,7 +54,6 @@ class Admission {
     this.activeLeases = new Map();
     this.zombieLeases = new Map();
     this.ipLeases = new Map();
-    this.reservations = new Set();
     this.pendingOperations = new Map();
     this.connectionTracker = new Map();
     this.nextLeaseId = 1;
@@ -94,19 +93,17 @@ class Admission {
       }
     }
 
-    // Replacing a live lease transfers its already-held semaphore slot. The old
-    // handle is fully destroyed before lifecycle.lease starts for the replacement.
+    // A same-IP connection without a matching persistent id replaces that IP's
+    // live lease. destroy() drops the old lease from the session count before
+    // its first await, so the replacement inherits the slot; the old handle is
+    // fully destroyed before lifecycle.lease starts for the replacement.
     const existingLeaseId = this.ipLeases.get(ip);
-    let transferredReservation = false;
     let eviction;
     if (existingLeaseId) {
-      transferredReservation = this.reservations.delete(existingLeaseId);
       eviction = this.destroy(existingLeaseId);
-    }
-
-    // H6: no await can occur before this check and reservation. JavaScript runs
-    // this complete section atomically with respect to other tryAcquire calls.
-    if (!transferredReservation && this._capacityUsed() >= this.maxSessions) {
+    } else if (this._capacityUsed() >= this.maxSessions) {
+      // H6: no await occurs between this check and the pendingLeases entry
+      // below, so concurrent tryAcquire calls cannot overshoot maxSessions.
       return { mode: 'denied', reason: 'full' };
     }
 
@@ -125,7 +122,6 @@ class Admission {
       lastActivity: now,
     };
 
-    this.reservations.add(leaseId);
     this.pendingLeases.set(leaseId, lease);
     this.ipLeases.set(ip, leaseId);
 
@@ -149,7 +145,10 @@ class Admission {
     }
   }
 
-  /** Move an active lease into its 30-second reconnect grace period. */
+  /**
+   * Move an active lease into its 30-second reconnect grace period. The lease
+   * keeps its visitor slot (and container) until it is restored or expires.
+   */
   zombify(leaseId) {
     const lease = this.activeLeases.get(leaseId);
     if (!lease) return false;
@@ -158,7 +157,6 @@ class Admission {
     if (this.ipLeases.get(lease.ip) === leaseId) {
       this.ipLeases.delete(lease.ip);
     }
-    this.release(leaseId);
     lease.state = 'zombie';
     lease.lastActivity = this.clock();
 
@@ -210,7 +208,6 @@ class Admission {
     if (this.ipLeases.get(lease.ip) === leaseId) {
       this.ipLeases.delete(lease.ip);
     }
-    this.release(leaseId);
     lease.state = 'ended';
 
     const pendingOperation = this.pendingOperations.get(leaseId);
@@ -225,11 +222,6 @@ class Admission {
       await this.lifecycle.destroy(lease.handleId);
     }
     return true;
-  }
-
-  /** Release only the synchronous semaphore reservation. */
-  release(leaseId) {
-    return this.reservations.delete(leaseId);
   }
 
   /** Rolling-window connection limiter shared by every admission path. */
@@ -258,8 +250,12 @@ class Admission {
     }
   }
 
+  /**
+   * Visitor sessions holding a slot: leases still acquiring a container, active
+   * leases and zombies in their grace window. Warm spares are never counted.
+   */
   _capacityUsed() {
-    return this.reservations.size + this.lifecycle.capacityUsed();
+    return this.pendingLeases.size + this.activeLeases.size + this.zombieLeases.size;
   }
 
   _findPersistentLease(persistentId) {
@@ -279,16 +275,15 @@ class Admission {
 
       this.clearTimer(zombie.timer);
       this.zombieLeases.delete(lease.leaseId);
+      // Reactivate before any await so the lease never leaves the session count.
+      lease.state = 'active';
+      this.activeLeases.set(lease.leaseId, lease);
 
       const otherLeaseId = this.ipLeases.get(lease.ip);
+      this.ipLeases.set(lease.ip, lease.leaseId);
       if (otherLeaseId && otherLeaseId !== lease.leaseId) {
         await this.destroy(otherLeaseId);
       }
-
-      lease.state = 'active';
-      this.activeLeases.set(lease.leaseId, lease);
-      this.ipLeases.set(lease.ip, lease.leaseId);
-      this.reservations.add(lease.leaseId);
     }
 
     lease.lastActivity = this.clock();
@@ -335,7 +330,6 @@ class Admission {
     if (this.ipLeases.get(lease.ip) === lease.leaseId) {
       this.ipLeases.delete(lease.ip);
     }
-    this.release(lease.leaseId);
     lease.state = 'ended';
   }
 
