@@ -110,6 +110,7 @@ class SessionManager {
 
     state.lease = result.lease;
     state.mode = result.mode;
+    if (result.mode === 'resume') this._retirePreviousOwner(socket.id, state.lease.leaseId);
     socket.emit('session_status', { mode: result.mode });
     console.log(`Session ${socket.id} ${result.mode} (lease ${state.lease.leaseId})`);
 
@@ -207,6 +208,25 @@ class SessionManager {
 
   handleError(socketId) {
     this._destroy(socketId);
+  }
+
+  // A resume rebinds the container stream to the new socket; a conn that still
+  // holds the same lease is a second tab in the same browser. Drop it before it
+  // can zombify (disconnect) or destroy (idle / no-input timer) the shared
+  // lease under the new tab. Tell it, and hang up so a refresh there takes the
+  // lease back — but never session_end: the client would drop the browser-wide
+  // sessionId and reconnect cold, evicting the tab that just took over.
+  _retirePreviousOwner(socketId, leaseId) {
+    for (const [id, s] of this.conns) {
+      if (id === socketId || !s.lease || s.lease.leaseId !== leaseId) continue;
+      console.log(`Session ${id} moved to ${socketId} (lease ${leaseId})`);
+      this._clearTimers(s);
+      // Socket.IO raises `disconnect` synchronously: the conn must already be
+      // gone so handleDisconnect does not zombify the lease.
+      this.conns.delete(id);
+      try { s.socket.emit('output', '\r\n[session moved to a newer tab — refresh here to take it back]\r\n'); } catch { /* ignore */ }
+      try { s.socket.disconnect(); } catch { /* ignore */ }
+    }
   }
 
   // Run the initCommand only once the prompt has appeared AND the first resize
