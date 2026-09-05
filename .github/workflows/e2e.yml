@@ -38,6 +38,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-attempt-${{ github.run_attempt }}
           path: e2e/playwright-report
           retention-days: 7

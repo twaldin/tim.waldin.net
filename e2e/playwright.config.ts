@@ -10,12 +10,14 @@ export default defineConfig({
   workers: 1,
   timeout: 60_000,
   expect: { timeout: 25_000 }, // cold welcome (figlet + pool) needs headroom
-  reporter: process.env.CI ? [['github'], ['list']] : 'list',
+  // CI also writes the html report (with traces) that the workflow uploads on failure.
+  reporter: process.env.CI ? [['github'], ['list'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: process.env.BASE_URL || 'https://tim.waldin.net',
     headless: true,
     ignoreHTTPSErrors: true,
     actionTimeout: 25_000,
+    trace: 'retain-on-failure', // network + DOM evidence for every failed attempt
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
