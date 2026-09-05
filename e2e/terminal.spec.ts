@@ -6,6 +6,15 @@ import { serveImmutableAssetsFromCache } from './immutable-assets';
 // renders, commands produce output, every nav button navigates + re-runs, and
 // refresh reattaches without starving output (regression for the stale-sink
 // reattach bug).
+//
+// Two groups, run in this order by one worker:
+// - "first visit": a plain browser context with no interception at all, so it
+//   sees exactly what a new visitor with an empty cache sees — including the
+//   nginx per-IP request limit clipping the trailing Terminal chunk (TWA-55).
+//   A failure here is that production defect, not test noise.
+// - "returning visitor": every later test replays the immutable build assets
+//   from a per-worker cache (see immutable-assets.ts), the warm-cache state a
+//   real visitor is in after the first load. Everything else stays live.
 
 const BASE = process.env.BASE_URL || 'https://tim.waldin.net';
 const LOAD_BUDGET_MS = Number(process.env.LOAD_BUDGET_MS || 15000);
@@ -46,17 +55,19 @@ async function outputText(page: Page): Promise<string> {
   return payloads.join('').replace(ANSI_OR_OSC, '');
 }
 
-test.describe('terminal portfolio e2e', () => {
-  test.beforeEach(async ({ page }) => {
-    await serveImmutableAssetsFromCache(page);
-    await captureFrames(page);
-  });
-
+test.describe('first visit', () => {
   test('homepage loads under budget and renders the terminal', async ({ page }) => {
     const start = Date.now();
     await page.goto(BASE);
     await expect(page.locator('.xterm')).toBeVisible({ timeout: LOAD_BUDGET_MS });
     expect(Date.now() - start).toBeLessThan(LOAD_BUDGET_MS);
+  });
+});
+
+test.describe('returning visitor', () => {
+  test.beforeEach(async ({ page }) => {
+    await serveImmutableAssetsFromCache(page);
+    await captureFrames(page);
   });
 
   test('typing a command produces terminal output', async ({ page }) => {
