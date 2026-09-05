@@ -85,30 +85,30 @@ function fakeSocket(id) {
   });
 
   await ok('rate-limited IP is denied + disconnected', async () => {
-    const a2 = { ...admission, checkConnectionRate: () => false };
-    const mgr2 = new SessionManager({ lifecycle, admission: a2 });
-    mgr2.noInputTimeout = 60_000_000; mgr2.sessionTimeout = 60_000_000;
+    const deniedAdmission = { ...admission, checkConnectionRate: () => false };
+    const deniedMgr = new SessionManager({ lifecycle, admission: deniedAdmission });
+    deniedMgr.noInputTimeout = 60_000_000; deniedMgr.sessionTimeout = 60_000_000;
     const s = fakeSocket('sock-2');
     let disconnected = false; s.disconnect = () => { disconnected = true; };
-    await mgr2.handleConnect(s);
+    await deniedMgr.handleConnect(s);
     assert.ok(disconnected, 'rate-limited connection should disconnect');
-    assert.ok(!mgr2.conns.has('sock-2'));
+    assert.ok(!deniedMgr.conns.has('sock-2'));
   });
 
   await ok('handleConnect emits session_status resume and interrupts the prior script', async () => {
-    const a3 = {
+    const resumeAdmission = {
       ...admission,
       tryAcquire: async () => ({ mode: 'resume', lease: { leaseId: 'L3', handleId: 'H3' } }),
     };
-    const mgr3 = new SessionManager({ lifecycle, admission: a3 });
-    mgr3.noInputTimeout = 60_000_000; mgr3.sessionTimeout = 60_000_000;
+    const resumeMgr = new SessionManager({ lifecycle, admission: resumeAdmission });
+    resumeMgr.noInputTimeout = 60_000_000; resumeMgr.sessionTimeout = 60_000_000;
     const s = fakeSocket('sock-3');
-    await mgr3.handleConnect(s);
+    await resumeMgr.handleConnect(s);
     const status = s._emitted.find((e) => e.ev === 'session_status');
     assert.ok(status && status.payload.mode === 'resume', 'expected resume session_status');
     assert.ok(calls.write.some(([id, d]) => id === 'H3' && d === '\x03'),
       'resume should send Ctrl-C to the restored container');
-    for (const c of mgr3.conns.values()) mgr3._clearTimers(c);
+    for (const c of resumeMgr.conns.values()) resumeMgr._clearTimers(c);
   });
 
   await ok('startPoolMaintenance arms one interval and is idempotent', () => {
