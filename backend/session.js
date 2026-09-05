@@ -108,6 +108,16 @@ class SessionManager {
       return;
     }
 
+    // The socket disconnected while its cold lease was being created (the
+    // only real I/O in tryAcquire; a resume completes without any): nothing
+    // owns the lease it was handed. Zombify it like any disconnect, so a quick
+    // refresh restores it and the grace window frees it otherwise.
+    if (this.conns.get(socket.id) !== state) {
+      console.log(`Session ${socket.id} left during acquire (lease ${result.lease.leaseId})`);
+      this.admission.zombify(result.lease.leaseId);
+      return;
+    }
+
     state.lease = result.lease;
     state.mode = result.mode;
     if (result.mode === 'resume') this._retirePreviousOwner(socket.id, state.lease.leaseId);

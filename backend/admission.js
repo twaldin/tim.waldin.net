@@ -275,14 +275,19 @@ class Admission {
 
       this.clearTimer(zombie.timer);
       this.zombieLeases.delete(lease.leaseId);
-      // Reactivate before any await so the lease never leaves the session count.
+      // Reactivate synchronously so the lease never leaves the session count.
       lease.state = 'active';
       this.activeLeases.set(lease.leaseId, lease);
 
+      // Another browser on this IP may have leased while the tab was closed;
+      // the one-live-lease rule evicts it. Its teardown is not awaited: the
+      // restore stays free of real I/O, so no disconnect, timer or second
+      // restore can interleave before the rebind below hands over the stream.
+      // A failed teardown leaves an orphan for reclaimOrphans.
       const otherLeaseId = this.ipLeases.get(lease.ip);
       this.ipLeases.set(lease.ip, lease.leaseId);
       if (otherLeaseId && otherLeaseId !== lease.leaseId) {
-        await this.destroy(otherLeaseId);
+        void this.destroy(otherLeaseId).catch(() => {});
       }
     }
 

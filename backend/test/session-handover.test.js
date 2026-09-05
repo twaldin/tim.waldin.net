@@ -18,10 +18,19 @@ const IP = '203.0.113.1';
 const FOREVER = 60_000_000;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function makeManager(t) {
+/** Holds every call of one LifecycleFake method until `release()`. */
+function hold(docker, method) {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const original = docker[method].bind(docker);
+  docker[method] = async (...args) => { await gate; return original(...args); };
+  return release;
+}
+
+function makeManager(t, { poolSize = 5 } = {}) {
   const clock = makeFakeClock();
   const docker = new LifecycleFake();
-  const lifecycle = new SessionLifecycle({ docker, poolSize: 5 });
+  const lifecycle = new SessionLifecycle({ docker, poolSize });
   const admission = new Admission({ lifecycle, maxSessions: 40, clock });
   const mgr = new SessionManager({ lifecycle, admission });
   mgr.sessionTimeout = FOREVER;
@@ -143,8 +152,8 @@ test('a refresh after the tab closed restores the zombie lease with nothing to r
   assert.ok(!before.emitted.some(({ ev }) => ev === 'session_end'));
 });
 
-test('two tabs restoring a zombie at once, while it evicts another browser\'s lease, leave one owner that receives output', async (t) => {
-  const { docker, lifecycle, mgr } = makeManager(t);
+test('restoring a zombie evicts another browser\'s lease on the IP without waiting for its teardown; a second restore leaves one owner', async (t) => {
+  const { docker, mgr } = makeManager(t);
   const closed = fakeSocket(mgr, 'tab-a1', 'browser-a');
   await mgr.handleConnect(closed);
   const { lease } = mgr.conns.get('tab-a1');
@@ -157,29 +166,50 @@ test('two tabs restoring a zombie at once, while it evicts another browser\'s le
   const evicted = mgr.conns.get('tab-b').lease;
   assert.equal(statusOf(other), 'cold');
 
-  // Restoring the zombie evicts that lease first; hold the eviction so a
-  // second restore of the same lease completes while the first is waiting.
-  let releaseEviction;
-  const evicting = new Promise((resolve) => { releaseEviction = resolve; });
-  const kill = docker.kill.bind(docker);
-  docker.kill = async (id) => { if (id === evicted.handleId) await evicting; return kill(id); };
-
+  // The restore evicts that lease. Its teardown is held: the restore must not
+  // wait for it, or a disconnect or second restore could interleave.
+  const releaseKill = hold(docker, 'kill');
   const early = fakeSocket(mgr, 'tab-a2', 'browser-a');
+  await Promise.race([
+    mgr.handleConnect(early),
+    sleep(200).then(() => { throw new Error('the restore waited for the evicted container\'s teardown'); }),
+  ]);
+  assert.equal(statusOf(early), 'resume');
+  assert.equal(evicted.state, 'ended');
+  assert.deepEqual(docker.killedIds, []);
+
   const late = fakeSocket(mgr, 'tab-a3', 'browser-a');
-  const earlyConnect = mgr.handleConnect(early);
   await mgr.handleConnect(late);
   assert.equal(statusOf(late), 'resume');
-  releaseEviction();
-  await earlyConnect;
-  assert.equal(statusOf(early), 'resume');
+  releaseKill();
+  await new Promise((resolve) => setImmediate(resolve));
 
   const owners = [...mgr.conns].filter(([, state]) => state.lease === lease).map(([id]) => id);
-  assert.equal(owners.length, 1, `exactly one conn may hold the lease, got ${owners}`);
-  const [owner, retired] = early.id === owners[0] ? [early, late] : [late, early];
-  assertRetired(retired);
+  assert.deepEqual(owners, ['tab-a3']);
+  assertRetired(early);
   docker.push(lease.handleId, 'still here');
-  assert.ok(outputOf(owner).includes('still here'), `output must reach the owning tab ${owner.id}`);
-  assert.ok(!outputOf(retired).includes('still here'));
+  assert.ok(outputOf(late).includes('still here'), 'output must reach the owning tab');
+  assert.ok(!outputOf(early).includes('still here'));
   assert.equal(lease.state, 'active');
   assert.deepEqual(docker.removedIds, [evicted.handleId]);
+});
+
+test('a socket that leaves while its cold lease is being created does not keep the lease', async (t) => {
+  const { clock, docker, lifecycle, mgr } = makeManager(t, { poolSize: 0 });
+  const releaseAttach = hold(docker, 'attach');
+  const gone = fakeSocket(mgr, 'tab-1', 'browser-a');
+  const connecting = mgr.handleConnect(gone);
+  gone.disconnect();
+  releaseAttach();
+  await connecting;
+
+  // The lease waits in the reconnect grace like any disconnect, then frees.
+  const [handleId] = docker.startedIds;
+  assert.deepEqual([...mgr.conns.keys()], []);
+  assert.ok(lifecycle.handles.has(handleId));
+  await clock.advance(29_999);
+  assert.deepEqual(docker.removedIds, []);
+  await clock.advance(1);
+  assert.deepEqual(docker.removedIds, [handleId]);
+  assert.ok(!lifecycle.handles.has(handleId));
 });
