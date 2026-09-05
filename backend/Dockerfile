@@ -13,7 +13,9 @@ COPY backend/package*.json ./
 # Install dependencies
 RUN npm install
 
-# Copy source code from backend directory
+# Copy source code from backend directory. The build context is the repository
+# root (docker compose: `context: .`), so Dockerfile.dockerignore beside this
+# file, not backend/.dockerignore, decides what stays out (tests, node_modules).
 COPY backend/ .
 
 # Expose port

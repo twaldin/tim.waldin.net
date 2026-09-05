@@ -2,7 +2,7 @@
 
 const assert = require('assert');
 const SessionLifecycle = require('../lifecycle');
-const LifecycleFake = require('../lifecycle-fake');
+const LifecycleFake = require('./lifecycle-fake');
 const { buildContainerSpec, labelFilter } = require('../sandbox-policy');
 
 const PREAMBLE = '{"stream":true,"stdin":true,"stdout":true,"stderr":true,"hijack":true}';
@@ -16,10 +16,12 @@ async function waitFor(predicate, message) {
   }
 }
 
+let passed = 0;
 async function test(name, fn) {
   try {
     await fn();
     console.log(`  ok  ${name}`);
+    passed++;
   } catch (error) {
     console.error(`FAIL  ${name}`);
     throw error;
@@ -75,6 +77,29 @@ async function test(name, fn) {
 
     assert.strictEqual(docker.createdSpecs.length, 2);
     assert.strictEqual(docker.createdSpecs[0].Labels.session, 'pool');
+    assert.strictEqual(docker.createdSpecs[1].Labels.session, 'pool');
+  });
+
+  await test('a failed warm releases its warming slot so the next lease refills the pool', async () => {
+    const docker = new LifecycleFake();
+    const create = docker.create.bind(docker);
+    let failNext = true;
+    docker.create = async (spec) => {
+      if (failNext) {
+        failNext = false;
+        throw new Error('docker unavailable');
+      }
+      return create(spec);
+    };
+    const lifecycle = new SessionLifecycle({ docker, poolSize: 1 });
+    await waitFor(() => lifecycle.poolWarming === 0, 'failed warm did not release its slot');
+    assert.strictEqual(lifecycle.capacityUsed(), 0);
+
+    await lifecycle.lease('after-failed-warm', { onOutput() {}, onClose() {} });
+    await waitFor(() => lifecycle.capacityUsed() === 2, 'pool did not refill after the failed warm');
+
+    assert.strictEqual(docker.createdSpecs.length, 2);
+    assert.strictEqual(docker.createdSpecs[0].Labels.session, 'after-failed-warm');
     assert.strictEqual(docker.createdSpecs[1].Labels.session, 'pool');
   });
 
@@ -145,7 +170,7 @@ async function test(name, fn) {
     assert.strictEqual(await lifecycle.destroy(handle.handleId), false);
   });
 
-  console.log('\n6 tests passed.');
+  console.log(`\n${passed} tests passed.`);
 })().catch((error) => {
   console.error(error.stack || error);
   process.exitCode = 1;

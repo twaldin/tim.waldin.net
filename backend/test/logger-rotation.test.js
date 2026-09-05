@@ -1,6 +1,6 @@
 'use strict';
 // Minimal regression tests for logger rotation — no test framework required.
-// Run: node backend/test-logger-rotation.js
+// Run: node backend/test/logger-rotation.test.js (or `npm test` in backend/)
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
@@ -20,14 +20,14 @@ function ok(label, fn) {
 }
 
 // Isolate via env: the logger module caches LOG_FILE / LOG_MAX_BYTES at
-// require time, so set both BEFORE require('./logger').
+// require time, so set both BEFORE require('../logger').
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'logger-rotation-test-'));
 const LOG_FILE = path.join(tmpDir, 'events.jsonl');
 const MAX_BYTES = 1024;
 process.env.LOG_FILE = LOG_FILE;
 process.env.LOG_MAX_BYTES = String(MAX_BYTES);
 
-const { append, readAll } = require('./logger');
+const { append, readAll } = require('../logger');
 
 // ── rotation tests ────────────────────────────────────────────────────────────
 // Two-file rotation only guarantees no event loss across a SINGLE rotation

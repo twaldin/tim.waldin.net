@@ -7,8 +7,8 @@
 const assert = require('assert');
 
 let passed = 0;
-function ok(label, fn) {
-  try { fn(); console.log(`ok  ${label}`); passed++; }
+async function ok(label, fn) {
+  try { await fn(); console.log(`ok  ${label}`); passed++; }
   catch (e) { console.error(`NOT OK ${label}: ${e.message}`); process.exitCode = 1; }
 }
 
@@ -58,33 +58,33 @@ function fakeSocket(id) {
   const socket = fakeSocket('sock-1');
   await mgr.handleConnect(socket);
 
-  ok('handleConnect emits session_status cold', () => {
+  await ok('handleConnect emits session_status cold', () => {
     const s = socket._emitted.find((e) => e.ev === 'session_status');
     assert.ok(s && s.payload.mode === 'cold', 'expected cold session_status');
   });
 
-  ok('handleConnect registers the conn', () => {
+  await ok('handleConnect registers the conn', () => {
     assert.ok(mgr.conns.has('sock-1'));
   });
 
-  ok('handleInput forwards to lifecycle.write', () => {
+  await ok('handleInput forwards to lifecycle.write', () => {
     mgr.handleInput('sock-1', 'hi');
     assert.ok(calls.write.some(([id, d]) => id === 'H1' && d === 'hi'));
   });
 
-  ok('handleResize forwards bounded dims to lifecycle.resize', () => {
+  await ok('handleResize forwards bounded dims to lifecycle.resize', () => {
     mgr.handleResize('sock-1', 9999, 0);   // out of bounds
     const last = calls.resize[calls.resize.length - 1];
     assert.ok(last[0] === 'H1' && last[1] <= 500 && last[2] >= 2);
   });
 
-  ok('handleDisconnect zombifies (sync) without throwing', () => {
+  await ok('handleDisconnect zombifies (sync) without throwing', () => {
     assert.doesNotThrow(() => mgr.handleDisconnect('sock-1'));
     assert.deepEqual(calls.zombify, ['L1']);
     assert.ok(!mgr.conns.has('sock-1'), 'conn should be cleared');
   });
 
-  ok('rate-limited IP is denied + disconnected', async () => {
+  await ok('rate-limited IP is denied + disconnected', async () => {
     const a2 = { ...admission, checkConnectionRate: () => false };
     const mgr2 = new SessionManager({ lifecycle, admission: a2 });
     mgr2.noInputTimeout = 60_000_000; mgr2.sessionTimeout = 60_000_000;
@@ -93,6 +93,31 @@ function fakeSocket(id) {
     await mgr2.handleConnect(s);
     assert.ok(disconnected, 'rate-limited connection should disconnect');
     assert.ok(!mgr2.conns.has('sock-2'));
+  });
+
+  await ok('handleConnect emits session_status resume and interrupts the prior script', async () => {
+    const a3 = {
+      ...admission,
+      tryAcquire: async () => ({ mode: 'resume', lease: { leaseId: 'L3', handleId: 'H3' } }),
+    };
+    const mgr3 = new SessionManager({ lifecycle, admission: a3 });
+    mgr3.noInputTimeout = 60_000_000; mgr3.sessionTimeout = 60_000_000;
+    const s = fakeSocket('sock-3');
+    await mgr3.handleConnect(s);
+    const status = s._emitted.find((e) => e.ev === 'session_status');
+    assert.ok(status && status.payload.mode === 'resume', 'expected resume session_status');
+    assert.ok(calls.write.some(([id, d]) => id === 'H3' && d === '\x03'),
+      'resume should send Ctrl-C to the restored container');
+    for (const c of mgr3.conns.values()) mgr3._clearTimers(c);
+  });
+
+  await ok('startPoolMaintenance arms one interval and is idempotent', () => {
+    mgr.startPoolMaintenance();
+    const timer = mgr._maintTimer;
+    assert.ok(timer, 'expected a maintenance interval');
+    mgr.startPoolMaintenance();
+    assert.strictEqual(mgr._maintTimer, timer, 'second call must not replace the interval');
+    clearInterval(timer);
   });
 
   // Clear the long timers so the process can exit.

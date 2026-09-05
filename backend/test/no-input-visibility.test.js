@@ -2,7 +2,7 @@
 // Visibility-aware no-input bot-kill timer — now tested through the SessionManager
 // controller (the timer logic moved out of the old god-module). Fakes for the
 // lifecycle + admission seams; no Docker, no sockets. Scaled-down windows:
-// 60ms strict, 300ms visible. Run: node backend/test-no-input-visibility.js
+// 60ms strict, 300ms visible. Run: node backend/test/no-input-visibility.test.js
 const assert = require('assert');
 
 let passed = 0;
@@ -13,7 +13,7 @@ function ok(label, fn) {
     .catch((e) => { console.error(`NOT OK ${label}: ${e.message}`); process.exitCode = 1; });
 }
 
-const SessionManager = require('./session.js');
+const SessionManager = require('../session.js');
 
 function makeManager() {
   const destroyed = [];

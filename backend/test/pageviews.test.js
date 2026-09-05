@@ -1,6 +1,6 @@
 'use strict';
 // Minimal regression tests for the /pv pageview endpoint — no test framework required.
-// Run: node backend/test-pageviews.js
+// Run: node backend/test/pageviews.test.js (or `npm test` in backend/)
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
@@ -25,10 +25,10 @@ const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pageviews-test-'));
 process.env.LOG_FILE = path.join(tmpDir, 'events.jsonl');
 process.env.PV_MAX_PATHS = '5';
 
-const { handlePageview, getPageviewStats, flushRollup } = require('./pageviews');
-const { readAll } = require('./logger');
+const { handlePageview, getPageviewStats, flushRollup } = require('../pageviews');
+const { readAll } = require('../logger');
 
-// Fake req/res in the same style as test-admin-auth.js. Distinct test IPs so
+// Fake req/res in the same style as admin-auth.test.js. Distinct test IPs so
 // rate-limit state doesn't bleed between tests.
 function makeReq(body, ip) {
   return { headers: { 'x-real-ip': ip }, body };

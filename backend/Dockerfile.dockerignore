@@ -1,0 +1,11 @@
+# Ignore rules for backend/Dockerfile. BuildKit reads <Dockerfile>.dockerignore
+# from the Dockerfile's directory; patterns are relative to the build context,
+# which is the repository root (docker compose: `context: .`).
+backend/test/
+backend/proxy-validator/test/
+backend/node_modules/
+backend/*.log
+backend/.env
+backend/.env.*
+**/.DS_Store
+.git/
