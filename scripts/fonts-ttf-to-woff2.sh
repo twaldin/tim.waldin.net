@@ -8,8 +8,9 @@
 #   scripts/fonts-ttf-to-woff2.sh Regular Bold    match only names containing these substrings
 #   scripts/fonts-ttf-to-woff2.sh --force         overwrite existing .woff2
 #   scripts/fonts-ttf-to-woff2.sh --subset Regular Bold --force
-#     retain Latin, box/block drawing, symbols and Nerd Font private-use glyphs;
-#     removes other glyphs and hinting (ordinary conversion preserves both).
+#     retain the legacy selection of Latin, box/block drawing, symbols and
+#     private-use glyphs, not the full Nerd Font set; removes other glyphs and
+#     hinting. Use ordinary conversion above for complete glyph coverage.
 
 set -euo pipefail
 source "$(dirname "$0")/lib/common.sh"
