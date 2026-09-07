@@ -2,8 +2,8 @@
 # Post-deploy smoke test of the live site. Fetches the public surface a deploy
 # can silently break (OG/Twitter meta, sitemap, static assets, per-post blog
 # pages, repo cards, the Socket.IO handshake, TLS expiry) and asserts each one.
-# Prints PASS/FAIL per check and exits nonzero if anything failed — safe to run
-# as the last step of deploy.sh or from CI.
+# Prints PASS/FAIL per check and exits nonzero if anything failed.
+# Run manually after deployment or explicitly from CI; no deploy script calls it.
 #
 # Usage:
 #   scripts/smoke-test.sh                 # test https://tim.waldin.net

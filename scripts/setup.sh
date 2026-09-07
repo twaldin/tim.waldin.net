@@ -74,5 +74,5 @@ bash "$(dirname "$0")/blog-list.sh" 2>&1 | tail -20 || true
 log_step "next steps"
 log_dim "  dev stack:  scripts/dev-up.sh"
 log_dim "  preview:    scripts/blog-preview.sh"
-log_dim "  deploy:     scripts/deploy.sh"
+log_dim "  deploy:     scripts/vps-deploy.sh"
 log_dim "  status:     scripts/vps-status.sh"

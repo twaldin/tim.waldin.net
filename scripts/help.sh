@@ -1,6 +1,6 @@
 #!/bin/bash
 # List all ops scripts in scripts/ with their one-line description.
-# Pulled from each script's second-line comment.
+# Reads source headers only; never executes the listed tools.
 #
 # Usage: scripts/help.sh
 
@@ -9,48 +9,46 @@ source "$(dirname "$0")/lib/common.sh"
 require_repo_root
 
 scripts_dir="${REPO_ROOT}/scripts"
+listed="|"
 
 log_step "available scripts"
 
-# Group scripts by prefix (deploy-*, vps-*, blog-*, etc.) so related ones
-# show together.
-declare -A groups=(
-  [deploy]="deploy-*"
-  [vps]="vps-*"
-  [blog]="blog-* capture-blog-snapshots.sh"
-  [fonts]="fonts-*"
-  [dev]="dev-*"
-  [admin]="admin-*"
-  [other]="deploy.sh reload-nginx.sh setup.sh check-dependencies.sh help.sh"
-)
-
 print_script() {
   local f="$1"
-  local name
-  name="$(basename "${f}")"
-  local doc=""
-  # Grab the second line (usually the one-liner). Strip leading "# ".
-  doc="$(sed -n '2p' "${f}" | sed 's/^# *//')"
+  local name="${f#"${scripts_dir}/"}"
+  local doc
+  doc="$(sed -n '2p' "${f}" | sed 's/^# *//;s/^"""//')"
   printf '  %-38s %s\n' "${name}" "${doc}"
+  listed="${listed}${name}|"
 }
 
 show_group() {
-  local name="$1" pattern="$2"
+  local name="$1"
+  shift
   printf '\n%s%s %s%s\n' "${C_BOLD}" "${C_YELLOW}" "${name}" "${C_RESET}"
-  for pat in ${pattern}; do
-    for f in "${scripts_dir}"/${pat}; do
-      [[ -f "${f}" ]] || continue
-      print_script "${f}"
-    done
+  local f
+  for f in "$@"; do
+    [[ -f "${f}" ]] || continue
+    print_script "${f}"
   done
 }
 
-show_group "DEPLOY"         "${groups[deploy]}"
-show_group "VPS OPERATIONS" "${groups[vps]}"
-show_group "BLOG"           "${groups[blog]}"
-show_group "FONTS"          "${groups[fonts]}"
-show_group "LOCAL DEV"      "${groups[dev]}"
-show_group "ADMIN PANEL"    "${groups[admin]}"
-show_group "OTHER"          "${groups[other]}"
+show_group "DEPLOY" "${scripts_dir}"/deploy-*.sh
+show_group "VPS OPERATIONS" "${scripts_dir}"/vps-*.sh
+show_group "BLOG" "${scripts_dir}"/blog-*.sh "${scripts_dir}"/capture-blog-snapshots.sh "${scripts_dir}"/gen-blog-cards.sh
+show_group "REPO CARDS" "${scripts_dir}"/add-repo-card.sh "${scripts_dir}"/gen-repo-cards.sh
+show_group "FONTS" "${scripts_dir}"/fonts-*.sh
+show_group "LOCAL DEV" "${scripts_dir}"/dev-*.sh
+show_group "ADMIN PANEL" "${scripts_dir}"/admin-*.sh
 
-printf '\n%sall scripts accept -h / --help for detailed usage.%s\n' "${C_DIM}" "${C_RESET}"
+show_group "OTHER"
+for f in "${scripts_dir}"/*; do
+  [[ -f "${f}" ]] || continue
+  case "${listed}" in
+    *"|${f##*/}|"*) continue ;;
+  esac
+  print_script "${f}"
+done
+show_group "SHARED LIBRARY (source, do not execute)" "${scripts_dir}"/lib/*.sh
+
+printf '\n%sRead each script header for usage; not every tool implements --help.%s\n' "${C_DIM}" "${C_RESET}"

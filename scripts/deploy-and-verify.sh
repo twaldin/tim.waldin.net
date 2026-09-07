@@ -8,6 +8,12 @@
 set -euo pipefail
 source "$(dirname "$0")/lib/common.sh"
 
+case "${1:-}" in
+  -h|--help) sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  "") ;;
+  *) die "unknown argument: $1" ;;
+esac
+
 log_step "deploying to ${VPS}"
 "$(dirname "$0")"/vps-deploy.sh
 
