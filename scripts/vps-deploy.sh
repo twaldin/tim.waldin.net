@@ -13,6 +13,13 @@
 set -euo pipefail
 source "$(dirname "$0")/lib/common.sh"
 
+(( $# <= 1 )) || die "expected no arguments or -h/--help"
+case "${1:-}" in
+  -h|--help) sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  "") (( $# == 0 )) || die "unexpected empty argument" ;;
+  *) die "unknown argument: $1" ;;
+esac
+
 require_cmd ssh
 require_vps_reachable
 

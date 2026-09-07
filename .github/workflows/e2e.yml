@@ -4,7 +4,7 @@ name: e2e
 # live site (BASE_URL) on PRs and pushes to main, and nightly. Make this a
 # required branch-protection check so a broken prod is caught before/after merge.
 # NOTE: it tests the deployed site, so pair it with the post-deploy e2e step in
-# deploy.sh for true deploy gating (that step fails the deploy loudly).
+# scripts/deploy-and-verify.sh for true deploy gating (that step fails the deploy loudly).
 
 on:
   pull_request:

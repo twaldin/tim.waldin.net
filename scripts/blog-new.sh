@@ -84,7 +84,7 @@ fi
 log_ok "created ${file}"
 log_dim "    preview locally:  scripts/blog-preview.sh ${slug}"
 log_dim "    capture snapshot: scripts/capture-blog-snapshots.sh ${slug}"
-log_dim "    after commit:     scripts/deploy.sh"
+log_dim "    after commit:     scripts/vps-deploy.sh"
 
 if (( open_editor )); then
   "${EDITOR:-vi}" "${file}"

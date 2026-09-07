@@ -62,7 +62,7 @@ Two frontend gates, then a backend re-check. The frontend has no denylist (the c
 - `boot` replays on every connect, including resume/refresh — nothing substitutes `welcome` for it. The animation and the welcome typewriter are keypress-skippable instead.
 - Emits `visibility` (`{ hidden: document.hidden }`) on connect and on every `visibilitychange` so the backend relaxes its 60 s no-input bot-kill to 5 min while the tab is visible. Passive like `resize` (see Things to watch).
 - The last `resize` is buffered in `lastResize` and re-emitted on `connect`, because xterm's first fit fires before the socket is ready.
-- `session_status` carries `{ mode: 'cold' | 'resume' }` (the client type also declares an optional `restoredType` the backend never sends). `app/page.tsx` records `performance.mark`s (`term:*`, mirrored on `window.__termTti` for `scripts/tti-playwright.mjs`) from socket connect, first-output/prompt sniffing, and the `tti` event's `welcome-enter-sent` phase.
+- `session_status` carries `{ mode: 'cold' | 'resume' }` (the client type also declares an optional `restoredType` the backend never sends). `app/page.tsx` records `performance.mark`s (`term:*`, mirrored on `window.__termTti` for browser-console inspection) from socket connect, first-output/prompt sniffing, and the `tti` event's `welcome-enter-sent` phase.
 - `session_end` (container exited) removes the stored `sessionId` and disconnects; `app/page.tsx` then `replaceState`s the URL to `/`, clears the terminal, and reconnects after 1.5 s, so the next session starts from `/` rather than whatever path the shell last pushed (e.g. `/exit`).
 
 ## Terminal component (`components/Terminal.tsx`)
