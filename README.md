@@ -55,10 +55,30 @@ term-site/
 ├── e2e/                       # Playwright suite (run by .github/workflows/e2e.yml)
 ├── scripts/                   # Ops scripts: deploy, VPS, blog, repo cards, fonts, themes
 ├── docker-compose.yml         # nginx, frontend, backend, socket-proxy
-├── docker-compose.local.yml   # Local override (port 8088, nginx-local.conf)
 ├── nginx.conf                 # Reverse proxy, SSL, rate limiting
 └── deploy.sh                  # Build images, then swap the stack
 ```
+
+## Development
+
+Development happens on the production host; the local Docker Compose stack is retired. Production still uses `docker-compose.yml` and `nginx.conf`. This is a live environment, not a disposable development stack.
+
+From a checkout with SSH access:
+
+```bash
+bash scripts/vps-ssh.sh
+```
+
+The helper connects through `root@tim.waldin.net`, opens a shell as `deploy`, and changes to `/home/deploy/term-site`. These defaults come from `scripts/lib/common.sh` (`VPS`, `DEPLOY_USER`, `DEPLOY_PATH`). Work in that checkout; inspect the running services without restarting them:
+
+```bash
+docker compose ps
+docker compose logs --tail=50 frontend backend nginx
+```
+
+The running site is [https://tim.waldin.net](https://tim.waldin.net), not a localhost preview. Source edits do not update the running service images. Publishing a runtime change is a separate, explicitly scoped production operation: the root `deploy.sh` builds images, swaps the stack, prunes build cache, and installs renewal hooks. Do not run it just to start development or apply a documentation/script cleanup.
+
+Native package commands remain available for isolated work: `cd frontend && pnpm dev` and `cd backend && npm start`. They are not a replacement production startup procedure. The backend needs a Docker daemon and the sandbox image; do not point a second backend at the production daemon, where it could interfere with live session containers. See [the frontend guide](frontend/CLAUDE.md#dev--build--tests) for native blog setup. Package tests are `cd frontend && pnpm test` and `cd backend && npm test`; backend unit tests need no Docker daemon.
 
 ## Security
 

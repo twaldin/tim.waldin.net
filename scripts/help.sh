@@ -19,7 +19,6 @@ declare -A groups=(
   [vps]="vps-*"
   [blog]="blog-* capture-blog-snapshots.sh"
   [fonts]="fonts-*"
-  [dev]="dev-*"
   [admin]="admin-*"
   [other]="deploy.sh reload-nginx.sh setup.sh check-dependencies.sh help.sh"
 )
@@ -49,7 +48,6 @@ show_group "DEPLOY"         "${groups[deploy]}"
 show_group "VPS OPERATIONS" "${groups[vps]}"
 show_group "BLOG"           "${groups[blog]}"
 show_group "FONTS"          "${groups[fonts]}"
-show_group "LOCAL DEV"      "${groups[dev]}"
 show_group "ADMIN PANEL"    "${groups[admin]}"
 show_group "OTHER"          "${groups[other]}"
 
