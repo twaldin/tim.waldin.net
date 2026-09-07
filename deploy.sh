@@ -8,16 +8,13 @@ echo "Starting deployment..."
 # multi-minute --no-cache build. Crawlers (X/Google link previews) used to
 # catch the dark window and cache imageless/failed cards.
 echo "Building terminal container image on host..."
-# STARS_REFRESH busts only the final .stars layer so every deploy re-fetches
-# the GitHub star counts shown by welcome.sh (runtime containers have no
-# network, so build time is the only chance).
 # bob (neovim version manager) queries the GitHub API — pass a token via
 # build secret when available so busy IPs don't hit the rate limit.
 BUILD_SECRET_ARGS=()
 if [[ -s /home/deploy/.github_token ]]; then
   BUILD_SECRET_ARGS+=(--secret id=github_token,src=/home/deploy/.github_token)
 fi
-docker build "${BUILD_SECRET_ARGS[@]}" --build-arg STARS_REFRESH="$(date +%s)" -t twaldin/terminal-portfolio:latest ./container
+docker build "${BUILD_SECRET_ARGS[@]}" -t twaldin/terminal-portfolio:latest ./container
 
 echo "Building service images..."
 docker compose build --no-cache
