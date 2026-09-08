@@ -170,6 +170,9 @@ RUN echo 'source /home/portfolio/.portfolio-aliases' >> /home/portfolio/.bashrc
 # Set proper ownership
 RUN chown -R portfolio:portfolio /home/portfolio
 
+# COPY preserves checkout modes; visitors must be able to read every banner font.
+RUN chmod -R a+rX /usr/share/figlet
+
 # Create a restricted shell environment
 RUN echo '#!/bin/zsh' > /home/portfolio/secure-shell.sh && \
     echo 'export HOME=/home/portfolio' >> /home/portfolio/secure-shell.sh && \
