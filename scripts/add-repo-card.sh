@@ -4,8 +4,8 @@
 # frontend/src/app/repo-card/cards.json. Pass --write to splice it in directly.
 #
 # DOS_Rebel isn't a base figlet font, so it's rendered inside the portfolio
-# container image (which ships it) over SSH when it's missing locally — same
-# trick as capture-blog-snapshots.sh. The column width is measured with `wc -L`
+# container image (which ships it) over SSH when it's missing locally.
+# The column width is measured with `wc -L`
 # on that Linux host too, because BSD wc/awk on macOS miscount the wide block
 # glyphs (they count bytes, not columns).
 #

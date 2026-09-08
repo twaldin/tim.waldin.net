@@ -35,7 +35,7 @@ show_group() {
 
 show_group "DEPLOY" "${scripts_dir}"/deploy-*.sh
 show_group "VPS OPERATIONS" "${scripts_dir}"/vps-*.sh
-show_group "BLOG" "${scripts_dir}"/blog-*.sh "${scripts_dir}"/capture-blog-snapshots.sh "${scripts_dir}"/gen-blog-cards.sh
+show_group "BLOG" "${scripts_dir}"/blog-*.sh "${scripts_dir}"/gen-blog-cards.sh
 show_group "REPO CARDS" "${scripts_dir}"/add-repo-card.sh "${scripts_dir}"/gen-repo-cards.sh
 show_group "FONTS" "${scripts_dir}"/fonts-*.sh
 show_group "ADMIN PANEL" "${scripts_dir}"/admin-*.sh
