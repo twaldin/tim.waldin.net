@@ -63,13 +63,13 @@ Timers in `SessionManager` (`backend/session.js`), rate limit in `Admission` (`b
 
 Session containers are not declared in compose: the backend creates them through the proxy with `NetworkMode: 'none'`, so they are attached to no Docker network at all.
 
-Nginx (`nginx.conf`) terminates TLS via Let's Encrypt (`/etc/letsencrypt` mounted read-only), enforces global rate limits (10 r/s, burst 20; `limit_conn` 10 per IP), and blocks the Next.js CVE-2025-29927 middleware-bypass header. Routes:
+Nginx (`nginx.conf`) terminates TLS via Let's Encrypt (`/etc/letsencrypt` mounted read-only), rate-limits dynamic/backend requests to 10 r/s per IP (burst 20), and gives `/_next/static/` and `/fonts/` a separate 100 r/s budget (burst 200) so cold-load assets cannot exhaust the backend budget. The `limit_conn` cap of 10 per IP applies to both. It also blocks the Next.js CVE-2025-29927 middleware-bypass header. Routes:
 
 - `/socket.io/` → backend, WebSocket upgrade, 24 h read timeout.
 - `/pv` → backend, first-party pageview beacon (`pageviews.handlePageview`).
 - `/admin` → backend, Basic-auth panel over the audit log (`ADMIN_PASSWORD` from the environment).
 - `/health`, `/stats` → backend, private networks only.
-- `/fonts/` → frontend with immutable cache headers.
+- `/_next/static/` → frontend, preserving Next.js cache headers; `/fonts/` → frontend with immutable cache headers.
 - `/agentelo*` → a separate compose stack on the shared `term-site_external-net`.
 - A 444 blocklist for common exploit probes; `/resume.html` → `/resume.pdf`; every other path → frontend.
 
@@ -83,7 +83,7 @@ The audit log (`events.jsonl`, with daily pageview rollups appended to it) lives
 - Native commands remain available for isolated work, not production startup: `cd frontend && pnpm dev` (Next 15 with Turbopack, port 3000). Vitest suites in `src/lib/__tests__/`.
 - `cd backend && npm start` (port 3001; needs `DOCKER_HOST` or a local docker socket). Keep a second backend off the production daemon to avoid interfering with live session containers. `npm test` runs every suite in `backend/test/` and `backend/proxy-validator/test/` with no daemon: `lifecycle.test.js` and the capacity cases in `admission.test.js` drive the real modules over the in-memory Docker adapter in `test/lifecycle-fake.js`; the other admission cases and the controller suites use fakes at the module seams.
 - The container image is built with `container/build.sh` → tags `twaldin/terminal-portfolio:latest`, the tag `SANDBOX_POLICY.image` requests. Nothing checks for it at startup; a missing image surfaces as a failed lease.
-- Playwright e2e in `e2e/` runs against the deployed site on PRs, pushes to `main`, and nightly (`.github/workflows/e2e.yml`). A cold page load is 24–26 requests, right at the nginx per-IP limit above, and the limiter clips the trailing Terminal chunk with 503 so `.xterm` never renders (TWA-55). The suite keeps that signal: the "first visit" check runs in a plain browser context with no interception, while the "returning visitor" tests replay the immutable assets (`/_next/static/` chunks and `/fonts/`) from a per-worker cache (`e2e/immutable-assets.ts`) instead of re-downloading them in every fresh context. Every finished test run uploads the html report; a flaky pass keeps the failed attempt's trace, which is how a first-visit failure is inspected.
+- Playwright e2e in `e2e/` runs against the deployed site on PRs, pushes to `main`, and nightly (`.github/workflows/e2e.yml`). A cold page load is 24–26 requests; sharing the backend's request budget used to reject the trailing Terminal chunk with 503 (TWA-55). The separate immutable-asset budget fixes that contention. The "first visit" check remains a cold-load regression signal: it runs in a plain browser context with no interception. The "returning visitor" tests replay immutable assets (`/_next/static/` chunks and `/fonts/`) from a per-worker cache (`e2e/immutable-assets.ts`) instead of re-downloading them in every fresh context. Every finished test run uploads the html report; a flaky pass keeps the failed attempt's trace.
 
 ## Pointers
 
