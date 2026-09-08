@@ -1,0 +1,26 @@
+# Visitor shell: workstation-only tools and Node version hooks do not belong here.
+unsetopt PROMPT_CR
+# EDITOR=nvim must not switch command-line editing to vi mode.
+bindkey -e
+autoload -Uz compinit && compinit
+source /home/portfolio/.portfolio-aliases
+source /home/portfolio/scripts/shared-functions.sh
+
+# Push typed commands to the browser; individual pages may emit a more specific URL.
+preexec() {
+  local cmd=$1
+  (( ${#cmd} > 200 )) && return
+  [[ "$cmd" =~ '^[A-Za-z0-9 ._/+=:,@-]+$' ]] || return
+  local first=${cmd%% *}
+  case "$first" in
+    rm|mv|cp|dd|sudo|su|chmod|chown|kill|pkill|killall|sh|bash|zsh|dash|eval|exec|source|mkfs|mount|umount) return ;;
+  esac
+  case "$cmd" in
+    welcome|home) emit_url ""; return ;;
+    flt|agentelo|hone|harness|term-site|trade-up-bot|studyspot|stm32-games|dotfiles|tetrio-tui|deck|hone-a-drone|gepa-ts|also)
+      emit_url "projects/$cmd"; return ;;
+  esac
+  emit_url "${cmd// /%20}"
+}
+
+eval "$(oh-my-posh init zsh --config /home/portfolio/.dotfiles/zsh/pure-modified.omp.json)"

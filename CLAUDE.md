@@ -14,7 +14,7 @@ xterm.js 5.5    ←──    Express + Socket.IO     ←──  per visitor IP
 
 - **`frontend/`** — Next.js 15 / React 19 app. Renders xterm.js with JetBrainsMono Nerd Font and 463 Ghostty themes (`src/config/themes.ts`, defaults `iTerm2 Tango Dark` / `Light` following `prefers-color-scheme`; `src/lib/theme-manager.ts` persists the pick per mode), a Socket.IO client, and a URL ↔ command sync layer.
 - **`backend/`** — Node.js + Express + Socket.IO + dockerode, split into three modules: `session.js` (`SessionManager`: per-connection timers, initCommand auto-typing gated on the prompt and first resize), `admission.js` (`Admission`: one lease per IP, capacity cap, connection rate limit, reconnect grace), `lifecycle.js` (`SessionLifecycle`: every dockerode call, the warm pool, attach/rebind). `sandbox-policy.js` is the single source of the container spec.
-- **`container/`** — Ubuntu 24.04 image (`twaldin/terminal-portfolio:latest`) with zsh, Oh My Posh, neovim (nightly via bob), figlet/mdcat/glow, and `scripts/*.sh` for the portfolio (welcome, projects, blog, resume, contact, etc.).
+- **`container/`** — Ubuntu 24.04 image (`twaldin/terminal-portfolio:latest`) with zsh, Oh My Posh, neovim (nightly via bob), figlet, and `scripts/*.sh` for the portfolio (welcome, projects, blog, resume, contact, etc.).
 
 ## Frontend routing
 

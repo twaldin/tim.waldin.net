@@ -7,8 +7,10 @@ Source for the `twaldin/terminal-portfolio:latest` Docker image — the Ubuntu s
 ```
 container/
 ├── Dockerfile              # Ubuntu 24.04 → zsh + Oh My Posh + nvim nightly + scripts (see Image build)
-├── build.sh                # Local `docker build` helper — no secret, no build args (see Image build)
+├── build.sh                # Shared local/deployment image build helper (see Image build)
 ├── AGENTS.md -> CLAUDE.md  # Symlink so both agent-guide names resolve here
+├── zshrc                   # Visitor-only zsh startup and browser URL hook
+├── shell-aliases.sh        # One alias set sourced by both bash and zsh
 ├── DOS_Rebel.flf           # Incumbent banner font, copied to /usr/share/figlet/ so `figlet -f DOS_Rebel` resolves
 ├── blog/posts/             # 3 markdown posts with YAML frontmatter (copied to /home/portfolio/blog/; the frontend
 │                           #   reads the same directory — see frontend/CLAUDE.md)
@@ -40,30 +42,28 @@ container/
 
 ## Image build (Dockerfile highlights)
 
-- **Base / packages**: `ubuntu:24.04`. One apt layer installs bash, vim, neovim, nano, grep, ripgrep, fzf, less, bat (`batcat` symlinked to `bat`), git, unzip, tree, htop, procps, coreutils, findutils, ncurses-base, zsh, figlet, fontconfig, and creates the `portfolio` user with `/bin/zsh` as its shell. `curl`/`wget` are installed early for downloads; `wget` is purged at the end, `curl` is kept for mason.nvim's startup registry refresh (Dockerfile comment). `sudo` is installed in a late layer so busting it never rebuilds bob/nvim.
-- **Markdown renderers**: mdcat 2.7.1 (amd64 only — skipped on arm64 builds) and glow 2.1.2 are installed, but nothing under `scripts/` runs either. `blog` hands off to the HTML page instead (see Blog).
-- **Editor**: bob v4.1.6 → `bob install nightly && bob use nightly` (the dotfiles nvim config uses `vim.pack` and other nightly features). Plugins are baked in at build time — `yes A | timeout 300 …/bob/nvim-bin/nvim --headless +qa || true` — because runtime containers have no network; the `|| true` is deliberate: the Dockerfile expects mason's LSP-server fetches to fail during that run and treats it as harmless because `vim.pack` has already cloned the plugins. `typst-preview` is `sed`-stripped from `init.lua` first because it opens a system browser, which can't work in the sandbox.
-- **Font**: JetBrains Mono Nerd Font v3.0.2 unzipped into `~/.local/share/fonts/` + `fc-cache`.
-- **Prompt**: Oh My Posh installed to `~/.local/bin` (themes in `~/.local/share/themes`). `.zshrc` inits it with `~/.dotfiles/zsh/pure-modified.omp.json`, whose `{{ .UserName }}` is `sed`-replaced with `tim.waldin.net` so the prompt reads `tim.waldin.net ~`.
-- **nvm** v0.40.1 (`PROFILE=/dev/null`), installed only so the dotfiles `load-nvmrc` hook resolves; the Dockerfile installs no Node version with it.
+- **Packages**: `ubuntu:24.04`, installed without recommended extras. Retain bash/zsh, POSIX text/file/process utilities, figlet for banners, fzf for the theme picker, git/less/tree for repository browsing, htop and sudo for the shell demo, and ripgrep for editor search. `ca-certificates`, curl and unzip support downloads and editor tooling.
+- **Removed installs**: mdcat/glow (blog renders as HTML), duplicate apt vim/neovim and nano (nightly nvim remains), bat (cat remains), wget, apt-transport-https/software-properties-common (the base already enables universe), and Linux Nerd Fonts/fontconfig (the browser supplies the terminal font; figlet fonts remain). nvm is unnecessary with visitor-owned startup: no Node runtime is installed.
+- **Editor**: bob v4.1.6 → nightly nvim, preserving the dotfiles nvim config and baked-in plugins for the network-isolated sandbox. `vi` and `vim` alias nvim in both shells. The headless plugin warmup tolerates optional tool-download errors; validate actual offline editor startup after changing dependencies. `typst-preview` is stripped because a sandbox cannot open a system browser.
+- **Prompt**: Oh My Posh's architecture-specific binary is installed to `~/.local/bin`, without its unused bundled themes. `zshrc` initializes it once with `~/.dotfiles/zsh/pure-modified.omp.json`, whose username template is replaced with `tim.waldin.net`. The dotfiles repository remains available for browsing and nvim configuration, but its workstation zsh startup is not sourced.
 - **Repos** (one `RUN`, with an optional `github_token` build secret exported as `GITHUB_TOKEN` to lift bob's unauthenticated GitHub API rate limit): `twaldin/dotfiles` → `~/.dotfiles` (`~/.config/nvim` symlinks to its `nvim/`), and `~/projects/{flt,agentelo,stm32-games,term-site,trade-up-bot,hone,harness,studyspot}` cloned from `github.com/twaldin/<name>`. `~/projects/dotfiles` is a symlink to `~/.dotfiles`; `tetrio-tui`, `deck`, `hone-a-drone`, `gepa-ts` are empty `mkdir -p` placeholders, which is why their pages skip `git_activity`. Each project directory also gets a `<name>.sh` symlink (absolute target) to its script, plus `~/projects/also.sh`.
 - **sudo**: passwordless for `portfolio` (`/etc/sudoers.d/portfolio`). Safe because the backend creates containers with `CapDrop: ALL` (only `SETUID`/`SETGID` added back), no network, and memory/pid limits — `sudo rm -rf /` works as a demo but can't escape.
-- **Home extras**: `~/README.md` (a short "Welcome to Terminal Portfolio!" note), `~/portfolio/`, `~/workspace/`, `~/tmp/`. `~/.bashrc` also receives an older copy of the alias block (see Things to watch).
-- **Entrypoint**: `CMD /home/portfolio/secure-shell.sh`, which exports `HOME`/`USER`/`SHELL`, `cd`s home and `exec`s `/bin/zsh`. `ENV PATH` puts `~/.local/bin` and `~/scripts` first, so every top-level script also runs by name (`boot.sh` runs the animations through `bash`).
-- **Building**: `build.sh` runs `docker build -t twaldin/terminal-portfolio:latest ./container` from the repo root with no secret and no build args. Production goes through the root `deploy.sh`, which adds `--secret id=github_token,src=/home/deploy/.github_token` when that file exists to avoid bob's unauthenticated GitHub API rate limit.
+- **Home extras**: `~/README.md` describes supported tools; `~/portfolio/`, `~/workspace/`, `~/tmp/` are writable.
+- **Entrypoint**: `secure-shell.sh` sets the visitor environment and execs zsh. Image `PATH` exposes bob's nvim proxy, `~/.local/bin` and `~/scripts` to both bash and zsh; `EDITOR=nvim`.
+- **Building**: invoke `container/build.sh` with bash (use its absolute path when outside the repository). `deploy.sh` calls this same helper before its deployment steps. The helper optionally supplies a BuildKit `github_token` secret from a nonempty token file at `GITHUB_TOKEN_FILE` (default `/home/deploy/.github_token`), and forwards additional Docker build options. For a locally authenticated build, use `bash container/build.sh --secret id=github_token,env=GH_TOKEN`. Tokens are build secrets, not image arguments. There is no `STARS_REFRESH` argument in the current build. Running the helper builds only; it does not deploy.
 
 ## Shell wiring (`.zshrc`)
 
-The Dockerfile copies the dotfiles `zsh/zshrc` to `~/.zshrc` and appends:
+The Dockerfile installs this directory's `zshrc`, rather than importing workstation aliases, macOS tools or automatic nvm hooks. It provides:
 
-1. `unsetopt PROMPT_CR` — no `%` partial-line marker in captured output.
-2. The alias block below.
+1. `unsetopt PROMPT_CR` — no `%` partial-line marker — zsh completion, and `bindkey -e` to keep Emacs-style command-line editing despite `EDITOR=nvim`.
+2. `shell-aliases.sh`, installed as `~/.portfolio-aliases` and also sourced by interactive bash.
 3. `source /home/portfolio/scripts/shared-functions.sh` (so `emit_url` exists in the interactive shell) and a `preexec` hook that pushes the browser URL for every typed command: return if the command is longer than 200 chars or outside `^[A-Za-z0-9 ._/+=:,@-]+$` (the same character set as `SAFE_CMD_RE` in `frontend/src/lib/websocket.ts` and the `_autoType` re-check in `backend/session.js`); return if the first word is one of `rm mv cp dd sudo su chmod chown kill pkill killall sh bash zsh dash eval exec source mkfs mount umount` — a container-only skip list, the frontend has no denylist and instead allowlists `NAVIGATION_COMMANDS`; `welcome`/`home` → `emit_url ""`; a project alias → `emit_url "projects/<alias>"`; anything else → `emit_url "${cmd// /%20}"`.
-4. `PATH` prefix `~/.local/bin` and `eval "$(oh-my-posh init zsh --config ~/.dotfiles/zsh/pure-modified.omp.json)"`.
+4. Oh My Posh initialization with the portfolio prompt.
 
 ### Aliases
 
-25 aliases; keep this table one-to-one with the `.zshrc` block in the Dockerfile. Every script path is `/home/portfolio/scripts/<name>.sh`.
+The 25 portfolio navigation aliases live in `shell-aliases.sh`; both interactive shells source the same file. It also defines `vi`/`vim` → nvim and `ll`/`la` → ls. Every script path below is `/home/portfolio/scripts/<name>.sh`.
 
 | Alias | Runs |
 |---|---|
@@ -74,7 +74,7 @@ The Dockerfile copies the dotfiles `zsh/zshrc` to `~/.zshrc` and appends:
 | `dotfiles` | `cd ~/.dotfiles && dotfiles.sh` |
 | `theme`, `help`, `blog`, `gui` | `<name>.sh` — no `cd` |
 
-Adding a command means touching this block and `help.sh`, plus — if a URL should reach it — the frontend allowlists: `NAVIGATION_COMMANDS` in `frontend/src/lib/websocket.ts` lets the path auto-type the command, `KNOWN_COMMANDS` in `frontend/src/lib/routes.ts` lets it render instead of 404 (the two already differ for `theme` and `gui`; see `frontend/CLAUDE.md`). A new project alias additionally goes into both files' `PROJECT_ALIASES` sets and the `preexec` case that maps it to `projects/<alias>`.
+Adding a command means updating `shell-aliases.sh` and `help.sh`, plus — if a URL should reach it — `NAVIGATION_COMMANDS` in `frontend/src/lib/websocket.ts` and `KNOWN_COMMANDS` in `frontend/src/lib/routes.ts`. A project alias also needs both frontend `PROJECT_ALIASES` sets and the `zshrc` preexec mapping. Bash has navigation parity, but only zsh has the browser URL hook.
 
 ## Boot intro (animations)
 
@@ -95,7 +95,7 @@ Animation end-contract (the "v3" header comment in each script): banner text com
 `blog.sh` reads `/home/portfolio/blog/posts/*.md` and their frontmatter `date` / `title`:
 
 - `blog` / `blog list` — posts newest first, each slug an OSC 8 hyperlink to `https://tim.waldin.net/blog/<slug>`, titles truncated so a row fits the terminal width when there is room for one, then `emit_scroll_top`.
-- `blog <slug>`, `blog <N>` (1 = newest), `blog <substring>` (case-insensitive; must match exactly one slug, otherwise the candidates are listed), `blog latest` — `render_post` resolves the slug and calls `emit_navigate "/blog/<slug>"`: the browser leaves the terminal for the static post page (`frontend/src/app/blog/[slug]/page.tsx`). Nothing is rendered in the PTY; mdcat and glow are not involved. The static page hands back to the live terminal through `/t/<cmd>` (see `frontend/CLAUDE.md`).
+- `blog <slug>`, `blog <N>` (1 = newest), `blog <substring>` (case-insensitive; must match exactly one slug, otherwise the candidates are listed), `blog latest` — `render_post` resolves the slug and calls `emit_navigate "/blog/<slug>"`: the browser leaves the terminal for the static post page (`frontend/src/app/blog/[slug]/page.tsx`). Nothing is rendered in the PTY. The static page hands back to the live terminal through `/t/<cmd>` (see `frontend/CLAUDE.md`).
 - `blog --raw <slug>` — prints the markdown body without frontmatter for piping; the slug must match `^[A-Za-z0-9._-]+$`.
 
 ## Terminal control sequences
@@ -116,6 +116,4 @@ URL conventions for OSC 9999: page scripts push their own command name (`about`,
 ## Things to watch
 
 - The `term-site` clone is guarded with `(git clone … || mkdir -p term-site)` from when the repo was private. `twaldin/term-site` now redirects to the public `twaldin/tim.waldin.net`, so the clone succeeds and the visitor's `term-site` page shows live git activity; the guard is dormant.
-- A later `RUN` writes a second alias block to `~/.bashrc`, missing `hone`, `harness`, `studyspot`, `blog` and `gui`. The visitor's shell is zsh (`useradd -s /bin/zsh`; `secure-shell.sh` execs `/bin/zsh`), so that block is only read when a visitor starts an interactive `bash`.
-- The Dockerfile's `preexec` comment says the frontend's URL → command mapping uses "the same char whitelist + BLOCKED_HEADS"; the frontend has no such list (see Shell wiring).
 - `help.sh` lists four animations for `boot <name>`; `ANIMATIONS` in `boot.sh` has five (`font-cycle` is missing from help).
