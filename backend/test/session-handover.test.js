@@ -73,10 +73,11 @@ function assertRetired(socket) {
 
 /** Container output reaches `owner` and none of the `others`. */
 function assertOutputReaches(docker, handleId, owner, others) {
+  const before = new Map([owner, ...others].map((socket) => [socket, outputOf(socket).length]));
   docker.push(handleId, 'still here');
-  assert.ok(outputOf(owner).includes('still here'), `output must reach ${owner.id}`);
+  assert.deepEqual(outputOf(owner).slice(before.get(owner)), ['still here'], `output must reach ${owner.id}`);
   for (const socket of others) {
-    assert.ok(!outputOf(socket).includes('still here'), `output must not reach ${socket.id}`);
+    assert.deepEqual(outputOf(socket).slice(before.get(socket)), [], `output must not reach ${socket.id}`);
   }
 }
 
@@ -114,6 +115,37 @@ test('the first tab is hung up at takeover; closing it and its 30 s grace cannot
   await clock.advance(30_000);
   assert.equal(lease.state, 'ended');
   assert.deepEqual(docker.removedIds, [handleId]);
+});
+
+test('a different browser evicts the old connection before teardown; late resize cannot interrupt another visitor', async (t) => {
+  const { docker, mgr } = makeManager(t);
+  const visitor = fakeSocket(mgr, 'visitor', 'unrelated-browser');
+  visitor.handshake.headers['x-real-ip'] = '203.0.113.2';
+  await mgr.handleConnect(visitor);
+  const visitorHandle = mgr.conns.get(visitor.id).lease.handleId;
+
+  const first = fakeSocket(mgr, 'browser-a-tab', 'browser-a');
+  await mgr.handleConnect(first);
+  const releaseKill = hold(docker, 'kill');
+  const second = fakeSocket(mgr, 'browser-b-tab', 'browser-b');
+  const replacing = mgr.handleConnect(second);
+
+  try {
+    // A resize can already be queued when the other browser takes the IP.
+    // Before TWA-94 this threw synchronously and killed the entire backend.
+    mgr.handleResize(first.id, 128, 32);
+    assertRetired(first);
+    assertOutputReaches(docker, visitorHandle, visitor, [first, second]);
+  } finally {
+    releaseKill();
+    await replacing;
+  }
+  assert.equal(statusOf(second), 'cold');
+  const replacementHandle = mgr.conns.get(second.id).lease.handleId;
+  mgr.handleInput(first.id, 'exit\r');
+  first.disconnect();
+  assertOutputReaches(docker, replacementHandle, second, [first, visitor]);
+  assertOutputReaches(docker, visitorHandle, visitor, [first, second]);
 });
 
 // The rebind happens synchronously inside tryAcquire; handleConnect's
@@ -272,6 +304,8 @@ test('restoring a zombie evicts another browser\'s lease on the IP without waiti
   ]);
   assert.equal(statusOf(early), 'resume');
   assert.equal(evicted.state, 'ended');
+  mgr.handleResize(other.id, 128, 32);
+  assertRetired(other);
   assert.deepEqual(docker.killedIds, []);
 
   const late = fakeSocket(mgr, 'tab-a3', 'browser-a');

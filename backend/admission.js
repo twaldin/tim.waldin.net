@@ -13,8 +13,8 @@ require('./sandbox-policy');
  *   provide clock.setTimeout/clock.clearTimeout; native timers are the fallback.
  * - The caller's sinks travel with tryAcquire: onOutput / onClose are bound to
  *   the container stream (a lifecycle close destroys the lease), and
- *   onSuperseded is remembered on the lease so a later restore can tell the
- *   connection it displaces.
+ *   onSuperseded is remembered on the lease so a later restore or eviction
+ *   can retire the connection it displaces.
  */
 
 /**
@@ -71,8 +71,8 @@ class Admission {
   /**
    * Acquire a new lease or resume a persistent one. The sinks belong to the
    * calling connection: `onOutput` / `onClose` are bound to the container
-   * stream; `onSuperseded` fires synchronously, in the same tick as the rebind,
-   * when a later connection resumes the lease this one holds.
+   * stream; `onSuperseded` fires synchronously when a later connection
+   * resumes this lease or evicts it to take the IP.
    * @param {string} ip
    * @param {{persistentId?: string, initCommand?: string, onOutput?: function(string): void,
    *   onClose?: function(): void, onSuperseded?: function(): void}} options
@@ -100,7 +100,7 @@ class Admission {
     const existingLeaseId = this.ipLeases.get(ip);
     let eviction;
     if (existingLeaseId) {
-      eviction = this.destroy(existingLeaseId);
+      eviction = this._evict(existingLeaseId);
     } else if (this._capacityUsed() >= this.maxSessions) {
       // H6: no await occurs between this check and the pendingLeases entry
       // below, so concurrent tryAcquire calls cannot overshoot maxSessions.
@@ -183,6 +183,13 @@ class Admission {
     timer = this.setTimer(expire, ZOMBIE_GRACE_MS);
     this.zombieLeases.set(leaseId, { lease, timer });
     return true;
+  }
+
+  /** Revoke the old connection's authority before tearing down its handle. */
+  _evict(leaseId) {
+    const lease = this.pendingLeases.get(leaseId) || this.activeLeases.get(leaseId);
+    try { lease?.onSuperseded?.(); } catch { /* caller sink failure is non-fatal */ }
+    return this.destroy(leaseId);
   }
 
   /**
@@ -291,7 +298,7 @@ class Admission {
       const otherLeaseId = this.ipLeases.get(lease.ip);
       this.ipLeases.set(lease.ip, lease.leaseId);
       if (otherLeaseId && otherLeaseId !== lease.leaseId) {
-        void this.destroy(otherLeaseId).catch(() => {});
+        void this._evict(otherLeaseId).catch(() => {});
       }
     }
 

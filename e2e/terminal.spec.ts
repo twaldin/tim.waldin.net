@@ -74,10 +74,9 @@ test.describe('returning visitor', () => {
   test('typing a command produces terminal output', async ({ page }) => {
     await page.goto(BASE);
     await expect(page.locator('.xterm')).toBeVisible();
-    // Wait for the boot intro + welcome to finish before typing — the
-    // welcome box text is a deterministic end marker (a prompt-count race
-    // can fire early when the initial prompt redraws after resize).
-    await expect.poll(() => outputText(page), { timeout: 25000 }).toContain('portfolio terminal');
+    // Keep the welcome marker, then wait for the shell prompt: welcome's
+    // line-by-line reveal still consumes keypresses after its box title.
+    await expect.poll(() => outputText(page), { timeout: 25000 }).toMatch(/portfolio terminal[\s\S]*❯ /);
     await page.locator('.xterm').click();
     await page.keyboard.press('Control+u'); // clear any half-typed input
     await page.keyboard.type('help');
@@ -88,21 +87,23 @@ test.describe('returning visitor', () => {
   test('refresh reattaches and keeps output flowing (reattach regression)', async ({ page }) => {
     await page.goto(BASE);
     await expect(page.locator('.xterm')).toBeVisible();
-    // The boot intro animation must finish first — typing while it plays
-    // gets eaten by its keypress-skip. Wait for the welcome box, the
-    // deterministic end-of-boot marker.
-    await expect.poll(() => outputText(page), { timeout: 25000 }).toContain('portfolio terminal');
+    // Wait for welcome AND the following shell prompt so its skippable
+    // reveal cannot consume the command.
+    await expect.poll(() => outputText(page), { timeout: 25000 }).toMatch(/portfolio terminal[\s\S]*❯ /);
     await page.locator('.xterm').click();
     await page.keyboard.type('about');
     await page.keyboard.press('Enter');
-    await expect.poll(() => outputText(page), { timeout: 15000 }).toBeTruthy();
+    await expect.poll(() => outputText(page), { timeout: 15000 }).toContain('About Me');
+    await expect(page).toHaveURL(/\/about$/);
 
-    // Reload is the user's trigger. Before the fix this resumed the session but
-    // bound output to the dead previous socket — terminal stuck in "reattaching".
-    // After the fix, output MUST keep flowing regardless of resume-vs-cold.
+    // Reload must resume the existing session and repaint the requested page,
+    // not merely emit an initial prompt or a nonempty status/error message.
     await page.reload();
     await expect(page.locator('.xterm')).toBeVisible();
-    await expect.poll(() => outputText(page), { timeout: 15000 }).toBeTruthy();
+    await expect.poll(() => page.evaluate(() =>
+      (window as unknown as FrameSink).__ioFrames.includes('42["session_status",{"mode":"resume"}]')
+    )).toBe(true);
+    await expect.poll(() => outputText(page), { timeout: 15000 }).toContain('About Me');
   });
 
   test('reload during the boot intro renders the terminal (/boot is a valid path)', async ({ page }) => {
