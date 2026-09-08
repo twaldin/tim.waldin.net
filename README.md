@@ -94,7 +94,7 @@ Session limits (`backend/session.js`, `backend/admission.js`):
 - Idle kill after 5 minutes without a keystroke
 - Bot kill: a session that never receives input is freed after 60 s, relaxed to 5 minutes while the page reports itself visible
 - 30-second reconnect grace after a disconnect; a refresh within it resumes the same container (same IP only)
-- Nginx: 10 requests/s per IP (burst 20), 10 concurrent connections per IP
+- Nginx: 10 requests/s per IP (burst 20) for dynamic/backend routes; `/_next/static/` and `/fonts/` share a separate 100 requests/s budget (burst 200). The 10 concurrent connections per IP limit applies to both.
 
 Users can run destructive commands like `rm -rf /` or fork bombs - they only affect their own container, not the host.
 

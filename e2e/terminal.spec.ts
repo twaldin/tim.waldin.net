@@ -9,9 +9,9 @@ import { serveImmutableAssetsFromCache } from './immutable-assets';
 //
 // Two groups, run in this order by one worker:
 // - "first visit": a plain browser context with no interception at all, so it
-//   sees exactly what a new visitor with an empty cache sees — including the
-//   nginx per-IP request limit clipping the trailing Terminal chunk (TWA-55).
-//   A failure here is that production defect, not test noise.
+//   sees exactly what a new visitor with an empty cache sees. This guards
+//   against recurrence of nginx rejecting the trailing Terminal chunk (TWA-55).
+//   A failure here is a cold-load regression, not test noise.
 // - "returning visitor": the first of these downloads the immutable build
 //   assets into a per-worker cache (see immutable-assets.ts) and the rest
 //   replay them from it, the warm-cache state a real visitor is in after the
