@@ -159,8 +159,7 @@ render_post() {
     return 1
   fi
 
-  # Hand off to the HTML blog page — the static Gruvbox render is prettier
-  # than mdcat-in-PTY and serves from the CDN edge.
+  # Hand off to the static HTML blog page; the PTY only lists or prints raw posts.
   emit_navigate "/blog/${slug}"
 }
 

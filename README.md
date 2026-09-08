@@ -21,7 +21,7 @@ Browser (xterm.js) → Nginx (reverse proxy, SSL, rate limiting)
 
 - **Frontend**: Next.js 15, React 19, xterm.js 5.5 (fit, web-links, webgl addons), Socket.IO client
 - **Backend**: Node.js 24, Express 5, Socket.IO 4, dockerode 4
-- **Container**: Ubuntu 24.04, zsh, Oh My Posh, Nerd Fonts, figlet
+- **Container**: Ubuntu 24.04, zsh, Oh My Posh, nightly neovim, figlet
 - **Infrastructure**: Docker Compose, Nginx, Let's Encrypt SSL, Tecnativa docker-socket-proxy, Playwright e2e on GitHub Actions
 - **Theme**: 463 Ghostty color schemes; defaults to iTerm2 Tango Dark or Light following `prefers-color-scheme`; JetBrainsMono Nerd Font
 
@@ -113,7 +113,7 @@ Custom portfolio navigation:
 - `help` - Show available commands
 - `home` / `welcome` - Back to the main page (same as `boot`)
 
-Plus standard Linux tools: `ls`, `cd`, `cat`, `nvim`, `git`, `grep`, `rg`, `fzf`, `tree`, `htop`, `bat`, etc.
+Plus tools for exploring the sandbox: `ls`, `cd`, `cat`, `nvim` (also `vi`/`vim`), `git`, `grep`, `rg`, `fzf`, `tree`, and `htop`. Bash and zsh share the portfolio aliases; zsh is the default and provides browser URL synchronization.
 
 ## Features
 
