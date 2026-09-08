@@ -86,8 +86,8 @@ class SessionManager {
       }
     };
     const onClose = () => this._handleStreamClose(socket.id);
-    // A later connection presenting the same sessionId (a second tab in the
-    // same browser) takes the stream; Admission calls this in the same tick.
+    // A later connection takes the lease or replaces it on this IP;
+    // Admission retires the displaced connection in the same tick.
     const onSuperseded = () => this._retire(state);
 
     let result;
@@ -225,13 +225,10 @@ class SessionManager {
     this._destroy(socketId);
   }
 
-  // Another connection took this conn's lease (a second tab in the same
-  // browser presenting the same sessionId): the stream is already rebound, so
-  // drop the conn before its disconnect zombifies — or its idle / no-input
-  // timer destroys — the lease under the new tab. Tell it, and hang up so a
-  // refresh there takes the lease back — but never session_end: the client
-  // would drop the browser-wide sessionId and reconnect cold, evicting the tab
-  // that just took over.
+  // Another connection took this conn's lease or is evicting it on this IP.
+  // Drop the conn before teardown/rebind leaves it with a stale handle, and
+  // before disconnect can zombify the displaced lease. Never send session_end:
+  // a same-browser takeover must preserve the browser-wide sessionId.
   _retire(state) {
     // Marked even when the conn is already gone (its socket left before the
     // takeover): the pending handleConnect must leave the lease to its new
