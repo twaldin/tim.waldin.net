@@ -35,7 +35,7 @@ term-site/
 │   ├── src/config/            # themes.ts (theme table + defaults), terminal-theme.ts (typography)
 │   ├── src/lib/               # websocket.ts (URL → command, session id), theme-manager.ts, xterm-touch.ts
 │   ├── content/               # gui.md
-│   └── public/                # Fonts, resume.pdf, blog snapshots
+│   └── public/                # Fonts, font licenses, resume.pdf
 ├── backend/                   # Node.js session control plane
 │   ├── server.js              # Express + Socket.IO wiring, audit log, /pv beacon, /admin
 │   ├── session.js             # Per-connection timers, initCommand auto-typing, resize gate

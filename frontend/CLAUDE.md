@@ -39,7 +39,7 @@ src/
     ├── markdown-components.tsx         # react-markdown components + CSS-var color names for static pages
     └── __tests__/                      # Vitest: websocket-allowlist, routes, safe-url, theme-manager, mobile-viewport
 content/gui.md                          # Body for /gui, read from disk by app/gui/page.tsx
-public/                                 # fonts/ (JetBrainsMono Nerd Font woff2 + ttf), resume.pdf, blog-snapshots/*.ansi (scripts/capture-blog-snapshots.sh; nothing in src/ reads them)
+public/                                 # fonts/ (JetBrainsMono Nerd Font Mono woff2 + ttf, licenses), resume.pdf
 blog-posts → ../container/blog/posts    # gitignored dev symlink; Dockerfile.production COPYs the directory instead
 ```
 
