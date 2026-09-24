@@ -7,7 +7,7 @@ Next.js 15 (App Router, Turbopack) + React 19 client that renders the xterm.js t
 ```
 src/
 ├── app/
-│   ├── layout.tsx                      # :root palette from DEFAULT_DARK_THEME, pre-paint saved-theme script, Nerd Font preloads, colorScheme "dark light", mounts PageviewBeacon + SiteHeader
+│   ├── layout.tsx                      # :root palettes from DEFAULT_DARK_THEME / DEFAULT_LIGHT_THEME (prefers-color-scheme), theme-color per scheme, pre-paint saved-theme script, Nerd Font preloads, colorScheme "dark light", mounts PageviewBeacon + SiteHeader
 │   ├── page.tsx                        # Home: <Terminal> via next/dynamic (ssr: false), WebSocketManager wiring, performance marks (window.__termTti)
 │   ├── [...slug]/page.tsx              # Catch-all: isValidPath() or 404, then renders Home; URL → initCommand happens at connect time
 │   ├── blog/page.tsx                   # Static post index (cold loads only)

@@ -29,7 +29,10 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   colorScheme: "dark light",
-  themeColor: defaultTheme.background,
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: defaultLightTheme.background },
+    { media: "(prefers-color-scheme: dark)", color: defaultTheme.background },
+  ],
   // Ask mobile browsers to resize the layout viewport when the virtual
   // keyboard opens instead of just overlaying the bottom of the terminal.
   interactiveWidget: "resizes-content",
@@ -72,7 +75,7 @@ export default function RootLayout({
             src/lib/theme-manager.ts. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var p=JSON.parse(localStorage.getItem('term-site:palette'));if(p){var s=document.documentElement.style;s.setProperty('--color-bg',p.background);s.setProperty('--color-fg',p.foreground);s.setProperty('--color-red',p.red);s.setProperty('--color-green',p.green);s.setProperty('--color-dim',p.brightBlack);s.setProperty('--color-border',p.brightBlack);s.setProperty('--color-primary',p.green);s.setProperty('--color-black',p.black);s.setProperty('--color-blue',p.blue);s.setProperty('--color-yellow',p.yellow);s.setProperty('--color-bright-yellow',p.brightYellow);s.setProperty('--color-bright-white',p.brightWhite);s.colorScheme=p.mode;var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',p.background);}}catch(e){}`,
+            __html: `try{var p=JSON.parse(localStorage.getItem('term-site:palette'));if(p){var s=document.documentElement.style;s.setProperty('--color-bg',p.background);s.setProperty('--color-fg',p.foreground);s.setProperty('--color-red',p.red);s.setProperty('--color-green',p.green);s.setProperty('--color-dim',p.brightBlack);s.setProperty('--color-border',p.brightBlack);s.setProperty('--color-primary',p.green);s.setProperty('--color-black',p.black);s.setProperty('--color-blue',p.blue);s.setProperty('--color-yellow',p.yellow);s.setProperty('--color-bright-yellow',p.brightYellow);s.setProperty('--color-bright-white',p.brightWhite);s.colorScheme=p.mode;document.querySelectorAll('meta[name="theme-color"]').forEach(function(m){m.setAttribute('content',p.background)});}}catch(e){}`,
           }}
         />
         {/* Start the Nerd Font download with the HTML parse so xterm's

@@ -12,9 +12,10 @@ export type ThemeSubscriber = (theme: ThemeEntry) => void;
 const MODE_STORAGE_KEY = 'term-site:mode';
 const DARK_THEME_STORAGE_KEY = 'term-site:theme-dark';
 const LIGHT_THEME_STORAGE_KEY = 'term-site:theme-light';
-// Full ThemeEntry JSON of the last PERSISTED selection. layout.tsx inlines
-// a pre-paint script that reads this to set the CSS vars before first
-// paint, so a saved theme never flashes the default on page load.
+// Full ThemeEntry JSON of the last persisted selection, refreshed on load to
+// the theme it resolves to. layout.tsx inlines a pre-paint script that reads
+// this to set the CSS vars before first paint, so a saved theme never
+// flashes the default on page load.
 const PALETTE_SNAPSHOT_KEY = 'term-site:palette';
 const LIGHT_MODE_QUERY = '(prefers-color-scheme: light)';
 
@@ -104,9 +105,11 @@ function applyThemeEntry(theme: ThemeEntry): void {
     style.setProperty('--color-bright-white', theme.brightWhite);
     style.colorScheme = theme.mode;
 
+    // layout.tsx emits one theme-color per prefers-color-scheme; an explicit
+    // theme overrides both.
     document
-      .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
-      ?.setAttribute('content', theme.background);
+      .querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')
+      .forEach((meta) => meta.setAttribute('content', theme.background));
   }
   for (const subscriber of subscribers) subscriber(theme);
 }

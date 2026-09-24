@@ -6,10 +6,12 @@
 # light end instead of the dark end: #121212 becomes #f2f2f2, the grey text
 # stays 7.2:1, colour 0 stays next to the background, colour 15 stays the
 # strongest text. Output written for Hardcore therefore reads the same way.
-# Accents keep Hardcore's OKLCH hue and chroma; only lightness changes, so
-# normal colours sit at 4.5:1 and bright colours at 5.5:1 (bright stays the
-# stronger variant). Where Hardcore reuses a colour (blue and magenta), the
-# bright slot matches the normal one here too.
+# Accents keep Hardcore's OKLCH hue; lightness moves so normal colours sit at
+# 4.5:1 and bright colours at 5.5:1 (bright stays the stronger variant).
+# Chroma is kept where sRGB can hold it at that lightness and is otherwise
+# clipped to the gamut edge (the greens and yellows lose about a third).
+# Where Hardcore reuses a colour (blue and magenta), the bright slot matches
+# the normal one here too.
 
 palette = 0=#e5e7e9
 palette = 1=#da025f

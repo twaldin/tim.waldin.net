@@ -48,7 +48,7 @@ function installBrowser(preferLight = false) {
   });
   vi.stubGlobal('document', {
     documentElement: { style },
-    querySelector: (selector: string) => selector === 'meta[name="theme-color"]' ? meta : null,
+    querySelectorAll: (selector: string) => selector === 'meta[name="theme-color"]' ? [meta] : [],
   });
 
   return {
