@@ -16,6 +16,24 @@
 const SESSION_LABEL_KEY = 'app';
 const SESSION_LABEL_VALUE = 'terminal-portfolio';
 
+// seccomp-default.json is Docker 29.3.0's default profile, verbatim (moby
+// 83bca51, vendor/github.com/moby/profiles/seccomp/default.json). Sessions get
+// it minus fallocate: fallocate(2) reserves real blocks instantly, so a single
+// `fallocate -l 70G ~/x` would fill the host disk inside one tick of the
+// writable-layer watchdog (SessionManager), which can only bound fills that
+// proceed at disk-write speed. Everything else the default blocks stays blocked.
+// EOPNOTSUPP rather than the default EPERM: glibc's posix_fallocate then falls
+// back to ordinary writes, which the watchdog bounds, instead of failing.
+const EOPNOTSUPP = 95;
+const SECCOMP_PROFILE = (() => {
+  const profile = JSON.parse(JSON.stringify(require('./seccomp-default.json')));
+  for (const rule of profile.syscalls) {
+    rule.names = rule.names.filter((name) => name !== 'fallocate');
+  }
+  profile.syscalls.push({ names: ['fallocate'], action: 'SCMP_ACT_ERRNO', errnoRet: EOPNOTSUPP });
+  return profile;
+})();
+
 const SANDBOX_POLICY = Object.freeze({
   image: 'twaldin/terminal-portfolio:latest',
   hostname: 'twaldin',
@@ -31,7 +49,7 @@ const SANDBOX_POLICY = Object.freeze({
   // Codifies TODAY's verified-safe posture (live red-team 2026-07-22):
   //   - CapDrop ALL + CapAdd only SETUID/SETGID  -> root-in-container has 0xc0, no escape cap
   //   - NetworkMode none                         -> zero egress (verified curl_exit=7)
-  //   - seccomp (docker default) + AppArmor active at the daemon, not set here
+  //   - seccomp: Docker's default minus fallocate (SECCOMP_PROFILE); AppArmor at the daemon
   // Hardening follow-ups (daemon-level, NOT in this object): userns-remap,
   // storage quota, no-new-privileges (blocked by the sudo demo).
   hostConfig: Object.freeze({
@@ -50,6 +68,7 @@ const SANDBOX_POLICY = Object.freeze({
     // reads `docker logs`. json-file made dockerd encode and write every
     // byte (up to ~1.5 MB per boot animation) for nothing.
     LogConfig: Object.freeze({ Type: 'none', Config: Object.freeze({}) }),
+    SecurityOpt: Object.freeze([`seccomp=${JSON.stringify(SECCOMP_PROFILE)}`]),
   }),
 });
 
@@ -85,6 +104,7 @@ function buildContainerSpec(sessionId) {
       CapAdd: [...SANDBOX_POLICY.hostConfig.CapAdd],
       Tmpfs: { ...SANDBOX_POLICY.hostConfig.Tmpfs },
       LogConfig: { Type: SANDBOX_POLICY.hostConfig.LogConfig.Type, Config: {} },
+      SecurityOpt: [...SANDBOX_POLICY.hostConfig.SecurityOpt],
     },
   };
 }

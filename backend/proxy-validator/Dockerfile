@@ -3,7 +3,7 @@ FROM node:24-alpine
 WORKDIR /app/backend/proxy-validator
 
 COPY backend/proxy-validator/index.js backend/proxy-validator/validate.js ./
-COPY backend/sandbox-policy.js ../sandbox-policy.js
+COPY backend/sandbox-policy.js backend/seccomp-default.json ../
 
 EXPOSE 2376
 

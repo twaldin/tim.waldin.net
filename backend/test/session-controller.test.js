@@ -111,13 +111,16 @@ function fakeSocket(id) {
     for (const c of resumeMgr.conns.values()) resumeMgr._clearTimers(c);
   });
 
-  await ok('startPoolMaintenance arms one interval and is idempotent', () => {
+  await ok('startPoolMaintenance arms one interval of each kind and is idempotent', () => {
     mgr.startPoolMaintenance();
-    const timer = mgr._maintTimer;
-    assert.ok(timer, 'expected a maintenance interval');
+    const maintenanceTimer = mgr._maintTimer;
+    const diskTimer = mgr._diskTimer;
+    assert.ok(maintenanceTimer, 'expected a maintenance interval');
+    assert.ok(diskTimer, 'expected a disk watchdog interval');
     mgr.startPoolMaintenance();
-    assert.strictEqual(mgr._maintTimer, timer, 'second call must not replace the interval');
-    clearInterval(timer);
+    assert.strictEqual(mgr._maintTimer, maintenanceTimer, 'must not replace maintenance interval');
+    assert.strictEqual(mgr._diskTimer, diskTimer, 'must not replace disk watchdog interval');
+    mgr._stopMaintenance();
   });
 
   // Clear the long timers so the process can exit.

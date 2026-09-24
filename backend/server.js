@@ -21,6 +21,25 @@ const DEV_ORIGINS = ['http://localhost:3000', 'http://localhost:3001', 'http://l
 
 const allowedOrigins = process.env.NODE_ENV === 'production' ? PROD_ORIGINS : DEV_ORIGINS;
 
+const MAX_HTTP_BUFFER_SIZE = 8 * 1024;
+const MAX_INPUT_LENGTH = 1024;
+const MAX_COMMAND_BUFFER_LENGTH = 1024;
+const EVENT_BUCKET_CAPACITY = 400;
+const EVENT_REFILL_PER_SECOND = 200;
+
+function takeEventToken(bucket) {
+  const now = Date.now();
+  const elapsedSeconds = Math.max(0, now - bucket.updatedAt) / 1000;
+  bucket.tokens = Math.min(
+    EVENT_BUCKET_CAPACITY,
+    bucket.tokens + elapsedSeconds * EVENT_REFILL_PER_SECOND
+  );
+  bucket.updatedAt = now;
+  if (bucket.tokens < 1) return false;
+  bucket.tokens -= 1;
+  return true;
+}
+
 // Configure CORS for Express
 app.use(cors({
   origin: allowedOrigins,
@@ -34,7 +53,8 @@ const io = socketIo(server, {
     methods: ['GET', 'POST'],
     credentials: true
   },
-  transports: ['websocket', 'polling']
+  transports: ['websocket', 'polling'],
+  maxHttpBufferSize: MAX_HTTP_BUFFER_SIZE
 });
 
 // Initialize session manager
@@ -48,6 +68,7 @@ const cmdBufs = new Map();
 // Admission seam; server.js is now just socket wiring + audit logging.
 io.on('connection', (socket) => {
   const clientIP = socket.handshake.headers['x-real-ip'] || socket.handshake.address;
+  const eventBucket = { tokens: EVENT_BUCKET_CAPACITY, updatedAt: Date.now() };
   console.log(`Client connected: ${socket.id} from ${clientIP}`);
 
   const initCommand = typeof socket.handshake.auth?.initCommand === 'string'
@@ -67,8 +88,12 @@ io.on('connection', (socket) => {
   sessionManager.handleConnect(socket);
 
   socket.on('input', (data) => {
-    // Buffer printable chars; log completed commands on Enter.
-    if (typeof data === 'string') {
+    if (!takeEventToken(eventBucket)) return;
+
+    // Buffer printable chars; log completed commands on Enter. SessionManager
+    // independently rejects oversized input, but reject it here too so audit
+    // buffering never does more work than the terminal accepts.
+    if (typeof data === 'string' && data.length <= MAX_INPUT_LENGTH) {
       let buf = cmdBufs.get(socket.id) || '';
       for (const ch of data) {
         if (ch === '\r' || ch === '\n') {
@@ -77,7 +102,7 @@ io.on('connection', (socket) => {
           buf = '';
         } else if (ch === '\x7f' || ch === '\x08') {
           buf = buf.slice(0, -1);
-        } else if (ch >= ' ' && ch <= '~') {
+        } else if (ch >= ' ' && ch <= '~' && buf.length < MAX_COMMAND_BUFFER_LENGTH) {
           buf += ch;
         }
       }
@@ -86,12 +111,13 @@ io.on('connection', (socket) => {
     sessionManager.handleInput(socket.id, data);
   });
 
-  socket.on('resize', ({ cols, rows }) => {
-    sessionManager.handleResize(socket.id, cols, rows);
+  socket.on('resize', (payload) => {
+    if (!takeEventToken(eventBucket) || !payload || typeof payload !== 'object') return;
+    sessionManager.handleResize(socket.id, payload.cols, payload.rows);
   });
 
   socket.on('visibility', (payload) => {
-    if (typeof payload?.hidden !== 'boolean') return;
+    if (!takeEventToken(eventBucket) || typeof payload?.hidden !== 'boolean') return;
     sessionManager.handleVisibility(socket.id, payload.hidden);
   });
 

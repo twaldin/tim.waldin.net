@@ -15,6 +15,11 @@
 const SessionLifecycle = require('./lifecycle');
 const { Admission } = require('./admission');
 
+const POOL_MAINTENANCE_INTERVAL_MS = 60 * 1000;
+const DISK_CHECK_INTERVAL_MS = 2 * 1000;
+const MAX_WRITABLE_BYTES = 1024 * 1024 * 1024;
+const DISK_LIMIT_MESSAGE = '\r\n[session closed: disk usage over 1 GB]\r\n';
+
 class SessionManager {
   constructor({ lifecycle, admission } = {}) {
     this.lifecycle = lifecycle || new SessionLifecycle({ poolSize: 5 });
@@ -350,11 +355,12 @@ class SessionManager {
 
   _destroy(socketId) {
     const state = this.conns.get(socketId);
-    if (!state) return;
+    if (!state) return Promise.resolve(false);
     this._clearTimers(state);
     const leaseId = state.lease && state.lease.leaseId;
     this.conns.delete(socketId);
-    if (leaseId) this.admission.destroy(leaseId).catch(() => {});
+    if (!leaseId) return Promise.resolve(false);
+    return this.admission.destroy(leaseId).catch(() => false);
   }
 
   _clearTimers(state) {
@@ -367,11 +373,57 @@ class SessionManager {
   // --- lifecycle/maintenance surface (names kept stable for server.js) ---
 
   startPoolMaintenance() {
-    if (this._maintTimer) return;
-    this._maintTimer = setInterval(() => {
-      this.lifecycle.reclaimOrphans().catch(() => {});
-      this.admission.pruneStaleRateLimits();
-    }, 60 * 1000);
+    if (!this._maintTimer) {
+      this._maintTimer = setInterval(() => {
+        this.lifecycle.reclaimOrphans().catch(() => {});
+        this.admission.pruneStaleRateLimits();
+      }, POOL_MAINTENANCE_INTERVAL_MS);
+    }
+    if (!this._diskTimer) {
+      this._diskTimer = setInterval(() => {
+        void this._sweepDiskUsage();
+      }, DISK_CHECK_INTERVAL_MS);
+    }
+  }
+
+  async _sweepDiskUsage() {
+    if (this._diskSweepInFlight) return;
+    this._diskSweepInFlight = true;
+    try {
+      for (const lease of this.admission.leasesForMaintenance()) {
+        let bytes;
+        try {
+          bytes = await this.lifecycle.writableBytes(lease.handleId);
+        } catch (error) {
+          if (error?.statusCode !== 404) {
+            console.warn(`Disk usage check failed for lease ${lease.leaseId}: ${error.message}`);
+          }
+          continue;
+        }
+        if (bytes <= MAX_WRITABLE_BYTES) continue;
+
+        console.warn(`Session ${lease.leaseId} exceeded writable disk limit (${bytes} bytes)`);
+        const liveEntry = [...this.conns.entries()]
+          .find(([, state]) => state.lease?.leaseId === lease.leaseId);
+        if (!liveEntry) {
+          await this.admission.destroy(lease.leaseId).catch(() => false);
+          continue;
+        }
+
+        const [socketId, state] = liveEntry;
+        try { state.socket.emit('output', DISK_LIMIT_MESSAGE); } catch { /* ignore */ }
+        await this._destroy(socketId);
+        try { state.socket.disconnect(); } catch { /* ignore */ }
+      }
+    } finally {
+      this._diskSweepInFlight = false;
+    }
+  }
+
+  _stopMaintenance() {
+    clearInterval(this._maintTimer);
+    clearInterval(this._diskTimer);
+    this._maintTimer = this._diskTimer = null;
   }
 
   cleanupOrphanedContainers() {
@@ -387,6 +439,7 @@ class SessionManager {
   }
 
   async destroyAllSessions() {
+    this._stopMaintenance();
     const ids = Array.from(this.conns.keys());
     for (const id of ids) {
       const s = this.conns.get(id);

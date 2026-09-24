@@ -43,13 +43,13 @@ class LifecycleFake {
     this.startedIds = [];
     this.attachCalls = [];
     this.resizeCalls = [];
+    this.inspectCalls = [];
+    this.writableSizes = new Map();
+    this.inspectErrors = new Map();
     this.killedIds = [];
     this.removeCalls = [];
     this.removedIds = [];
     this.listCalls = [];
-    this.listImagesCalls = 0;
-    this.getImageCalls = [];
-    this.pruneImagesCalls = [];
     this.pruneContainersCalls = 0;
     this.pingCalls = 0;
 
@@ -89,6 +89,13 @@ class LifecycleFake {
     this.resizeCalls.push({ id, dimensions });
   }
 
+  async writableBytes(id) {
+    this.inspectCalls.push(id);
+    const error = this.inspectErrors.get(id);
+    if (error) throw error;
+    return this.writableSizes.get(id) || 0;
+  }
+
   async kill(id) {
     this.killedIds.push(id);
   }
@@ -102,25 +109,6 @@ class LifecycleFake {
   async list(options) {
     this.listCalls.push(options);
     return this.listPayload;
-  }
-
-  async listImages() {
-    this.listImagesCalls++;
-    return this.imagePayload;
-  }
-
-  getImage(id) {
-    this.getImageCalls.push(id);
-    return {
-      remove: async (options) => {
-        this.removeCalls.push({ id, options, image: true });
-      },
-    };
-  }
-
-  async pruneImages(filters) {
-    this.pruneImagesCalls.push(filters);
-    return {};
   }
 
   async pruneContainers() {

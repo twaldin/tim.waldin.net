@@ -10,7 +10,7 @@
 set -euo pipefail
 source "$(dirname "$0")/lib/common.sh"
 
-require_cmd curl
+require_cmd curl base64
 
 [[ -n "${ADMIN_PASSWORD:-}" ]] || die "ADMIN_PASSWORD env var required"
 
@@ -27,7 +27,10 @@ for arg in "$@"; do
   esac
 done
 
-json="$(curl -fsS --max-time 10 -u "${ADMIN_EMAIL}:${ADMIN_PASSWORD}" "${ADMIN_URL}/api/sessions")"
+auth_header="$(printf '%s:%s' "${ADMIN_EMAIL}" "${ADMIN_PASSWORD}" | base64 | tr -d '\r\n')"
+json="$(printf 'header = "Authorization: Basic %s"\n' "${auth_header}" \
+  | curl -fsS --max-time 10 --config - "${ADMIN_URL}/api/sessions")"
+unset auth_header
 
 if (( raw )); then
   printf '%s\n' "${json}"

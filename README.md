@@ -86,7 +86,9 @@ Each visitor gets an isolated Docker container with:
 - 512 MB RAM limit (no swap), 0.5 CPU limit, 100 process limit, 100 MB `noexec,nosuid` tmpfs on `/tmp`
 - No network access (`NetworkMode: none`)
 - Non-root `portfolio` user; all capabilities dropped, then only `SETUID` and `SETGID` added back for the `sudo` demo
-- Docker Socket Proxy restricts the backend's API access to containers, images, POST, info, and ping (no networks, volumes, build, exec)
+- Disk: a 2-second writable-layer watchdog destroys active or disconnected-grace sessions over 1 GiB, and the seccomp profile (Docker's default minus `fallocate`) forbids instant block reservation, so a fill is bounded by disk write speed times the check interval. There is still no hard per-container quota
+- Docker Socket Proxy restricts the backend's API access to containers, POST, info, and ping (no images, networks, volumes, build, or exec); its release and digest are pinned
+- The backend and frontend services drop all capabilities; the backend also uses a read-only rootfs, a 16 MB hardened `/tmp`, and `no-new-privileges`
 
 Session limits (`backend/session.js`, `backend/admission.js`):
 - Pre-warmed pool of 5 containers; hard cap of 40 concurrent sessions
@@ -94,6 +96,7 @@ Session limits (`backend/session.js`, `backend/admission.js`):
 - Idle kill after 5 minutes without a keystroke
 - Bot kill: a session that never receives input is freed after 60 s, relaxed to 5 minutes while the page reports itself visible
 - 30-second reconnect grace after a disconnect; a refresh within it resumes the same container (same IP only)
+- Socket.IO messages are capped at 8 KiB; a generous per-socket token bucket drops event floods, and audit fields are bounded with common credential shapes redacted from commands, referrers and init commands
 - Nginx: 10 requests/s per IP (burst 20) for dynamic/backend routes; `/_next/static/` and `/fonts/` share a separate 100 requests/s budget (burst 200). At most 128 concurrent requests per IP (HTTP/2 counts each stream) and 10 concurrent Socket.IO connections per IP.
 
 Users can run destructive commands like `rm -rf /` or fork bombs - they only affect their own container, not the host.

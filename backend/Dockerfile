@@ -10,8 +10,8 @@ WORKDIR /app
 # Copy package files from backend directory
 COPY backend/package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install exactly the locked production dependency graph
+RUN npm ci --omit=dev
 
 # Copy source code from backend directory. The build context is the repository
 # root (docker compose: `context: .`), so Dockerfile.dockerignore beside this
@@ -22,4 +22,6 @@ COPY backend/ .
 EXPOSE 3001
 
 # Simple start command
-CMD ["npm", "start"]
+# node directly: the rootfs is read-only (npm writes its logs under ~/.npm) and
+# node receives SIGTERM for graceful shutdown without npm in between.
+CMD ["node", "server.js"]
