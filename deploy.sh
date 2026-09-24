@@ -39,6 +39,13 @@ else
     echo "  WARNING: /etc/letsencrypt/renewal-hooks not found — skipping (certbot not installed?)"
 fi
 
+# Hourly host snapshot (memory, swap, disk, sandbox count, nginx hits) to
+# /var/log/term-monitor.log. Installed from the repo so the script root's cron
+# runs is the reviewed one; the cron line is re-asserted idempotently.
+echo "Installing host monitor..."
+install -m 0755 deploy/term-monitor.sh /usr/local/bin/term-monitor.sh
+( crontab -l 2>/dev/null | grep -v '/usr/local/bin/term-monitor.sh'; echo '7 * * * * /usr/local/bin/term-monitor.sh' ) | crontab -
+
 # Wait for services to initialize
 echo "Waiting for services to initialize..."
 sleep 5

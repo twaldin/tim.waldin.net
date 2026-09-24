@@ -64,7 +64,7 @@ Timers in `SessionManager` (`backend/session.js`), rate limit in `Admission` (`b
 
 Session containers are not declared in compose: the backend creates them through the proxy with `NetworkMode: 'none'`, so they are attached to no Docker network at all.
 
-Nginx (`nginx.conf`) terminates TLS via Let's Encrypt (`/etc/letsencrypt` mounted read-only), rate-limits dynamic/backend requests to 10 r/s per IP (burst 20), and gives `/_next/static/` and `/fonts/` a separate 100 r/s budget (burst 200) so cold-load assets cannot exhaust the backend budget. The `limit_conn` cap of 10 per IP applies to both. It also blocks the Next.js CVE-2025-29927 middleware-bypass header. Routes:
+Nginx (`nginx.conf`) terminates TLS via Let's Encrypt (`/etc/letsencrypt` mounted read-only) over HTTP/2 with a shared TLS session cache, rate-limits dynamic/backend requests to 10 r/s per IP (burst 20), and gives `/_next/static/` and `/fonts/` a separate 100 r/s budget (burst 200) so cold-load assets cannot exhaust the backend budget. The `limit_conn` cap of 10 per IP applies to both. It also blocks the Next.js CVE-2025-29927 middleware-bypass header. Routes:
 
 - `/socket.io/` → backend, WebSocket upgrade, 24 h read timeout.
 - `/pv` → backend, first-party pageview beacon (`pageviews.handlePageview`).
@@ -74,9 +74,9 @@ Nginx (`nginx.conf`) terminates TLS via Let's Encrypt (`/etc/letsencrypt` mounte
 - `/agentelo*` → a separate compose stack on the shared `term-site_external-net`.
 - A 444 blocklist for common exploit probes; `/resume.html` → `/resume.pdf`; every other path → frontend.
 
-The audit log (`events.jsonl`, with daily pageview rollups appended to it) lives in the `backend_data` volume at `/app/data`.
+The audit log (`events.jsonl`, with daily pageview rollups appended to it) lives in the `backend_data` volume at `/app/data`. Service container logs use `json-file` rotation (3 × 10 MB, the `x-logging` anchor in `docker-compose.yml`).
 
-`deploy.sh` is the production deploy entry point: builds the container image and service images first, then swaps the stack.
+`deploy.sh` is the production deploy entry point: builds the container image and service images first, then swaps the stack. It also installs the certbot renewal hooks and `deploy/term-monitor.sh`, the hourly host snapshot root's crontab writes to `/var/log/term-monitor.log` (every docker call in it is bounded by `timeout`).
 
 ## Development and checks
 

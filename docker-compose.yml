@@ -1,8 +1,17 @@
+# Container logs rotate instead of growing without bound (json-file keeps
+# everything by default: socket-proxy reached 144 MB and nginx 89 MB).
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   # Nginx reverse proxy to route traffic
   nginx:
     image: nginx:alpine
     container_name: term-nginx
+    logging: *logging
     ports:
       - "80:80"
       - "443:443"
@@ -24,6 +33,7 @@ services:
       context: .
       dockerfile: frontend/Dockerfile.production
     container_name: term-frontend
+    logging: *logging
     environment:
       - NEXT_PUBLIC_API_URL=http://backend:3001
     expose:
@@ -46,6 +56,7 @@ services:
   socket-proxy:
     image: tecnativa/docker-socket-proxy:latest
     container_name: term-socket-proxy
+    logging: *logging
     environment:
       - CONTAINERS=1
       - IMAGES=1
@@ -72,6 +83,7 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     container_name: term-backend
+    logging: *logging
     environment:
       - NODE_ENV=production
       - FRONTEND_URL=http://frontend:3000
