@@ -1,8 +1,8 @@
 name: e2e
 
 # Browser gate for the terminal portfolio. Runs the Playwright suite against the
-# live site (BASE_URL) on PRs and pushes to main, and nightly. Make this a
-# required branch-protection check so a broken prod is caught before/after merge.
+# live site (BASE_URL) on PRs and pushes to main, and nightly. `e2e` is a
+# required branch-protection check on main, so PRs must keep triggering it.
 # NOTE: it tests the deployed site, so pair it with the post-deploy e2e step in
 # scripts/deploy-and-verify.sh for true deploy gating (that step fails the deploy loudly).
 
@@ -15,19 +15,22 @@ on:
     - cron: '17 6 * * *' # daily prod health check
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
       - name: Install
         working-directory: e2e
         run: |
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
           npx playwright install --with-deps chromium
       - name: Run e2e
         working-directory: e2e
@@ -39,7 +42,7 @@ jobs:
       # failed attempt's trace in the report, and that is the TWA-55 signal.
       - name: Upload report
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: playwright-report-attempt-${{ github.run_attempt }}
           path: e2e/playwright-report
