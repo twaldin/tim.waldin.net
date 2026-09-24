@@ -38,10 +38,13 @@ while (!fs.existsSync(LOG_FILE + '.1') && TOTAL < 100) {
   append({ type: 'command', seq: TOTAL, pad: 'x'.repeat(100) });
   TOTAL++;
 }
+// A few more in one batched call, as a multi-line paste produces.
+const batch = [];
 for (let i = 0; i < 3; i++) {
-  append({ type: 'command', seq: TOTAL, pad: 'x'.repeat(100) });
+  batch.push({ type: 'command', seq: TOTAL, pad: 'x'.repeat(100) });
   TOTAL++;
 }
+append(...batch);
 
 ok('rotation: events.jsonl.1 exists after exceeding LOG_MAX_BYTES', () =>
   assert.ok(fs.existsSync(LOG_FILE + '.1'), 'expected rotated backup file'));

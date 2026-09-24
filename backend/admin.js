@@ -21,6 +21,22 @@ const AUTH_FAILS = new Map(); // ip -> { count, firstAt, lockedUntil }
 const MAX_FAILS = 5;
 const LOCK_MS = 10 * 60 * 1000;   // 10 min lockout
 const FAIL_WINDOW_MS = 10 * 60 * 1000;
+const MAX_AUTH_FAIL_ENTRIES = 1000;
+const AUTH_PRUNE_INTERVAL_MS = 60 * 1000;
+let lastAuthPruneAt = 0;
+
+function authFailureExpired(rec, now) {
+  if (rec.lockedUntil) return now >= rec.lockedUntil;
+  return now - rec.firstAt > FAIL_WINDOW_MS;
+}
+
+function pruneAuthFails(now) {
+  if (now - lastAuthPruneAt < AUTH_PRUNE_INTERVAL_MS) return;
+  lastAuthPruneAt = now;
+  for (const [ip, rec] of AUTH_FAILS) {
+    if (authFailureExpired(rec, now)) AUTH_FAILS.delete(ip);
+  }
+}
 
 function adminIp(req) {
   return req.headers['x-real-ip'] || req.ip || req.socket?.remoteAddress || 'unknown';
@@ -32,7 +48,12 @@ function basicAuth(req, res, next) {
 
   const ip = adminIp(req);
   const now = Date.now();
-  const rec = AUTH_FAILS.get(ip);
+  pruneAuthFails(now);
+  let rec = AUTH_FAILS.get(ip);
+  if (rec && authFailureExpired(rec, now)) {
+    AUTH_FAILS.delete(ip);
+    rec = undefined;
+  }
   if (rec && rec.lockedUntil && now < rec.lockedUntil) {
     res.set('Retry-After', String(Math.ceil((rec.lockedUntil - now) / 1000)));
     return res.status(429).send('Too many attempts. Try again later.');
@@ -56,7 +77,15 @@ function basicAuth(req, res, next) {
   // Constant-time comparison via HMAC digest (fixed 32-byte output regardless
   // of input length, so timingSafeEqual never throws on length mismatch)
   if (!safeEqual(user, email) || !safeEqual(pass, password)) {
-    const r = AUTH_FAILS.get(ip) || { count: 0, firstAt: now, lockedUntil: 0 };
+    let r = AUTH_FAILS.get(ip);
+    if (!r && AUTH_FAILS.size >= MAX_AUTH_FAIL_ENTRIES) {
+      // Preserve every existing per-IP counter/lockout. At saturation, reject
+      // unrecognized invalid credentials instead of evicting a tracked IP and
+      // giving it a fresh set of attempts. Valid credentials still pass above.
+      res.set('Retry-After', String(Math.ceil(AUTH_PRUNE_INTERVAL_MS / 1000)));
+      return res.status(429).send('Too many attempts. Try again later.');
+    }
+    r ||= { count: 0, firstAt: now, lockedUntil: 0 };
     if (now - r.firstAt > FAIL_WINDOW_MS) { r.count = 0; r.firstAt = now; }
     r.count++;
     if (r.count >= MAX_FAILS) r.lockedUntil = now + LOCK_MS;

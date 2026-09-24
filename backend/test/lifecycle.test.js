@@ -40,6 +40,13 @@ async function test(name, fn) {
     assert.strictEqual(spec.HostConfig.NetworkMode, 'none');
     assert.deepStrictEqual(spec.HostConfig.CapAdd, ['SETUID', 'SETGID']);
     assert.ok(!Object.prototype.hasOwnProperty.call(spec.HostConfig, 'Privileged'));
+    // Docker's default deny-by-default seccomp profile, with fallocate removed.
+    const [seccomp] = spec.HostConfig.SecurityOpt;
+    const profile = JSON.parse(seccomp.slice('seccomp='.length));
+    assert.strictEqual(profile.defaultAction, 'SCMP_ACT_ERRNO');
+    const fallocateRules = profile.syscalls.filter((rule) => rule.names.includes('fallocate'));
+    assert.deepStrictEqual(fallocateRules, [{ names: ['fallocate'], action: 'SCMP_ACT_ERRNO', errnoRet: 95 }]);
+    assert.ok(profile.syscalls.some((rule) => rule.action === 'SCMP_ACT_ALLOW' && rule.names.includes('write')));
     assert.deepStrictEqual(docker.resizeCalls[0], {
       id: handle.handleId,
       dimensions: { h: 40, w: 140 },
@@ -63,7 +70,6 @@ async function test(name, fn) {
     assert.ok(!docker.removedIds.includes('not-ours'));
     assert.ok(!docker.removedIds.includes(active.handleId));
     assert.deepStrictEqual(docker.removeCalls[0].options.filters, labelFilter());
-    assert.strictEqual(docker.pruneImagesCalls.length, 0);
     assert.strictEqual(docker.pruneContainersCalls, 0);
   });
 

@@ -36,6 +36,9 @@ const NAVIGATION_COMMANDS: Record<string, true> = {
   also: true,
 };
 
+// Mirrors backend/server.js MAX_INPUT_LENGTH (SessionManager drops longer input).
+const MAX_INPUT_LENGTH = 1024;
+
 // Safe char set for a full command string (first word + args combined).
 // Blocks shell metachars: ; | & > < ` $ ( ) { } [ ] * ? ! ~ ^ " ' \
 const SAFE_CMD_RE = /^[A-Za-z0-9 ._/+=:,@-]+$/;
@@ -233,6 +236,9 @@ export function createWebSocketManager(): WebSocketManager {
   };
 
   const sendInput = (data: string) => {
+    // The backend drops input over MAX_INPUT_LENGTH and closes the transport on
+    // frames over its 8 KiB maxHttpBufferSize; never send what it would refuse.
+    if (data.length > MAX_INPUT_LENGTH) return;
     if (socket?.connected) {
       socket.emit('input', data);
     }

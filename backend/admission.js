@@ -261,6 +261,14 @@ class Admission {
     }
   }
 
+  /** Active and reconnect-grace leases whose writable layers need monitoring. */
+  leasesForMaintenance() {
+    return [
+      ...this.activeLeases.values(),
+      ...[...this.zombieLeases.values()].map(({ lease }) => lease),
+    ];
+  }
+
   /**
    * Visitor sessions holding a slot: leases still acquiring a container, active
    * leases and zombies in their grace window. Warm spares are never counted.

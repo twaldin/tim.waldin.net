@@ -9,14 +9,17 @@
 set -euo pipefail
 source "$(dirname "$0")/lib/common.sh"
 
-require_cmd curl jq
+require_cmd curl jq base64
 
 [[ -n "${ADMIN_PASSWORD:-}" ]] || die "ADMIN_PASSWORD env var required"
 
 n="${1:-10}"
 [[ "${n}" =~ ^[0-9]+$ ]] || die "expected a number, got: ${n}"
 
-json="$(curl -fsS --max-time 10 -u "${ADMIN_EMAIL}:${ADMIN_PASSWORD}" "${ADMIN_URL}/api/sessions")"
+auth_header="$(printf '%s:%s' "${ADMIN_EMAIL}" "${ADMIN_PASSWORD}" | base64 | tr -d '\r\n')"
+json="$(printf 'header = "Authorization: Basic %s"\n' "${auth_header}" \
+  | curl -fsS --max-time 10 --config - "${ADMIN_URL}/api/sessions")"
+unset auth_header
 
 log_step "top ${n} IPs"
 printf '  %-5s %-20s %-8s %-8s %s\n' "#" "IP" "SESSIONS" "CMDS" "LAST"

@@ -63,7 +63,10 @@ class DockerodeAdapter {
   }
 
   async create(spec) {
-    const container = await this.docker.createContainer(spec);
+    // docker-modem copies every create option into the query string unless
+    // _query is given, so the ~10 KB seccomp profile would make the request
+    // line exceed the socket-proxy's limit (HTTP 414). The body is the spec.
+    const container = await this.docker.createContainer({ _query: {}, _body: spec });
     const id = container.id || container.Id;
     this.containers.set(id, container);
     return id;
@@ -81,6 +84,14 @@ class DockerodeAdapter {
     return this._container(id).resize(dimensions);
   }
 
+  async writableBytes(id) {
+    // Bounded: one stalled inspect must not hold up the 2 s watchdog sweep.
+    const info = await this._container(id).inspect({ size: true, abortSignal: AbortSignal.timeout(5000) });
+    // Without SizeRw the watchdog would read every session as empty; fail loudly.
+    if (!Number.isFinite(info.SizeRw)) throw new Error('container inspect returned no SizeRw');
+    return info.SizeRw;
+  }
+
   kill(id) {
     return this._container(id).kill();
   }
@@ -95,18 +106,6 @@ class DockerodeAdapter {
 
   list(options) {
     return this.docker.listContainers(options);
-  }
-
-  listImages() {
-    return this.docker.listImages();
-  }
-
-  getImage(id) {
-    return this.docker.getImage(id);
-  }
-
-  pruneImages(filters) {
-    return this.docker.pruneImages(filters);
   }
 
   pruneContainers() {
@@ -203,6 +202,11 @@ class SessionLifecycle {
   resize(handleId, cols, rows) {
     this._record(handleId);
     return this.docker.resize(handleId, { h: rows, w: cols });
+  }
+
+  writableBytes(handleId) {
+    this._record(handleId);
+    return this.docker.writableBytes(handleId);
   }
 
   async destroy(handleId) {

@@ -46,6 +46,8 @@ services:
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
+    cap_drop:
+      - ALL
 
   # Docker Socket Proxy (Tecnativa) — URL/method filtering. The body-validating
   # proxy-validator (backend/proxy-validator/) is intentionally NOT in the data
@@ -54,12 +56,12 @@ services:
   # the unit level, to be re-introduced once it proxies attach at the raw-socket
   # level. The lifecycle module still only ever requests the hardened spec.
   socket-proxy:
-    image: tecnativa/docker-socket-proxy:latest
+    image: tecnativa/docker-socket-proxy:v0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459
     container_name: term-socket-proxy
     logging: *logging
     environment:
       - CONTAINERS=1
-      - IMAGES=1
+      - IMAGES=0
       - POST=1
       - NETWORKS=0
       - VOLUMES=0
@@ -95,6 +97,13 @@ services:
     expose:
       - "3001"
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       - socket-proxy
     networks:
