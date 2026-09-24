@@ -7,23 +7,37 @@ import { getPageMetadata } from "@/lib/routes";
 const defaultTheme = themes[DEFAULT_DARK_THEME];
 const defaultLightTheme = themes[DEFAULT_LIGHT_THEME];
 
-// Keep in sync with applyThemeEntry in src/lib/theme-manager.ts.
+// CSS custom property → ThemeEntry field, for the default palettes below and
+// the pre-paint script. Keep in sync with applyThemeEntry in
+// src/lib/theme-manager.ts.
+const PALETTE_VARS: ReadonlyArray<readonly [string, keyof ThemeEntry]> = [
+  ['--color-bg', 'background'],
+  ['--color-fg', 'foreground'],
+  ['--color-red', 'red'],
+  ['--color-green', 'green'],
+  ['--color-dim', 'brightBlack'],
+  ['--color-border', 'brightBlack'],
+  ['--color-primary', 'green'],
+  ['--color-black', 'black'],
+  ['--color-blue', 'blue'],
+  ['--color-yellow', 'yellow'],
+  ['--color-bright-yellow', 'brightYellow'],
+  ['--color-bright-white', 'brightWhite'],
+];
+
 function paletteVars(theme: ThemeEntry): string {
-  return `
-            --color-bg: ${theme.background};
-            --color-fg: ${theme.foreground};
-            --color-red: ${theme.red};
-            --color-green: ${theme.green};
-            --color-dim: ${theme.brightBlack};
-            --color-border: ${theme.brightBlack};
-            --color-primary: ${theme.green};
-            --color-black: ${theme.black};
-            --color-blue: ${theme.blue};
-            --color-yellow: ${theme.yellow};
-            --color-bright-yellow: ${theme.brightYellow};
-            --color-bright-white: ${theme.brightWhite};`;
+  return PALETTE_VARS.map(([name, field]) => `\n            ${name}: ${theme[field]};`).join('');
 }
 
+// Pre-paint theme restore; mirrors theme-manager's resolution (mode from
+// term-site:mode, else prefers-color-scheme). The term-site:palette snapshot
+// is applied only when the visitor chose a theme for the resolved mode;
+// otherwise that mode's default is, so a snapshot saved under an older site
+// default, or for the other mode, never flashes before hydration.
+const PRE_PAINT_SCRIPT = `try{var V=${JSON.stringify(PALETTE_VARS)},D=${JSON.stringify({
+  dark: defaultTheme,
+  light: defaultLightTheme,
+})},l=localStorage,m=l.getItem('term-site:mode'),r=m==='dark'||m==='light'?m:matchMedia('(prefers-color-scheme: light)').matches?'light':'dark',p=JSON.parse(l.getItem('term-site:palette'));if(!(p&&p.mode===r&&l.getItem('term-site:theme-'+r)))p=D[r];var s=document.documentElement.style;V.forEach(function(v){s.setProperty(v[0],p[v[1]])});s.colorScheme=r;document.querySelectorAll('meta[name="theme-color"]').forEach(function(t){t.setAttribute('content',p.background)})}catch(e){}`;
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -55,7 +69,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    // PRE_PAINT_SCRIPT sets <html style> before hydration; the mismatch is intended.
+    <html lang="en" suppressHydrationWarning>
       <head>
         {/* Default palettes before any script runs: a first visit gets the
             default for its prefers-color-scheme, matching what theme-manager
@@ -68,14 +83,11 @@ export default function RootLayout({
             }
           }
         `}</style>
-        {/* Pre-paint saved-theme restore: theme-manager persists a palette
-            snapshot to localStorage on every saved change; apply it before
-            first paint so a visitor's theme never flashes the default on
-            navigation. Keep the var list in sync with applyThemeEntry in
-            src/lib/theme-manager.ts. */}
+        {/* Pre-paint saved-theme restore (PRE_PAINT_SCRIPT): a visitor's
+            chosen theme never flashes the default on navigation. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var p=JSON.parse(localStorage.getItem('term-site:palette'));if(p){var s=document.documentElement.style;s.setProperty('--color-bg',p.background);s.setProperty('--color-fg',p.foreground);s.setProperty('--color-red',p.red);s.setProperty('--color-green',p.green);s.setProperty('--color-dim',p.brightBlack);s.setProperty('--color-border',p.brightBlack);s.setProperty('--color-primary',p.green);s.setProperty('--color-black',p.black);s.setProperty('--color-blue',p.blue);s.setProperty('--color-yellow',p.yellow);s.setProperty('--color-bright-yellow',p.brightYellow);s.setProperty('--color-bright-white',p.brightWhite);s.colorScheme=p.mode;document.querySelectorAll('meta[name="theme-color"]').forEach(function(m){m.setAttribute('content',p.background)});}}catch(e){}`,
+            __html: PRE_PAINT_SCRIPT,
           }}
         />
         {/* Start the Nerd Font download with the HTML parse so xterm's
