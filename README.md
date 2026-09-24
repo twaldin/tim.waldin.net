@@ -76,7 +76,7 @@ docker compose ps
 docker compose logs --tail=50 frontend backend nginx
 ```
 
-The running site is [https://tim.waldin.net](https://tim.waldin.net), not a localhost preview. Source edits do not update the running service images. Publishing a runtime change is a separate, explicitly scoped production operation: the root `deploy.sh` builds images, swaps the stack, prunes build cache, and installs renewal hooks. Do not run it just to start development or apply a documentation/script cleanup.
+The running site is [https://tim.waldin.net](https://tim.waldin.net), not a localhost preview. Source edits do not update the running service images. Publishing a runtime change is a separate, explicitly scoped production operation: the root `deploy.sh` builds images, swaps the stack, prunes build cache, and installs the certbot renewal hooks and the hourly host monitor (`deploy/term-monitor.sh`). Do not run it just to start development or apply a documentation/script cleanup.
 
 Native package commands remain available for isolated work: `cd frontend && pnpm dev` and `cd backend && npm start`. They are not a replacement production startup procedure. The backend needs a Docker daemon and the sandbox image; do not point a second backend at the production daemon, where it could interfere with live session containers. See [the frontend guide](frontend/CLAUDE.md#dev--build--tests) for native blog setup. Package tests are `cd frontend && pnpm test` and `cd backend && npm test`; backend unit tests need no Docker daemon.
 
@@ -94,7 +94,7 @@ Session limits (`backend/session.js`, `backend/admission.js`):
 - Idle kill after 5 minutes without a keystroke
 - Bot kill: a session that never receives input is freed after 60 s, relaxed to 5 minutes while the page reports itself visible
 - 30-second reconnect grace after a disconnect; a refresh within it resumes the same container (same IP only)
-- Nginx: 10 requests/s per IP (burst 20) for dynamic/backend routes; `/_next/static/` and `/fonts/` share a separate 100 requests/s budget (burst 200). The 10 concurrent connections per IP limit applies to both.
+- Nginx: 10 requests/s per IP (burst 20) for dynamic/backend routes; `/_next/static/` and `/fonts/` share a separate 100 requests/s budget (burst 200). At most 128 concurrent requests per IP (HTTP/2 counts each stream) and 10 concurrent Socket.IO connections per IP.
 
 Users can run destructive commands like `rm -rf /` or fork bombs - they only affect their own container, not the host.
 

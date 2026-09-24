@@ -44,7 +44,7 @@ fi
 # runs is the reviewed one; the cron line is re-asserted idempotently.
 echo "Installing host monitor..."
 install -m 0755 deploy/term-monitor.sh /usr/local/bin/term-monitor.sh
-( crontab -l 2>/dev/null | grep -v '/usr/local/bin/term-monitor.sh'; echo '7 * * * * /usr/local/bin/term-monitor.sh' ) | crontab -
+{ crontab -l 2>/dev/null | grep -vF '/usr/local/bin/term-monitor.sh' || true; echo '7 * * * * /usr/local/bin/term-monitor.sh'; } | crontab -
 
 # Wait for services to initialize
 echo "Waiting for services to initialize..."

@@ -64,7 +64,7 @@ Timers in `SessionManager` (`backend/session.js`), rate limit in `Admission` (`b
 
 Session containers are not declared in compose: the backend creates them through the proxy with `NetworkMode: 'none'`, so they are attached to no Docker network at all.
 
-Nginx (`nginx.conf`) terminates TLS via Let's Encrypt (`/etc/letsencrypt` mounted read-only) over HTTP/2 with a shared TLS session cache, rate-limits dynamic/backend requests to 10 r/s per IP (burst 20), and gives `/_next/static/` and `/fonts/` a separate 100 r/s budget (burst 200) so cold-load assets cannot exhaust the backend budget. The `limit_conn` cap of 10 per IP applies to both. It also blocks the Next.js CVE-2025-29927 middleware-bypass header. Routes:
+Nginx (`nginx.conf`) terminates TLS via Let's Encrypt (`/etc/letsencrypt` mounted read-only) over HTTP/2 with a shared TLS session cache, rate-limits dynamic/backend requests to 10 r/s per IP (burst 20), and gives `/_next/static/` and `/fonts/` a separate 100 r/s budget (burst 200) so cold-load assets cannot exhaust the backend budget. Concurrent requests are capped at 128 per IP (`limit_conn addr`; HTTP/2 counts each in-flight stream, so a cold load's ~24 asset streams need the headroom), and `/socket.io/` has its own cap of 10 per IP (`limit_conn sockets`). It also blocks the Next.js CVE-2025-29927 middleware-bypass header. Routes:
 
 - `/socket.io/` → backend, WebSocket upgrade, 24 h read timeout.
 - `/pv` → backend, first-party pageview beacon (`pageviews.handlePageview`).
