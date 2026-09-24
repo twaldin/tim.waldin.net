@@ -6,7 +6,8 @@ const contentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self'",
-  "connect-src 'self'",
+  // Safari < 16 does not match same-origin wss: against 'self'; name both hosts.
+  "connect-src 'self' wss://tim.waldin.net wss://twald.in",
   "frame-ancestors 'self'",
   "object-src 'none'",
   "base-uri 'self'",
