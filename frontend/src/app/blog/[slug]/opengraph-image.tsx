@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { ImageResponse } from 'next/og';
+import { notFound } from 'next/navigation';
 import { DEFAULT_DARK_THEME, themes } from '@/config/themes';
 import { getPost, listPostSlugs, postExcerpt } from '@/lib/blog-posts';
 
@@ -11,6 +12,7 @@ import { getPost, listPostSlugs, postExcerpt } from '@/lib/blog-posts';
 // posts get a card for free. scripts/gen-blog-cards.sh dumps them as PNGs.
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
+export const dynamicParams = false;
 const defaultTheme = themes[DEFAULT_DARK_THEME];
 
 
@@ -21,9 +23,10 @@ export function generateStaticParams() {
 export default async function OgImage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const post = getPost(slug);
-  const title = post?.meta.title || slug;
-  const date = post?.meta.date || '';
-  const excerpt = post ? postExcerpt(post.body, 150) : '';
+  if (!post) notFound();
+  const title = post.meta.title || slug;
+  const date = post.meta.date || '';
+  const excerpt = postExcerpt(post.body, 150);
   const fontData = readFileSync(
     join(process.cwd(), 'public/fonts/JetBrainsMonoNerdFontMono-Regular.ttf'),
   );

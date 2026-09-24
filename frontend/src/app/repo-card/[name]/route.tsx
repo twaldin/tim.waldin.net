@@ -27,6 +27,7 @@ const themeColors: Record<string, string> = {
 };
 
 export const dynamic = 'force-static';
+export const dynamicParams = false;
 
 export function generateStaticParams() {
   return Object.keys(CARDS).map((name) => ({ name }));
