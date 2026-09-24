@@ -12,7 +12,7 @@ xterm.js 5.5    ←──    Express + Socket.IO     ←──  per visitor IP
                        dockerode → socket-proxy     (zsh + scripts)
 ```
 
-- **`frontend/`** — Next.js 15 / React 19 app. Renders xterm.js with JetBrainsMono Nerd Font and 464 themes (`src/config/themes.ts`, defaults `Hardcore` / `Hardcore Light` following `prefers-color-scheme`; `src/lib/theme-manager.ts` persists the pick per mode), a Socket.IO client, and a URL ↔ command sync layer.
+- **`frontend/`** — Next.js 15 / React 19 app. Renders xterm.js with JetBrainsMono Nerd Font and 464 themes (`src/config/themes.ts`, defaults `Hardcore` / `Hardcore Light` following `prefers-color-scheme`; `src/lib/theme-manager.ts` persists the pick per mode), a Socket.IO client, and a URL ↔ command sync layer. An opt-in three.js "room" view (`src/room/`) puts the same terminal on a monitor in a first-person desk scene; its assets are built by the Blender scripts in `scripts/room/`.
 - **`backend/`** — Node.js + Express + Socket.IO + dockerode, split into three modules: `session.js` (`SessionManager`: per-connection timers, initCommand auto-typing gated on the prompt and first resize), `admission.js` (`Admission`: one lease per IP, capacity cap, connection rate limit, reconnect grace), `lifecycle.js` (`SessionLifecycle`: every dockerode call, the warm pool, attach/rebind). `sandbox-policy.js` is the single source of the container spec.
 - **`container/`** — Ubuntu 24.04 image (`twaldin/terminal-portfolio:latest`) with zsh, Oh My Posh, neovim (nightly via bob), figlet, and `scripts/*.sh` for the portfolio (welcome, projects, blog, resume, contact, etc.).
 
@@ -88,7 +88,7 @@ The audit log (`events.jsonl`, with daily pageview rollups appended to it) lives
 
 ## Pointers
 
-- **`frontend/CLAUDE.md`** — URL → command allowlist, Socket.IO client, Terminal component (font sizing, mobile keyboard), OSC handlers (URL ↔ command sync, theme protocol), themes, blog pages (server-rendered vs. live terminal), share cards and SEO.
+- **`frontend/CLAUDE.md`** — URL → command allowlist, Socket.IO client, Terminal component (font sizing, mobile keyboard), OSC handlers (URL ↔ command sync, theme protocol), themes, blog pages (server-rendered vs. live terminal), share cards and SEO, the 3D room view and its asset pipeline.
 - **`backend/CLAUDE.md`** — Module layout, warm pool and one lease per IP, timers and limits, container spec, boot sequence for a new visitor, initCommand validation, orphan reclaim, tests.
 - **`container/CLAUDE.md`** — Layout and script inventory, image build (bob nightly nvim with baked-in plugins, Oh My Posh prompt), `.zshrc` wiring and aliases, boot intro, blog handoff, terminal control sequences (the OSC table).
 

@@ -1,0 +1,77 @@
+{
+  "units": "meters; glTF convention: +Y up, the seated viewer faces -Z, +X is the viewer's right",
+  "room": {
+    "floorY": 0,
+    "ceilingY": 2.6,
+    "xMin": -1.7,
+    "xMax": 1.7,
+    "zFront": -0.85,
+    "zBack": 2.8
+  },
+  "desk": {
+    "topY": 0.74,
+    "thickness": 0.035,
+    "xMin": -0.85,
+    "xMax": 0.85,
+    "zFront": 0.0,
+    "zBack": -0.8
+  },
+  "monitor": {
+    "diagonalInches": 27,
+    "screenWidth": 0.5977,
+    "screenHeight": 0.3362,
+    "screenCenter": [0, 1.0, -0.36],
+    "tiltBackDeg": 8,
+    "bezelSide": 0.006,
+    "bezelTop": 0.006,
+    "bezelBottom": 0.016,
+    "bodyDepth": 0.045,
+    "mount": "monitor arm clamped to the desk back edge near x=0; nothing may occupy the space in front of or under the screen down to the desk"
+  },
+  "keyboard": {
+    "layout": "75% ANSI, 1u = 0.01905",
+    "center": [0.02, 0.74, -0.13],
+    "footprint": [0.327, 0.145],
+    "keyTopY": { "frontRow": 0.774, "functionRow": 0.79 },
+    "homeKeys": {
+      "KeyA": [-0.0895, 0.7801, -0.1181],
+      "KeyS": [-0.0705, 0.7801, -0.1181],
+      "KeyD": [-0.0514, 0.7801, -0.1181],
+      "KeyF": [-0.0324, 0.7801, -0.1181],
+      "KeyJ": [0.0248, 0.7801, -0.1181],
+      "KeyK": [0.0438, 0.7801, -0.1181],
+      "KeyL": [0.0629, 0.7801, -0.1181],
+      "Semicolon": [0.0819, 0.7801, -0.1181],
+      "SpaceLeftThumb": [-0.02, 0.774, -0.08],
+      "SpaceRightThumb": [0.03, 0.774, -0.08]
+    }
+  },
+  "mouse": {
+    "restCenter": [0.29, 0.74, -0.12],
+    "footprint": [0.066, 0.12]
+  },
+  "deskMat": {
+    "center": [0.07, 0.74, -0.19],
+    "size": [0.9, 0.4],
+    "thickness": 0.003
+  },
+  "body": {
+    "eye": [0, 1.22, 0.3],
+    "shoulderLeft": [-0.19, 1.0, 0.38],
+    "shoulderRight": [0.19, 1.0, 0.38]
+  },
+  "camera": {
+    "eye": [0, 1.22, 0.3],
+    "target": [0, 0.863, -0.416],
+    "verticalFovDeg": 48
+  },
+  "decorZones": {
+    "lampBase": [-0.66, 0.74, -0.62],
+    "pcTower": { "center": [0.64, 0.74, -0.5], "size": [0.22, 0.46, 0.44], "glassFacing": "-X" },
+    "window": { "wall": "front", "xMin": -1.55, "xMax": -0.62, "yMin": 0.9, "yMax": 2.2 },
+    "shelf": { "wall": "front", "y": 1.52, "xMin": 0.3, "xMax": 1.3, "depth": 0.22 },
+    "mug": [0.43, 0.74, -0.33],
+    "notebook": [-0.52, 0.74, -0.2],
+    "rubberDuck": [0.22, 0.74, -0.58]
+  }
+}

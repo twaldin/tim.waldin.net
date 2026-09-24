@@ -69,3 +69,6 @@ handoffs/
 # Playwright e2e artifacts
 playwright-report/
 test-results/
+
+# Python bytecode (Blender scripts in scripts/room)
+__pycache__/

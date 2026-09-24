@@ -8,7 +8,7 @@ Next.js 15 (App Router, Turbopack) + React 19 client that renders the xterm.js t
 src/
 ├── app/
 │   ├── layout.tsx                      # :root palettes from DEFAULT_DARK_THEME / DEFAULT_LIGHT_THEME (prefers-color-scheme), theme-color per scheme, pre-paint saved-theme script, Nerd Font preloads, colorScheme "dark light", mounts PageviewBeacon + SiteHeader
-│   ├── page.tsx                        # Home: <Terminal> via next/dynamic (ssr: false), WebSocketManager wiring, performance marks (window.__termTti)
+│   ├── page.tsx                        # Home: <Terminal> or <RoomView> via next/dynamic (ssr: false), WebSocketManager wiring, performance marks (window.__termTti)
 │   ├── [...slug]/page.tsx              # Catch-all: isValidPath() or 404, then renders Home; URL → initCommand happens at connect time
 │   ├── blog/page.tsx                   # Static post index (cold loads only)
 │   ├── blog/[slug]/page.tsx            # Static post → BlogUnifiedPage; unknown slugs 301 through resolveSlugAlias()
@@ -23,23 +23,29 @@ src/
 ├── components/
 │   ├── Terminal.tsx                    # The only live xterm.js mount: OSC handlers, font sizing, mobile keyboard fit
 │   ├── BlogUnifiedPage.tsx             # Static markdown + 3-row xterm mini-prompt that hands off to /t/<cmd>
-│   ├── SiteHeader.tsx                  # Nav + dark/light toggle; hard reloads so each nav gets a fresh initCommand
+│   ├── SiteHeader.tsx                  # Nav + 2d/3d view switch + dark/light toggle; hard reloads so each nav gets a fresh initCommand
 │   └── PageviewBeacon.tsx              # sendBeacon('/pv') once per load (nginx → backend); skipped on doNotTrack
 ├── config/
 │   ├── themes.ts                       # 464 generated palettes + DEFAULT_DARK_THEME / DEFAULT_LIGHT_THEME
 │   └── terminal-theme.ts               # terminalConfig: xterm typography + behaviour options — no colors
-└── lib/
-    ├── websocket.ts                    # Socket.IO client, pathToCommand() allowlist, handshake auth
-    ├── routes.ts                       # isValidPath(), getPageMetadata(), getOgImage(), KNOWN_COMMANDS / PROJECT_ALIASES
-    ├── theme-manager.ts                # Client theme store: mode, per-mode persisted theme, CSS vars, subscribers, flicker list
-    ├── blog-posts.ts                   # Reads ./blog-posts/*.md: frontmatter, excerpts, slug aliases
-    ├── safe-url.ts                     # isSafeExternalUrl(): http/https/mailto only
-    ├── mobile-viewport.ts              # Pure scroll/fit math for the on-screen keyboard
-    ├── xterm-touch.ts                  # attachTouchScroll(): drag + momentum scrolling for the canvas
-    ├── markdown-components.tsx         # react-markdown components + CSS-var color names for static pages
-    └── __tests__/                      # Vitest: websocket-allowlist, routes, safe-url, theme-manager, mobile-viewport
+├── lib/
+│   ├── websocket.ts                    # Socket.IO client, pathToCommand() allowlist, handshake auth
+│   ├── view-preference.ts              # classic | room view choice (?view=, localStorage), roomSupported(), active-view pub/sub for the header
+│   ├── routes.ts                       # isValidPath(), getPageMetadata(), getOgImage(), KNOWN_COMMANDS / PROJECT_ALIASES
+│   ├── theme-manager.ts                # Client theme store: mode, per-mode persisted theme, CSS vars, subscribers, flicker list
+│   ├── blog-posts.ts                   # Reads ./blog-posts/*.md: frontmatter, excerpts, slug aliases
+│   ├── safe-url.ts                     # isSafeExternalUrl(): http/https/mailto only
+│   ├── mobile-viewport.ts              # Pure scroll/fit math for the on-screen keyboard
+│   ├── xterm-touch.ts                  # attachTouchScroll(): drag + momentum scrolling for the canvas
+│   ├── markdown-components.tsx         # react-markdown components + CSS-var color names for static pages
+│   └── __tests__/                      # Vitest: websocket-allowlist, routes, safe-url, theme-manager, mobile-viewport
+└── room/                               # 3D room view (see "3D room view")
+    ├── RoomView.tsx                    # Hidden <Terminal> + three.js canvas; loading overlay, lean-in / sound buttons
+    ├── layout.json, layout.ts          # Shared layout in metres (desk, monitor, keyboard, camera); scripts/room reads the same JSON
+    └── engine/                         # engine.ts (renderer, lights, day/night, frame loop), room.ts (baked room loader), screen.ts,
+                                        # keyboard.ts, keymap.ts, hands.ts, mouse.ts, camera.ts, autotype.ts, audio.ts, atmosphere.ts, skin.ts
 content/gui.md                          # Body for /gui, read from disk by app/gui/page.tsx
-public/                                 # fonts/ (JetBrainsMono Nerd Font Mono woff2 + ttf, licenses), resume.pdf
+public/                                 # fonts/ (JetBrainsMono Nerd Font Mono woff2 + ttf, licenses), resume.pdf, room/ (built room + arms assets)
 blog-posts → ../container/blog/posts    # gitignored dev symlink; Dockerfile.production COPYs the directory instead
 ```
 
@@ -109,7 +115,18 @@ The two theme handlers apply via `setTimeout(…, 0)`: mutating `xterm.options.t
 
 ## SiteHeader
 
-`NAV_ITEMS` link to `/`, `/t/blog`, `/t/projects`, `/t/resume`, `/t/about`, `/t/contact`; `hardNav()` forces a full reload so every navigation opens a new socket with that path's `initCommand` (the stored `sessionId` reattaches the same container). Colors come from the `--color-*` vars so the header re-themes live; the right-hand button shows the resolved mode and calls `setMode()` to flip it. Below Tailwind's `sm` breakpoint (640 px) the nav collapses into a `<details>` dropdown (closes on outside click / Escape) — the header must stay one row on phones.
+`NAV_ITEMS` link to `/`, `/t/blog`, `/t/projects`, `/t/resume`, `/t/about`, `/t/contact`; `hardNav()` forces a full reload so every navigation opens a new socket with that path's `initCommand` (the stored `sessionId` reattaches the same container). Colors come from the `--color-*` vars so the header re-themes live; the right-hand button shows the resolved mode and calls `setMode()` to flip it. On a terminal page where `roomSupported()`, a `2d`/`3d` button next to it stores the other view and reloads. Below Tailwind's `sm` breakpoint (640 px) the nav collapses into a `<details>` dropdown (closes on outside click / Escape) — the header must stay one row on phones.
+
+## 3D room view (`src/room/`)
+
+An opt-in presentation of the same live terminal: a first-person desk at night (or by day, following the light/dark mode) with the terminal on a monitor and hands that type every keystroke with the right finger. Blog, `/gui` and the resume are untouched.
+
+- **Choosing it** — `resolveView()` (`lib/view-preference.ts`): `?view=room|classic` wins and is persisted in `localStorage['term-site:view']` (the parameter is then stripped from the URL), else the stored choice, else `DEFAULT_VIEW` (`'classic'`). `roomSupported()` (viewport ≥ 900 px, fine hovering pointer, WebGL2) gates it; everything else gets the classic terminal. A room that fails to load calls `onFail` and `app/page.tsx` falls back to classic in place.
+- **Terminal** — `RoomView` mounts the normal `<Terminal>` with a `screen` spec: xterm renders offscreen through its WebGL addon (with a preserved drawing buffer) and `engine/screen.ts` samples that canvas as the monitor's texture, while key and pointer events go to the real xterm. Every terminal feature (OSC handlers, links, selection, alt-screen apps, themes) works unchanged.
+- **Arrival** — the room connects only once its scene is on screen (`onReady`), with `initCommand: ''` so the backend types nothing; at the first `❯ ` prompt `app/page.tsx` has the hands type `pathToCommand(pathname) ?? 'boot'` through `RoomViewHandle.typeCommand`, which first sends Ctrl-U to clear anything a resumed shell left on the line.
+- **Engine** (`engine/engine.ts`) — three.js `WebGLRenderer` + `postprocessing` composer, `EXPOSURE = 1`, neutral tone mapping (matching Blender's Khronos PBR Neutral). Day/night follows `resolvedMode()` / `subscribe()` from `theme-manager`, blended over `DAY_TRANSITION_SECONDS` (instant under reduced motion). `keymap.ts` maps `KeyboardEvent.code` to key geometry and finger; `hands.ts` solves wrist and finger IK per keystroke; `mouse.ts` / the right hand follow pointer movement; `camera.ts` owns the seated head (breathing, pointer glance, and the "lean in" zoom toward the monitor).
+- **Lighting contract** — static room meshes keep their PBR textures and take diffuse light from three Cycles lightmaps on `TEXCOORD_1` (`room.ts`): night, day, and the monitor alone (tinted each frame by the terminal's average colour). They are 8-bit WebPs on a log curve (`room.json` `lightmaps.range`; decoded in the shader) because the sRGB curve crushes the room's dim half into a few codes. The day lightmap omits the sun's direct light: the shadowed sun adds live diffuse everywhere so the blinds' shadow stays crisp, while the other realtime lights add only specular to those surfaces; the keyboard, mouse and arms get the full realtime lighting: the room panoramas as environment light, the monitor as a `RectAreaLight`, and a shadowed lamp and sun placed and sized from `room.json` `lights`. Units match Cycles: a Blender point/spot of P W is intensity P/4π, a sun of strength S is intensity S. `room.ts` and `skin.ts` patch three's lighting chunks and `console.warn` if a three upgrade changes the patched lines.
+- **Assets** — everything in `public/room/` is generated by the Blender scripts in `scripts/room/` (usage in each script's docstring): `build_room.py bake` writes `room.glb`, `room.json`, `lightmap_{night,day,screen}.webp`, `street_{night,day}.webp` and `room_env_{night,day}.hdr`; `build_arms.py` writes `arms.glb`. Sources are CC0 only (Poly Haven models/textures/HDRIs, MakeHuman/MPFB); do not hand-edit the outputs.
 
 ## Dev / build / tests
 

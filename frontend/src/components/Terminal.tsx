@@ -2,9 +2,11 @@
 
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useRef,
+  type CSSProperties,
 } from "react";
 import { Terminal as XTermTerminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -64,20 +66,43 @@ function calculateFontSize(): number {
   return Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, Math.round(viewportWidth / 80)));
 }
 
+// Screen mode: the terminal lays out at a fixed virtual resolution in a
+// hidden layer and the room view samples its WebGL canvas as the monitor
+// picture. Size and font follow the spec instead of the browser viewport.
+export interface TerminalScreenSpec {
+  width: number;
+  height: number;
+  fontSize: number;
+}
+
+export interface TerminalScreenHandle {
+  xterm: XTermTerminal;
+  host: HTMLDivElement;
+}
+
 interface TerminalProps {
   onData: (data: string) => void;
   onResize: (cols: number, rows: number) => void;
+  screen?: TerminalScreenSpec;
+  onScreenReady?: (handle: TerminalScreenHandle | null) => void;
 }
 
-interface TerminalRef {
+export interface TerminalRef {
   writeToTerminal: (data: string) => void;
   clearTerminal: () => void;
   fitTerminal: () => void;
 }
 
 const Terminal = forwardRef<TerminalRef, TerminalProps>(
-  ({ onData, onResize }, ref) => {
+  ({ onData, onResize, screen, onScreenReady }, ref) => {
+    const hostRef = useRef<HTMLDivElement>(null);
     const terminalRef = useRef<HTMLDivElement>(null);
+    // A mounted terminal never switches between page and screen mode; the
+    // spec itself may change size (see the screen-spec effect below).
+    const screenRef = useRef(screen);
+    screenRef.current = screen;
+    const onScreenReadyRef = useRef(onScreenReady);
+    onScreenReadyRef.current = onScreenReady;
     const xtermRef = useRef<XTermTerminal | null>(null);
     const fitAddonRef = useRef<FitAddon | null>(null);
     const outputBufferRef = useRef<string[]>([]);
@@ -102,7 +127,8 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
       // Nerd Font finishes loading (preload in layout.tsx triggers the swap).
       if (!terminalRef.current) return;
 
-      const dynamicFontSize = calculateFontSize();
+      const screenMode = screenRef.current !== undefined;
+      const dynamicFontSize = screenRef.current?.fontSize ?? calculateFontSize();
       const activeXtermTheme = toXtermTheme(getActiveTheme());
       const dynamicConfig = {
         ...terminalConfig,
@@ -127,11 +153,20 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
       xtermRef.current = xterm;
       fitAddonRef.current = fitAddon;
 
-      try {
-        const webgl = new WebglAddon();
-        webgl.onContextLoss(() => webgl.dispose());
-        xterm.loadAddon(webgl);
-      } catch { /* fall back to canvas */ }
+      // Screen mode keeps the drawing buffer so the room can copy the canvas
+      // into its monitor texture whenever xterm has rendered, and replaces a
+      // lost context instead of dropping to the DOM renderer it cannot sample.
+      const loadWebgl = () => {
+        try {
+          const webgl = new WebglAddon(screenMode);
+          webgl.onContextLoss(() => {
+            webgl.dispose();
+            if (screenMode && xtermRef.current === xterm) setTimeout(loadWebgl, 0);
+          });
+          xterm.loadAddon(webgl);
+        } catch { /* fall back to the DOM renderer */ }
+      };
+      loadWebgl();
 
       const oscUrlDisposable = xterm.parser.registerOscHandler(9999, (data) => {
         try {
@@ -259,9 +294,12 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
       currentTerminalElement.addEventListener("click", handleClick);
 
       const loadWebLinks = () => xterm.loadAddon(new WebLinksAddon(handleLinkActivate));
-      currentTerminalElement.addEventListener("mouseover", loadWebLinks, { once: true });
+      // Screen mode gets no real mouseover (the room forwards pointer events),
+      // so links load up front there.
+      if (screenMode) loadWebLinks();
+      else currentTerminalElement.addEventListener("mouseover", loadWebLinks, { once: true });
 
-      const detachTouch = attachTouchScroll(xterm, currentTerminalElement);
+      const detachTouch = screenMode ? () => {} : attachTouchScroll(xterm, currentTerminalElement);
 
       const scrollPromptIntoBrowserViewport = () => {
         const cursor = currentTerminalElement.querySelector(".xterm-cursor") as HTMLElement | null;
@@ -333,11 +371,15 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
         );
       };
 
-      updateVisibleViewportFit();
-      window.visualViewport?.addEventListener("resize", updateVisibleViewportFit);
-      window.visualViewport?.addEventListener("scroll", updateVisibleViewportFit);
-      currentTerminalElement.addEventListener("focusin", updateVisibleViewportFitFromInput);
-      currentTerminalElement.addEventListener("input", updateVisibleViewportFitFromInput);
+      // Visual-viewport fitting and the font-size ladder only apply to the
+      // page layout; screen mode is sized by its spec.
+      if (!screenMode) {
+        updateVisibleViewportFit();
+        window.visualViewport?.addEventListener("resize", updateVisibleViewportFit);
+        window.visualViewport?.addEventListener("scroll", updateVisibleViewportFit);
+        currentTerminalElement.addEventListener("focusin", updateVisibleViewportFitFromInput);
+        currentTerminalElement.addEventListener("input", updateVisibleViewportFitFromInput);
+      }
 
       const handlePaste = async (event: ClipboardEvent) => {
         event.preventDefault();
@@ -395,7 +437,11 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
         }, 150);
       };
 
-      window.addEventListener("resize", handleResize);
+      if (!screenMode) window.addEventListener("resize", handleResize);
+
+      if (screenMode && hostRef.current) {
+        onScreenReadyRef.current?.({ xterm, host: hostRef.current });
+      }
 
       cleanupFunctions = [
         () => {
@@ -434,6 +480,9 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
         () => oscEphemeralThemeDisposable.dispose(),
         () => oscPersistentThemeDisposable.dispose(),
         unsubscribeTheme,
+        () => {
+          if (screenMode) onScreenReadyRef.current?.(null);
+        },
         () => xterm.dispose(),
       ];
 
@@ -472,25 +521,54 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
       }
     };
 
+    const fitAndEmitResize = useCallback(() => {
+      if (!fitAddonRef.current || !xtermRef.current) return;
+      fitAddonRef.current.fit();
+      const next = { cols: xtermRef.current.cols, rows: xtermRef.current.rows };
+      if (shouldEmitTerminalResize(lastResizeSentRef.current, next)) {
+        lastResizeSentRef.current = next;
+        onResize(next.cols, next.rows);
+      }
+    }, [onResize]);
+
     useImperativeHandle(ref, () => ({
       writeToTerminal,
       clearTerminal,
-      fitTerminal: () => {
-        if (fitAddonRef.current && xtermRef.current) {
-          fitAddonRef.current.fit();
-          const next = { cols: xtermRef.current.cols, rows: xtermRef.current.rows };
-          if (shouldEmitTerminalResize(lastResizeSentRef.current, next)) {
-            lastResizeSentRef.current = next;
-            onResize(next.cols, next.rows);
-          }
-        }
-      },
-    }), [onResize]);
+      fitTerminal: fitAndEmitResize,
+    }), [fitAndEmitResize]);
 
-    return (
-      <div
-        className="terminal-host"
-        style={{
+    // Screen mode: apply a changed spec (the room rescales the virtual screen
+    // with the window) and refit once the host has its new size.
+    const screenWidth = screen?.width;
+    const screenHeight = screen?.height;
+    const screenFontSize = screen?.fontSize;
+    useEffect(() => {
+      const xterm = xtermRef.current;
+      if (!xterm || screenFontSize === undefined) return;
+      if (xterm.options.fontSize !== screenFontSize) xterm.options.fontSize = screenFontSize;
+      const frame = requestAnimationFrame(fitAndEmitResize);
+      return () => cancelAnimationFrame(frame);
+    }, [screenWidth, screenHeight, screenFontSize, fitAndEmitResize]);
+
+    const hostStyle: CSSProperties = screen
+      ? {
+          // Laid out and rendered, never seen: the room samples the canvas.
+          // Kept inside the viewport so xterm's IntersectionObserver does not
+          // pause rendering, and beneath the room canvas, which receives the
+          // pointer and forwards it here.
+          position: "fixed",
+          left: 0,
+          top: 0,
+          width: screen.width,
+          height: screen.height,
+          padding: `${Math.round(screen.fontSize * 0.7)}px ${Math.round(screen.fontSize * 0.9)}px`,
+          boxSizing: "border-box",
+          backgroundColor: "var(--color-bg)",
+          opacity: 0,
+          pointerEvents: "none",
+          zIndex: 0,
+        }
+      : {
           width: "100%",
           height: "100%",
           margin: 0,
@@ -503,8 +581,10 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
           boxSizing: "border-box",
           backgroundColor: "var(--color-bg)",
           position: "relative",
-        }}
-      >
+        };
+
+    return (
+      <div ref={hostRef} className="terminal-host" style={hostStyle}>
         <div
           ref={terminalRef}
           className="w-full h-full"

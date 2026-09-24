@@ -1,0 +1,124 @@
+{
+ "version": 3,
+ "coordinateSystem": "glTF: +Y up, viewer faces -Z, metres",
+ "lightmaps": {
+  "uv": "TEXCOORD_1",
+  "encoding": "log curve: code e in [0, 1] -> scale / range * ((range + 1)^e - 1), linear lighting",
+  "range": 4096.0,
+  "units": "Cycles diffuse lighting: outgoing radiance of an albedo-1 surface",
+  "night": {
+   "file": "lightmap_night.webp",
+   "scale": 7.003064155578613
+  },
+  "day": {
+   "file": "lightmap_day.webp",
+   "scale": 162.38658142089844,
+   "note": "without the sun's direct light, which the runtime's shadowed sun adds"
+  },
+  "screen": {
+   "file": "lightmap_screen.webp",
+   "scale": 0.9847438335418701,
+   "note": "monitor alone emitting white at strength 1; multiply by the live screen radiance"
+  }
+ },
+ "environments": {
+  "night": "room_env_night.hdr",
+  "day": "room_env_day.hdr"
+ },
+ "street": {
+  "corners": [
+   [
+    -32.925,
+    -10.997,
+    -23.95
+   ],
+   [
+    -4.687,
+    -10.997,
+    -23.95
+   ],
+   [
+    -4.687,
+    24.847,
+    -23.95
+   ],
+   [
+    -32.925,
+    24.847,
+    -23.95
+   ]
+  ],
+  "night": {
+   "file": "street_night.webp",
+   "scale": 1.930100679397583
+  },
+  "day": {
+   "file": "street_day.webp",
+   "scale": 89.73994445800781
+  }
+ },
+ "emitters": {
+  "emit_ledStrip": {
+   "color": [
+    0.46,
+    0.4,
+    1.0
+   ],
+   "night": 10.0,
+   "day": 0.0
+  },
+  "emit_lampBulb": {
+   "color": [
+    1.0,
+    0.72,
+    0.42
+   ],
+   "night": 25.0,
+   "day": 0.0
+  },
+  "emit_pcFans": {
+   "color": [
+    0.5,
+    0.42,
+    1.0
+   ],
+   "night": 14.0,
+   "day": 4.2
+  }
+ },
+ "lights": {
+  "lamp": {
+   "position": [
+    -0.6473,
+    1.2947,
+    -0.2067
+   ],
+   "direction": [
+    0.4771,
+    -0.8788,
+    -0.0107
+   ],
+   "angle": 0.9811472296714783,
+   "penumbra": 0.6000000238418579,
+   "color": [
+    1.0,
+    0.587413489818573,
+    0.3420485258102417
+   ],
+   "intensity": 2.3873241463784303
+  },
+  "sun": {
+   "direction": [
+    0.6596,
+    -0.5492,
+    0.5131
+   ],
+   "color": [
+    1.0,
+    0.7794352769851685,
+    0.6220960021018982
+   ],
+   "intensity": 28.0
+  }
+ }
+}

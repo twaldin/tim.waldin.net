@@ -12,7 +12,7 @@ vi.mock('socket.io-client', () => ({
 import { io } from 'socket.io-client';
 import { createWebSocketManager } from '../websocket';
 
-function connectFrom(pathname: string): void {
+function connectFrom(pathname: string, options?: { initCommand?: string }): void {
   vi.stubGlobal('window', {
     location: {
       pathname,
@@ -25,7 +25,7 @@ function connectFrom(pathname: string): void {
     setItem: vi.fn(),
   });
 
-  createWebSocketManager().connect();
+  createWebSocketManager().connect(options);
 }
 
 function expectInitCommand(initCommand: string | undefined): void {
@@ -69,5 +69,10 @@ describe('URL command allowlist', () => {
   it('rejects blog traversal outside the slug grammar', () => {
     connectFrom('/blog/../../etc');
     expectInitCommand(undefined);
+  });
+
+  it('lets the room view suppress backend auto-typing', () => {
+    connectFrom('/about', { initCommand: '' });
+    expectInitCommand('');
   });
 });
