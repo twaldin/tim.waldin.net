@@ -95,10 +95,11 @@ io.on('connection', (socket) => {
     // buffering never does more work than the terminal accepts.
     if (typeof data === 'string' && data.length <= MAX_INPUT_LENGTH) {
       let buf = cmdBufs.get(socket.id) || '';
+      const commands = [];
       for (const ch of data) {
         if (ch === '\r' || ch === '\n') {
           const cmd = buf.trim();
-          if (cmd) logger.append({ type: 'command', id: socket.id, cmd });
+          if (cmd) commands.push({ type: 'command', id: socket.id, cmd });
           buf = '';
         } else if (ch === '\x7f' || ch === '\x08') {
           buf = buf.slice(0, -1);
@@ -107,6 +108,8 @@ io.on('connection', (socket) => {
         }
       }
       cmdBufs.set(socket.id, buf);
+      // One write per input event, however many lines a paste completes.
+      if (commands.length) logger.append(...commands);
     }
     sessionManager.handleInput(socket.id, data);
   });

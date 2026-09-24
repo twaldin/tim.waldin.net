@@ -31,6 +31,18 @@ function redactSecrets(value, maxLength) {
       `$1=${REDACTED}`
     )
     .replace(
+      // curl/wget-style user:password arguments: -u alice:pw, --user=alice:pw.
+      /(^|\s)(-u\s*|--user[=\s]\s*)(?:(["'])([^\s:'"]*:)[^'"]*\3|([^\s:'"]+:)(?:"[^"]*"|'[^']*'|[^\s'"]+))/g,
+      (match, lead, flag, quote, quotedUser, user) => (quote
+        ? `${lead}${flag}${quote}${quotedUser}${REDACTED}${quote}`
+        : `${lead}${flag}${user}${REDACTED}`)
+    )
+    .replace(
+      // URL userinfo: https://alice:pw@host.
+      /(\b[a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:)[^\s/@]+@/gi,
+      `$1${REDACTED}@`
+    )
+    .replace(
       /\b(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{16,}|(?:AKIA|ASIA)[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{10,})\b/g,
       REDACTED
     );
@@ -67,11 +79,14 @@ function rotateIfNeeded() {
   }
 }
 
-function append(event) {
+// Appends every event with one write, so a multi-line paste that completes
+// many commands in a single input event costs one file write, not hundreds.
+function append(...events) {
   try {
     fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
     rotateIfNeeded();
-    fs.appendFileSync(LOG_FILE, JSON.stringify({ ...sanitizeEvent(event), at: Date.now() }) + '\n');
+    const at = Date.now();
+    fs.appendFileSync(LOG_FILE, events.map((event) => JSON.stringify({ ...sanitizeEvent(event), at }) + '\n').join(''));
   } catch (err) {
     console.error('Logger error:', err.message);
   }

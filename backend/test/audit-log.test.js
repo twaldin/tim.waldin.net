@@ -73,6 +73,20 @@ test('secrets in session_start referrer and initCommand are redacted', () => {
   assert.equal(event.initCommand, 'echo [REDACTED]');
 });
 
+test('user:password arguments and URL userinfo are redacted', () => {
+  assert.equal(
+    sanitizeCommand('curl -u alice:examplepass https://example.com'),
+    'curl -u alice:[REDACTED] https://example.com',
+  );
+  assert.equal(sanitizeCommand("curl --user='bob:p w' x"), "curl --user='bob:[REDACTED]' x");
+  assert.equal(sanitizeCommand('wget --user bob:pw x'), 'wget --user bob:[REDACTED] x');
+  assert.equal(
+    sanitizeCommand('git clone https://tim:hunter2@github.com/x.git'),
+    'git clone https://tim:[REDACTED]@github.com/x.git',
+  );
+  assert.equal(sanitizeCommand('curl -u alice https://example.com'), 'curl -u alice https://example.com');
+});
+
 test('ordinary commands remain readable', () => {
   assert.equal(sanitizeCommand('git status --short'), 'git status --short');
 });
