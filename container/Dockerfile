@@ -38,9 +38,14 @@ RUN mkdir -p /home/portfolio/.config && \
 # config uses nightly features (vim.pack, etc.) that aren't in Ubuntu's
 # stable neovim package.
 RUN ARCH=$(dpkg --print-architecture) && \
-    case "$ARCH" in amd64) BARCH="x86_64" ;; arm64) BARCH="arm" ;; *) BARCH="$ARCH" ;; esac && \
-    curl -sL "https://github.com/MordechaiHadad/bob/releases/download/v4.1.6/bob-linux-${BARCH}.zip" \
+    case "$ARCH" in \
+      amd64) BARCH="x86_64"; SHA256="e39126c91c605208b1584a2c932622bcb2ea7211651e8233ce0dfc02ce5f298b" ;; \
+      arm64) BARCH="arm"; SHA256="0efcfe53fa52aded61d3fdf8a02c29a84d6e56635fad9fe89a6a8d574c4f1c3f" ;; \
+      *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;; \
+    esac && \
+    curl -fsSL "https://github.com/MordechaiHadad/bob/releases/download/v4.1.6/bob-linux-${BARCH}.zip" \
       -o /tmp/bob.zip && \
+    echo "$SHA256  /tmp/bob.zip" | sha256sum -c - && \
     unzip -q /tmp/bob.zip -d /tmp/bob && \
     mv /tmp/bob/bob-linux-${BARCH}/bob /usr/local/bin/bob && \
     chmod +x /usr/local/bin/bob && \
@@ -59,8 +64,14 @@ WORKDIR /home/portfolio
 
 # Only the dotfiles prompt is used; do not install the bundled theme collection.
 RUN ARCH=$(dpkg --print-architecture) && \
-    curl -fsSL "https://cdn.ohmyposh.dev/releases/latest/posh-linux-${ARCH}" \
+    case "$ARCH" in \
+      amd64) SHA256="92a253b607dbc632f9e45c9de06cb9650a1a3e7c36df2012a7b7600f22dcad80" ;; \
+      arm64) SHA256="6388a11cf0e228e591a36d6a6024ec73dbf649d5b53f3442d85bb37f1871f1ed" ;; \
+      *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;; \
+    esac && \
+    curl -fsSL "https://github.com/JanDeDobbeleer/oh-my-posh/releases/download/v31.3.0/posh-linux-${ARCH}" \
       -o /home/portfolio/.local/bin/oh-my-posh && \
+    echo "$SHA256  /home/portfolio/.local/bin/oh-my-posh" | sha256sum -c - && \
     chmod +x /home/portfolio/.local/bin/oh-my-posh && \
     /home/portfolio/.local/bin/oh-my-posh version
 
