@@ -122,8 +122,8 @@ function initialize(): void {
     colorSchemeQuery.addEventListener('change', handleColorSchemeChange);
   }
   applyThemeEntry(themes[savedThemeName(resolveMode(readMode()))]);
-  // Rewrite an existing snapshot to what we just resolved: one written under
-  // an older site default would otherwise flash before hydration on every load.
+  // Keep an existing snapshot equal to what we just resolved, so the pre-paint
+  // script in app/layout.tsx never applies an outdated palette.
   if (readStorage(PALETTE_SNAPSHOT_KEY) !== null) {
     writeStorage(PALETTE_SNAPSHOT_KEY, JSON.stringify(activeTheme));
   }
