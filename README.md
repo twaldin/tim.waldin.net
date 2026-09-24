@@ -23,7 +23,7 @@ Browser (xterm.js) → Nginx (reverse proxy, SSL, rate limiting)
 - **Backend**: Node.js 24, Express 5, Socket.IO 4, dockerode 4
 - **Container**: Ubuntu 24.04, zsh, Oh My Posh, nightly neovim, figlet
 - **Infrastructure**: Docker Compose, Nginx, Let's Encrypt SSL, Tecnativa docker-socket-proxy, Playwright e2e on GitHub Actions
-- **Theme**: 463 Ghostty color schemes; defaults to iTerm2 Tango Dark or Light following `prefers-color-scheme`; JetBrainsMono Nerd Font
+- **Theme**: 464 color schemes (Ghostty's library plus the site-made Hardcore Light); defaults to Hardcore or Hardcore Light following `prefers-color-scheme`; JetBrainsMono Nerd Font
 
 ## Project Structure
 
@@ -107,7 +107,7 @@ Custom portfolio navigation:
 - `projects` - Explore all projects
 - `blog` - Posts I've written; `blog <slug>` opens a post
 - `<project>` - Jump straight to a project page: `harness`, `hone`, `flt`, `agentelo`, `term-site`, `trade-up-bot`, `studyspot`, `stm32-games`, `dotfiles`, `tetrio-tui`, `deck`, `hone-a-drone`, `gepa-ts`, `also`
-- `theme` - Re-theme the site with a live fzf preview over 463 schemes; `theme <name>`, `theme dark|light`, `theme reset`
+- `theme` - Re-theme the site with a live fzf preview over 464 schemes; `theme <name>`, `theme dark|light`, `theme reset`
 - `boot` - Replay the intro animation; `boot <name>` picks one
 - `gui` - The point-and-click version, for mouse users
 - `help` - Show available commands

@@ -26,7 +26,7 @@ container/
     ├── fonts.txt           # Font manifest `Display Name|width|height|flf`; boot and welcome pick by width class
     ├── welcome.sh          # Home page copy + menu box; prints its own banner only when run directly
     ├── theme.sh            # Theme picker: fzf live preview (OSC 9996), persist (OSC 9995)
-    ├── themes.txt          # 463 theme names — must match the keys in frontend/src/config/themes.ts
+    ├── themes.txt          # 464 theme names, written by scripts/generate-themes-lib.py with frontend/src/config/themes.ts
     ├── projects.sh         # Project cards (2-up grid on wide terminals); sources also.sh for the dump at the bottom
     ├── also.sh             # Hackathon / archived / fork one-liners (print_also_list when sourced, full page when run)
     ├── flt.sh, agentelo.sh, hone.sh, harness.sh, stm32-games.sh,

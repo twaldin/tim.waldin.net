@@ -48,7 +48,7 @@ function installBrowser(preferLight = false) {
   });
   vi.stubGlobal('document', {
     documentElement: { style },
-    querySelector: (selector: string) => selector === 'meta[name="theme-color"]' ? meta : null,
+    querySelectorAll: (selector: string) => selector === 'meta[name="theme-color"]' ? [meta] : [],
   });
 
   return {
@@ -166,6 +166,21 @@ describe('theme manager', () => {
     expect(manager.resolvedMode()).toBe('light');
     expect(manager.getActiveTheme()).toStrictEqual(themes[DEFAULT_LIGHT_THEME]);
     expect(browser.cssVars.get('--color-bg')).toBe(themes[DEFAULT_LIGHT_THEME].background);
+  });
+
+  it('rewrites a palette snapshot left by an older default, and never creates one', async () => {
+    const fresh = installBrowser(true);
+    (await import('../theme-manager')).getActiveTheme();
+    expect(fresh.storage.has('term-site:palette')).toBe(false);
+
+    vi.resetModules();
+    const returning = installBrowser(true);
+    returning.storage.set('term-site:mode', 'light');
+    returning.storage.set('term-site:palette', JSON.stringify(themes['iTerm2 Tango Light']));
+    const manager = await import('../theme-manager');
+
+    expect(manager.getActiveTheme()).toStrictEqual(themes[DEFAULT_LIGHT_THEME]);
+    expect(JSON.parse(returning.storage.get('term-site:palette')!)).toStrictEqual(themes[DEFAULT_LIGHT_THEME]);
   });
 
   it('is safe to call without browser globals', async () => {

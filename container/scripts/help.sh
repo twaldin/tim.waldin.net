@@ -14,7 +14,7 @@ typewriter "${BLUE}  <project>       ${WHITE}jump straight to a project page:${R
 typewriter "${DIM}                  harness, hone, flt, agentelo, term-site,${RESET}"
 typewriter "${DIM}                  trade-up-bot, studyspot, stm32-games, dotfiles,${RESET}"
 typewriter "${DIM}                  tetrio-tui, deck, hone-a-drone, gepa-ts, also${RESET}"
-typewriter "${BLUE}  theme           ${WHITE}re-theme this site — 463 schemes, live fzf preview${RESET}"
+typewriter "${BLUE}  theme           ${WHITE}re-theme this site — 464 schemes, live fzf preview${RESET}"
 typewriter "${DIM}                  theme <name> · theme dark|light · theme reset${RESET}"
 typewriter "${BLUE}  boot            ${WHITE}replay the intro animation (boot <name> to pick one:${RESET}"
 typewriter "${DIM}                  braille-fire, starfield-warp, braille-plasma, logo-decode)${RESET}"

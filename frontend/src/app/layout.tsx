@@ -2,16 +2,37 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import SiteHeader from "@/components/SiteHeader";
 import PageviewBeacon from "@/components/PageviewBeacon";
-import { DEFAULT_DARK_THEME, themes } from "@/config/themes";
+import { DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME, themes, type ThemeEntry } from "@/config/themes";
 import { getPageMetadata } from "@/lib/routes";
 const defaultTheme = themes[DEFAULT_DARK_THEME];
+const defaultLightTheme = themes[DEFAULT_LIGHT_THEME];
+
+// Keep in sync with applyThemeEntry in src/lib/theme-manager.ts.
+function paletteVars(theme: ThemeEntry): string {
+  return `
+            --color-bg: ${theme.background};
+            --color-fg: ${theme.foreground};
+            --color-red: ${theme.red};
+            --color-green: ${theme.green};
+            --color-dim: ${theme.brightBlack};
+            --color-border: ${theme.brightBlack};
+            --color-primary: ${theme.green};
+            --color-black: ${theme.black};
+            --color-blue: ${theme.blue};
+            --color-yellow: ${theme.yellow};
+            --color-bright-yellow: ${theme.brightYellow};
+            --color-bright-white: ${theme.brightWhite};`;
+}
 
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   colorScheme: "dark light",
-  themeColor: defaultTheme.background,
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: defaultLightTheme.background },
+    { media: "(prefers-color-scheme: dark)", color: defaultTheme.background },
+  ],
   // Ask mobile browsers to resize the layout viewport when the virtual
   // keyboard opens instead of just overlaying the bottom of the terminal.
   interactiveWidget: "resizes-content",
@@ -36,20 +57,15 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        {/* Default palettes before any script runs: a first visit gets the
+            default for its prefers-color-scheme, matching what theme-manager
+            resolves in 'auto' mode, so light-mode visitors never flash dark. */}
         <style>{`
-          :root {
-            --color-bg: ${defaultTheme.background};
-            --color-fg: ${defaultTheme.foreground};
-            --color-red: ${defaultTheme.red};
-            --color-green: ${defaultTheme.green};
-            --color-dim: ${defaultTheme.brightBlack};
-            --color-border: ${defaultTheme.brightBlack};
-            --color-primary: ${defaultTheme.green};
-            --color-black: ${defaultTheme.black};
-            --color-blue: ${defaultTheme.blue};
-            --color-yellow: ${defaultTheme.yellow};
-            --color-bright-yellow: ${defaultTheme.brightYellow};
-            --color-bright-white: ${defaultTheme.brightWhite};
+          :root {${paletteVars(defaultTheme)}
+          }
+          @media (prefers-color-scheme: light) {
+            :root {${paletteVars(defaultLightTheme)}
+            }
           }
         `}</style>
         {/* Pre-paint saved-theme restore: theme-manager persists a palette
@@ -59,7 +75,7 @@ export default function RootLayout({
             src/lib/theme-manager.ts. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var p=JSON.parse(localStorage.getItem('term-site:palette'));if(p){var s=document.documentElement.style;s.setProperty('--color-bg',p.background);s.setProperty('--color-fg',p.foreground);s.setProperty('--color-red',p.red);s.setProperty('--color-green',p.green);s.setProperty('--color-dim',p.brightBlack);s.setProperty('--color-border',p.brightBlack);s.setProperty('--color-primary',p.green);s.setProperty('--color-black',p.black);s.setProperty('--color-blue',p.blue);s.setProperty('--color-yellow',p.yellow);s.setProperty('--color-bright-yellow',p.brightYellow);s.setProperty('--color-bright-white',p.brightWhite);s.colorScheme=p.mode;var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',p.background);}}catch(e){}`,
+            __html: `try{var p=JSON.parse(localStorage.getItem('term-site:palette'));if(p){var s=document.documentElement.style;s.setProperty('--color-bg',p.background);s.setProperty('--color-fg',p.foreground);s.setProperty('--color-red',p.red);s.setProperty('--color-green',p.green);s.setProperty('--color-dim',p.brightBlack);s.setProperty('--color-border',p.brightBlack);s.setProperty('--color-primary',p.green);s.setProperty('--color-black',p.black);s.setProperty('--color-blue',p.blue);s.setProperty('--color-yellow',p.yellow);s.setProperty('--color-bright-yellow',p.brightYellow);s.setProperty('--color-bright-white',p.brightWhite);s.colorScheme=p.mode;document.querySelectorAll('meta[name="theme-color"]').forEach(function(m){m.setAttribute('content',p.background)});}}catch(e){}`,
           }}
         />
         {/* Start the Nerd Font download with the HTML parse so xterm's
