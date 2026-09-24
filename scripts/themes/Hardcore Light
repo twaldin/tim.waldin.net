@@ -1,0 +1,35 @@
+# Hardcore Light: the light-mode counterpart of Ghostty's Hardcore, made for
+# tim.waldin.net (no light theme in the Ghostty library is close to it).
+#
+# Background, foreground, cursor, selection and the neutral slots (0, 7, 8, 15)
+# keep Hardcore's contrast ratio against the background, measured from the
+# light end instead of the dark end: #121212 becomes #f2f2f2, the grey text
+# stays 7.2:1, colour 0 stays next to the background, colour 15 stays the
+# strongest text. Output written for Hardcore therefore reads the same way.
+# Accents keep Hardcore's OKLCH hue and chroma; only lightness changes, so
+# normal colours sit at 4.5:1 and bright colours at 5.5:1 (bright stays the
+# stronger variant). Where Hardcore reuses a colour (blue and magenta), the
+# bright slot matches the normal one here too.
+
+palette = 0=#e5e7e9
+palette = 1=#da025f
+palette = 2=#567903
+palette = 3=#a35e06
+palette = 4=#047a8c
+palette = 5=#8250dd
+palette = 6=#5f7277
+palette = 7=#32312d
+palette = 8=#9a9e9f
+palette = 9=#b81e63
+palette = 10=#4f6a01
+palette = 11=#6b6205
+palette = 12=#047a8c
+palette = 13=#8250dd
+palette = 14=#506569
+palette = 15=#0c0b08
+background = #f2f2f2
+foreground = #505050
+cursor-color = #3c3c3c
+cursor-text = #f2f2f2
+selection-background = #c4b7b5
+selection-foreground = #393d42

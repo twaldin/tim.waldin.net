@@ -119,6 +119,11 @@ function initialize(): void {
     colorSchemeQuery.addEventListener('change', handleColorSchemeChange);
   }
   applyThemeEntry(themes[savedThemeName(resolveMode(readMode()))]);
+  // Rewrite an existing snapshot to what we just resolved: one written under
+  // an older site default would otherwise flash before hydration on every load.
+  if (readStorage(PALETTE_SNAPSHOT_KEY) !== null) {
+    writeStorage(PALETTE_SNAPSHOT_KEY, JSON.stringify(activeTheme));
+  }
 }
 
 function handleColorSchemeChange(): void {

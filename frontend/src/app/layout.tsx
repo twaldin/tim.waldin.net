@@ -2,9 +2,27 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import SiteHeader from "@/components/SiteHeader";
 import PageviewBeacon from "@/components/PageviewBeacon";
-import { DEFAULT_DARK_THEME, themes } from "@/config/themes";
+import { DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME, themes, type ThemeEntry } from "@/config/themes";
 import { getPageMetadata } from "@/lib/routes";
 const defaultTheme = themes[DEFAULT_DARK_THEME];
+const defaultLightTheme = themes[DEFAULT_LIGHT_THEME];
+
+// Keep in sync with applyThemeEntry in src/lib/theme-manager.ts.
+function paletteVars(theme: ThemeEntry): string {
+  return `
+            --color-bg: ${theme.background};
+            --color-fg: ${theme.foreground};
+            --color-red: ${theme.red};
+            --color-green: ${theme.green};
+            --color-dim: ${theme.brightBlack};
+            --color-border: ${theme.brightBlack};
+            --color-primary: ${theme.green};
+            --color-black: ${theme.black};
+            --color-blue: ${theme.blue};
+            --color-yellow: ${theme.yellow};
+            --color-bright-yellow: ${theme.brightYellow};
+            --color-bright-white: ${theme.brightWhite};`;
+}
 
 
 export const viewport: Viewport = {
@@ -36,20 +54,15 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        {/* Default palettes before any script runs: a first visit gets the
+            default for its prefers-color-scheme, matching what theme-manager
+            resolves in 'auto' mode, so light-mode visitors never flash dark. */}
         <style>{`
-          :root {
-            --color-bg: ${defaultTheme.background};
-            --color-fg: ${defaultTheme.foreground};
-            --color-red: ${defaultTheme.red};
-            --color-green: ${defaultTheme.green};
-            --color-dim: ${defaultTheme.brightBlack};
-            --color-border: ${defaultTheme.brightBlack};
-            --color-primary: ${defaultTheme.green};
-            --color-black: ${defaultTheme.black};
-            --color-blue: ${defaultTheme.blue};
-            --color-yellow: ${defaultTheme.yellow};
-            --color-bright-yellow: ${defaultTheme.brightYellow};
-            --color-bright-white: ${defaultTheme.brightWhite};
+          :root {${paletteVars(defaultTheme)}
+          }
+          @media (prefers-color-scheme: light) {
+            :root {${paletteVars(defaultLightTheme)}
+            }
           }
         `}</style>
         {/* Pre-paint saved-theme restore: theme-manager persists a palette

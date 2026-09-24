@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # theme.sh — let visitors re-theme the whole site, live.
 #
-#   theme                 fzf picker over all 463 themes, live-previewing
+#   theme                 fzf picker over all 464 themes, live-previewing
 #                         each highlight (OSC 9996); enter persists (OSC 9995)
 #   theme <name>          persist a theme by exact name (case-insensitive)
 #   theme dark|light      switch to your saved/default theme for that mode
@@ -25,7 +25,7 @@ usage:
   theme <name>          set theme by name
   theme dark | light    switch mode
   theme reset           restore site defaults
-  theme list            all 463 theme names
+  theme list            all 464 theme names
 EOF
   exit 1
 }

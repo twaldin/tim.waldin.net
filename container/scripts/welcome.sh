@@ -93,7 +93,7 @@ box_out=$(create_box "portfolio terminal" "  about       learn about me
 
   blog        posts i've written
 
-  theme       pick a color scheme (463!)
+  theme       pick a color scheme (464!)
 
   gui         for mouse users (static page)
 
