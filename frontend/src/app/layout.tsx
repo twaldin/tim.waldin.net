@@ -37,7 +37,7 @@ function paletteVars(theme: ThemeEntry): string {
 const PRE_PAINT_SCRIPT = `try{var V=${JSON.stringify(PALETTE_VARS)},D=${JSON.stringify({
   dark: defaultTheme,
   light: defaultLightTheme,
-})},l=localStorage,m=l.getItem('term-site:mode'),r=m==='dark'||m==='light'?m:matchMedia('(prefers-color-scheme: light)').matches?'light':'dark',p=JSON.parse(l.getItem('term-site:palette'));if(!(p&&p.mode===r&&l.getItem('term-site:theme-'+r)))p=D[r];var s=document.documentElement.style;V.forEach(function(v){s.setProperty(v[0],p[v[1]])});s.colorScheme=r;document.querySelectorAll('meta[name="theme-color"]').forEach(function(t){t.setAttribute('content',p.background)})}catch(e){}`;
+})},l=localStorage,m=l.getItem('term-site:mode'),r=m==='dark'||m==='light'?m:matchMedia('(prefers-color-scheme: light)').matches?'light':'dark',p=null;try{p=JSON.parse(l.getItem('term-site:palette'))}catch(e){}if(!(p&&p.mode===r&&l.getItem('term-site:theme-'+r)))p=D[r];var s=document.documentElement.style;V.forEach(function(v){s.setProperty(v[0],p[v[1]])});s.colorScheme=r;document.querySelectorAll('meta[name="theme-color"]').forEach(function(t){t.setAttribute('content',p.background)})}catch(e){}`;
 
 export const viewport: Viewport = {
   width: "device-width",
