@@ -6,8 +6,9 @@ Run with Blender 5.1 and the MPFB 2.0.17 extension installed:
   blender -b -P scripts/room/build_arms.py
 
 Body and rig come from MakeHuman/MPFB (CC0), reshaped with its hand/forearm
-targets. The pose places each hand (search over wrist position and turn) and
-curls each finger with coupled joints onto its home key from layout.json.
+targets. The pose curls each finger to a natural resting shape (CURL), places
+each hand so those fingertips land on their home keys from layout.json, then
+adjusts each finger slightly to touch its key exactly.
 Skin detail, nails and textures come from skin_bake.py; the charcoal fleece
 sleeves are generated here. ARMS_DEBUG_BLEND=<path> saves the scene.
 """
@@ -45,22 +46,44 @@ SHAPE_TARGETS = [
         ("hands", "hand-fingers-diameter-decr", 0.7),
         ("hands", "hand-fingers-length-incr", 0.35),
         ("hands", "hand-scale-decr", 0.12),
+        # MakeHuman's knuckles span ~73 mm; a real hand's ~60 mm, near the
+        # 57 mm from A to F, so fingers rest parallel instead of converging.
+        ("hands", "hand-fingers-distance-decr", 1.0),
         ("arms", "lowerarm-fat-decr", 0.6),
         ("arms", "lowerarm-muscle-incr", 0.35),
     )],
     ("hands", "measure-wrist-circ-decr", 0.45),
 ]
+# MakeHuman's finger proportions, corrected toward real hands before posing
+# (each finger stretched along its phalanges): its little finger is 65% of
+# the middle finger's length where a real hand's is ~76% (too short to curl
+# onto its key, it reached down straight), and its middle finger outgrows
+# index and ring by ~12% where real hands differ by ~5%.
+FINGER_LENGTH_SCALE = {"pinky": 1.14, "middle": 0.955, "ring": 1.03}
 CUFF_LENGTH = 0.045
 CUFF_RADIUS = 0.034
 CUFF_RIBS = 44
+# Resting touch-typing curl per finger, degrees: MCP and PIP flexion, and
+# splay from the hand's long axis (+ toward the little finger). The knuckles
+# are the hand's highest point (MCP joints flex, never bend backwards), the
+# fingers arch down to the keys in one curve and, curled, converge a little
+# toward the thumb's base as real fingers do.
+CURL = {"index": (35, 30, 4), "middle": (40, 36, 1), "ring": (38, 34, -1), "pinky": (32, 26, -4)}
+# How far a finger may comfortably depart from CURL to reach its key,
+# degrees (MCP, PIP, splay): fingers curl more or less easily, splaying
+# them sideways reads as wrong at once.
+CURL_GIVE = (10.0, 12.0, 3.0)
 # The DIP joint follows the PIP joint (they share a tendon). A resting hand
 # bends the fingertip joint less than hands.ts's striking fingers do.
-DIP_RATIO = 0.5
-# Fingertip-to-knuckle distance as a fraction of finger length at the home
-# row: hovering touch-typing hands keep the fingers long and gently curved,
-# knuckles ~5 cm above the keycaps.
-HAND_PITCH = 0.14
-REACH = {"index": 0.87, "middle": 0.8, "ring": 0.84, "pinky": 0.95, "thumb": 0.8}
+DIP_RATIO = 0.65
+# What the per-finger fit may use to touch its key exactly (degrees).
+MCP_RANGE = (0.0, 65.0)
+PIP_RANGE = (5.0, 95.0)
+SPLAY_RANGE = 15.0
+# How typing hands are held, degrees (mean, spread): turned in toward the
+# keyboard's centre, the back of the hand rising from the wrist to the
+# knuckles, thumb side up (forearms are never fully pronated).
+HAND_PRIOR = {"yaw": (12, 10), "pitch": (18, 5), "roll": (18, 8)}
 FINGER_KEYS = {
     "l": {"pinky": "KeyA", "ring": "KeyS", "middle": "KeyD", "index": "KeyF", "thumb": "SpaceLeftThumb"},
     "r": {"index": "KeyJ", "middle": "KeyK", "ring": "KeyL", "pinky": "Semicolon", "thumb": "SpaceRightThumb"},
@@ -182,6 +205,41 @@ def transform_character_to_layout(human, arm, layout):
         raise RuntimeError(f"Shoulder placement failed: {err_l:.6g}, {err_r:.6g}")
 
 
+def correct_finger_lengths(human, arm):
+    """Rescale the fingers in FINGER_LENGTH_SCALE along their phalanges:
+    each phalanx bone and the skin weighted to it change length along the
+    phalanx, and the joints beyond it move with it."""
+    moves = {}  # bone name -> (head, axis, length, scale, shift of its head)
+    for side in ("l", "r"):
+        for finger, scale in FINGER_LENGTH_SCALE.items():
+            shift = Vector()
+            for part in (1, 2, 3):
+                bone = arm.data.bones[f"{finger}_{part:02d}_{side}"]
+                head, tail = bone.head_local.copy(), bone.tail_local.copy()
+                axis, length = (tail - head).normalized(), (tail - head).length
+                moves[bone.name] = (head, axis, length, scale, shift.copy(), part == 3)
+                shift += axis * length * (scale - 1)
+    group_bone = {g.index: g.name for g in human.vertex_groups if g.name in moves}
+    for vert in human.data.vertices:
+        offset = Vector()
+        for item in vert.groups:
+            name = group_bone.get(item.group)
+            if name is None:
+                continue
+            head, axis, length, scale, shift, distal = moves[name]
+            along = max(0.0, (vert.co - head).dot(axis))
+            offset += item.weight * (shift + axis * (along if distal else min(length, along)) * (scale - 1))
+        vert.co += offset
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.mode_set(mode="EDIT")
+    for name, (head, axis, length, scale, shift, _) in moves.items():
+        bone = arm.data.edit_bones[name]
+        bone.head = head + shift
+        bone.tail = head + shift + axis * length * scale
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.context.view_layer.update()
+
+
 def empty_target(name, location):
     obj = bpy.data.objects.new(name, None)
     obj.empty_display_type = "PLAIN_AXES"
@@ -206,152 +264,163 @@ def anatomical_frame(arm, side):
     return Matrix((lateral, forward, up)).transposed()
 
 
-def hand_frame(side, yaw):
+def hand_frame(side, yaw, pitch, roll):
     """World frame (lateral, forward along the metacarpals, up columns) of a
-    hand with the knuckles a little above the wrist (slight wrist extension),
-    turned `yaw` radians in toward the keyboard's centre."""
-    yaw = yaw if side == "l" else -yaw
-    forward = Vector((yaw, 1.0, HAND_PITCH)).normalized()
-    lateral = Vector((1.0, -yaw, 0.0)).normalized()
-    up = lateral.cross(forward).normalized()
-    forward = up.cross(lateral).normalized()
-    return Matrix((lateral, forward, up)).transposed()
+    hand turned `yaw` in toward the keyboard's centre, pitched `pitch`
+    knuckles-up and rolled `roll` thumb-side up (radians)."""
+    s = 1 if side == "l" else -1
+    return Matrix.Rotation(-s * yaw, 3, "Z") @ Matrix.Rotation(pitch, 3, "X") @ Matrix.Rotation(-s * roll, 3, "Y")
 
 
-def orient_hand(arm, side, yaw):
-    """Rotate the whole hand rigidly about the wrist into hand_frame(side, yaw)."""
-    delta = hand_frame(side, yaw) @ anatomical_frame(arm, side).transposed()
+def orient_hand(arm, side, frame):
+    """Rotate the whole hand rigidly about the wrist into `frame`."""
+    delta = frame @ anatomical_frame(arm, side).transposed()
     hand = arm.pose.bones[f"hand_{side}"]
     m = (delta @ hand.matrix.to_3x3()).to_4x4()
     m.translation = hand.head.copy()
     hand.matrix = m
 
 
-def place_hand(arm, side, heights, home):
-    """Grid-search wrist position, height and inward turn so every finger's
-    knuckle sits at its REACH fraction from its home key and the fingers run
-    roughly along the hand (little spread)."""
-    frame = anatomical_frame(arm, side).transposed()
-    wrist = arm.pose.bones[f"hand_{side}"].head.copy()
-    fingers = {}
-    for finger in REACH:
-        b1, b2, b3 = (arm.pose.bones[f"{finger}_{part:02d}_{side}"] for part in (1, 2, 3))
-        length = (b1.tail - b1.head).length + (b2.tail - b2.head).length + (b3.tail - b3.head).length
-        fingers[finger] = (frame @ (b1.head - wrist), length, gltf_to_blender(home[FINGER_KEYS[side][finger]]))
-    sign = -1 if side == "l" else 1
-
-    def cost_of(world, w, report=False):
-        up, forward = world.col[2].to_3d(), world.col[1].to_3d()
-        cost = 0.0
-        for finger, (mcp_local, length, target) in fingers.items():
-            reach = target - (w + world @ mcp_local)
-            ratio = reach.length / length
-            cost += ((ratio - REACH[finger]) / (0.1 if finger == "thumb" else 0.04)) ** 2
-            angle = (reach - up * reach.dot(up)).angle(forward)
-            if finger != "thumb":
-                cost += (angle / 0.3) ** 2
-            if report:
-                print(f"  {side}.{finger} ratio {ratio:.2f} angle {math.degrees(angle):.0f}")
-        return cost
-
-    best = None
-    for yaw in (-0.1 + i * 0.02 for i in range(26)):
-        world = hand_frame(side, yaw)
-        for x in range(27):
-            for y in range(17):
-                for height in heights:
-                    w = Vector((sign * (0.05 + x * 0.005), -0.1 + y * 0.005, height))
-                    cost = cost_of(world, w)
-                    if best is None or cost < best[0]:
-                        best = (cost, yaw, w)
-    cost, yaw, w = best
-    cost_of(hand_frame(side, yaw), w, report=True)
-    print(f"HAND {side} wrist {tuple(round(c, 3) for c in w)} yaw {math.degrees(yaw):.0f} cost {cost:.2f}")
-    return yaw, w
-
-
-def fit_finger(arm, side, finger, target, flex_axis, up_axis, forward):
-    """Curl one finger onto `target` with anatomically coupled joints: solve
-    MCP flex, PIP flex (DIP = DIP_RATIO × PIP) and MCP spread by Gauss-Newton,
-    then pose the three phalanges. MakeHuman's rest hand fans its fingers
-    wide; spread is measured from the direction that lines the finger up
-    with the hand."""
+def finger_rig(arm, side, finger, frame):
+    """A finger's bones, rest joints and a `pose(mcp, pip, splay)` giving its
+    phalanges' world rotations, joint positions and flex axis for absolute
+    angles (radians; DIP = DIP_RATIO × PIP). The finger is rebuilt straight
+    along the hand, splayed, then curled about one axis, so MakeHuman's
+    fanned, twisted rest fingers do not leak into the pose."""
+    lateral, forward, up = (frame.col[i].to_3d() for i in range(3))
     bones = [arm.pose.bones[f"{finger}_{part:02d}_{side}"] for part in (1, 2, 3)]
     joints = [b.head.copy() for b in bones] + [bones[2].tail.copy()]
-    rest = [b.matrix.copy() for b in bones]
-    along = joints[3] - joints[0]
-    along -= up_axis * along.dot(up_axis)
-    ahead = forward - up_axis * forward.dot(up_axis)
-    aligned = math.atan2(along.cross(ahead).dot(up_axis), along.dot(ahead))
-    limits = ((-0.6, 1.4), (0.0, 1.6), (aligned - 0.4, aligned + 0.4))
-    if finger == "middle":
-        r = lambda v: tuple(round(c, 3) for c in v)  # noqa: E731
-        print("DBG", side, "joints", [r(j) for j in joints], "target", r(target), "flex", r(flex_axis), "up", r(up_axis),
-              "fwd", r(forward), "aligned", round(math.degrees(aligned)))
+    lengths = [(joints[i + 1] - joints[i]).length for i in range(3)]
+    rest = []
+    for i in range(3):
+        y = (joints[i + 1] - joints[i]).normalized()
+        x = (-lateral - y * (-lateral).dot(y)).normalized()
+        rest.append(Matrix((x, y, x.cross(y))).transposed())
+    toward_pinky = 1 if side == "l" else -1
 
-    def chain(params):
-        base, mid, spread = params
-        rotation = Matrix.Rotation(spread, 3, up_axis) @ Matrix.Rotation(base, 3, flex_axis)
-        cumulative, heads = [], [joints[0]]
-        for i, angle in enumerate((None, mid, mid * DIP_RATIO)):
-            if angle is not None:
-                rotation = rotation @ Matrix.Rotation(angle, 3, flex_axis)
-            cumulative.append(rotation.copy())
-            heads.append(heads[-1] + rotation @ (joints[i + 1] - joints[i]))
-        return cumulative, heads
+    def pose(mcp, pip, splay):
+        turn = Matrix.Rotation(toward_pinky * splay, 3, up)
+        axis = turn @ -lateral  # positive rotation curls toward the palm
+        straight = turn @ forward
+        heads, rotations, bend = [joints[0]], [], 0.0
+        for i, angle in enumerate((mcp, pip, pip * DIP_RATIO)):
+            bend += angle
+            y = Matrix.Rotation(bend, 3, axis) @ straight
+            rotations.append(Matrix((axis, y, axis.cross(y))).transposed() @ rest[i].transposed())
+            heads.append(heads[-1] + y * lengths[i])
+        return rotations, heads, axis
 
-    length = sum((joints[i + 1] - joints[i]).length for i in range(3))
-    print(f"REACH {side}.{finger} needs {(target - joints[0]).length * 1000:.0f}mm of {length * 1000:.0f}mm; "
-          f"rest tip {tuple(round(c, 3) for c in joints[3])} target {tuple(round(c, 3) for c in target)}")
-    # Coarse grid first (clamped Gauss-Newton alone stalls at the limits),
-    # preferring the natural MCP ≈ 0.4 × PIP distribution among near fits.
-    best = None
-    for i in range(20):
-        for j in range(17):
-            for k in range(19):
-                trial = [limits[0][0] + i * 0.105, j * 0.1, limits[2][0] + k * 0.8 / 18]
-                miss = (chain(trial)[1][3] - target).length
-                score = miss + 0.002 * abs(trial[0] - 0.4 * trial[1])
-                if best is None or score < best[0]:
-                    best = (score, trial)
-    params = best[1]
-    for _ in range(40):
-        tip = chain(params)[1][3]
+    return bones, joints, pose
+
+
+def place_hand(arm, side, home, key_top):
+    """Rigid hand pose from which each finger reaches its home key with the
+    least departure from CURL (weighted by CURL_GIVE), weighed against
+    HAND_PRIOR. The hand is rigid, so each finger's angle-to-fingertip
+    response is fixed in hand coordinates: search turn, pitch and roll, and
+    per candidate solve the wrist position by weighted least squares on the
+    linearised angle changes. Returns (frame, wrist)."""
+    frame = anatomical_frame(arm, side)
+    to_local = frame.transposed()
+    wrist = arm.pose.bones[f"hand_{side}"].head.copy()
+    give = Matrix.Diagonal([1 / math.radians(g) for g in CURL_GIVE])
+    fingers = []
+    for finger, curl in CURL.items():
+        _, _, pose = finger_rig(arm, side, finger, frame)
+        natural = [math.radians(a) for a in curl]
+        tip = pose(*natural)[1][3]
+        columns = []
+        for j in range(3):
+            nudged = list(natural)
+            nudged[j] += 1e-3
+            columns.append(to_local @ ((pose(*nudged)[1][3] - tip) / 1e-3))
+        to_angles = Matrix(columns).transposed().inverted()  # hand-local tip offset -> angle change
+        target = gltf_to_blender(home[FINGER_KEYS[side][finger]])
+        fingers.append((to_local @ (tip - wrist), to_angles, give @ to_angles, target, curl))
+
+    def fit(yaw, pitch, roll):
+        world = hand_frame(side, *(math.radians(a) for a in (yaw, pitch, roll)))
+        inverse = world.transposed()
+        rows = []
+        normal, rhs = Matrix.Diagonal((0.0, 0.0, 0.0)), Vector((0.0, 0.0, 0.0))
+        for tip, _, weighted, target, _ in fingers:
+            m = weighted @ inverse  # weighted angle change = b - m @ w
+            b = m @ target - weighted @ tip
+            rows.append((m, b))
+            normal += m.transposed() @ m
+            rhs += m.transposed() @ b
+        w = normal.inverted() @ rhs
+        cost = sum((b - m @ w).length_squared for m, b in rows)
+        changes = []
+        for tip, to_angles, _, target, curl in fingers:
+            change = [math.degrees(a) for a in to_angles @ (inverse @ (target - w) - tip)]
+            changes.append(change)
+            cost += (max(0.0, 2.0 - curl[0] - change[0]) / 1.0) ** 2  # no MCP hyperextension
+            cost += (max(0.0, 8.0 - curl[1] - change[1]) / 1.0) ** 2
+        for name, angle in (("yaw", yaw), ("pitch", pitch), ("roll", roll)):
+            mean, spread = HAND_PRIOR[name]
+            cost += ((angle - mean) / spread) ** 2
+        cost += (max(0.0, key_top + 0.03 - w.z) / 0.005) ** 2  # wrist clear of the keycaps
+        return cost, world, w, changes, (yaw, pitch, roll)
+
+    cost, world, w, changes, angles = min(
+        (fit(yaw, pitch, roll) for yaw in range(-10, 37, 2) for pitch in range(-6, 31, 2) for roll in range(-6, 41, 2)),
+        key=lambda r: r[0])
+    span = (arm.pose.bones[f"index_01_{side}"].head - arm.pose.bones[f"pinky_01_{side}"].head).length
+    print(f"HAND {side} knuckle span {span * 1000:.0f}mm yaw/pitch/roll {angles} wrist {tuple(round(c, 3) for c in w)} cost {cost:.2f} "
+          f"curl changes {[[round(a) for a in c] for c in changes]}")
+    return world, w
+
+
+def fit_finger(arm, side, finger, target, frame):
+    """Land one finger on `target` starting from its CURL shape: damped
+    least squares over MCP, PIP and splay within the anatomical ranges, then
+    pose the three phalanges. Returns the finger's flex axis."""
+    bones, joints, pose = finger_rig(arm, side, finger, frame)
+    rest = [b.matrix.copy() for b in bones]  # before posing moves the children
+    mcp0, pip0, splay0 = CURL[finger]
+    limits = [tuple(math.radians(a) for a in r) for r in
+              (MCP_RANGE, PIP_RANGE, (splay0 - SPLAY_RANGE, splay0 + SPLAY_RANGE))]
+    params = [math.radians(a) for a in (mcp0, pip0, splay0)]
+    for _ in range(80):
+        tip = pose(*params)[1][3]
         error = target - tip
-        if error.length < 1e-6:
+        if error.length < 1e-5:
             break
-        jacobian = []
+        columns = []
         for j in range(3):
             nudged = list(params)
             nudged[j] += 1e-4
-            jacobian.append((chain(nudged)[1][3] - tip) / 1e-4)
-        jt = Matrix([list(c) for c in jacobian])  # rows = parameter columns of J
-        step = jt.transposed().inverted_safe() @ error if abs(jt.determinant()) > 1e-12 else jt @ error
-        params = [min(hi, max(lo, p + max(-0.2, min(0.2, d)))) for p, d, (lo, hi) in zip(params, step, limits)]
-    cumulative, heads = chain(params)
-    for bone, rotation, head, old_head, matrix in zip(bones, cumulative, heads, joints, rest):
+            columns.append((pose(*nudged)[1][3] - tip) / 1e-4)
+        jac = Matrix(columns).transposed()  # columns: d tip / d param
+        step = jac.transposed() @ ((jac @ jac.transposed() + Matrix.Identity(3) * 1e-4).inverted() @ error)
+        params = [min(hi, max(lo, p + max(-0.1, min(0.1, d)))) for p, d, (lo, hi) in zip(params, step, limits)]
+    rotations, heads, axis = pose(*params)
+    for bone, rotation, head, old_head, matrix in zip(bones, rotations, heads, joints, rest):
         bone.matrix = Matrix.Translation(head) @ rotation.to_4x4() @ Matrix.Translation(-old_head) @ matrix
         bpy.context.view_layer.update()
-    print(f"FINGER {side}.{finger} mcp {math.degrees(params[0]):.0f} pip {math.degrees(params[1]):.0f} "
-          f"spread {math.degrees(params[2] - aligned):.0f} error {(bones[2].tail - target).length * 1000:.2f}mm")
+    mcp, pip, splay = (math.degrees(p) for p in params)
+    print(f"FINGER {side}.{finger} mcp {mcp:.0f} pip {pip:.0f} dip {pip * DIP_RATIO:.0f} splay {splay:.0f} "
+          f"error {(bones[2].tail - target).length * 1000:.2f}mm")
+    return axis
 
 
 def pose_typing(arm, layout):
-    """IK the arms and all 30 finger phalanges into the layout home keys."""
+    """IK the arms and all 30 finger phalanges into the layout home keys.
+    Returns each finger's flex axis (armature space) by (side, finger)."""
     bpy.context.view_layer.objects.active = arm
     bpy.ops.object.mode_set(mode="POSE")
     # MPFB allows slight stretch by default; hard-disable it for believable anatomy.
     for pb in arm.pose.bones:
         pb.ik_stretch = 0.0
-    # Wrists sit just above the keycaps; where (and how far turned in) is
-    # searched per hand so each finger reaches its home key in a relaxed curve.
+    # Each hand is placed (and turned, pitched, rolled) so its fingers reach
+    # their home keys in their natural resting curl.
     key_top = layout["keyboard"]["keyTopY"]["frontRow"]
-    heights = [key_top + 0.02 + 0.005 * i for i in range(7)]
     home = layout["keyboard"]["homeKeys"]
     targets = []
     wrist_targets = {}
     for side in ("l", "r"):
-        target = empty_target(f"_ik_wrist_{side}", Vector((-0.1 if side == "l" else 0.1, -0.056, heights[3])))
+        target = empty_target(f"_ik_wrist_{side}", Vector((-0.1 if side == "l" else 0.1, -0.056, key_top + 0.035)))
         targets.append(target)
         wrist_targets[side] = target
         con = arm.pose.bones[f"lowerarm_{side}"].constraints.new("IK")
@@ -362,20 +431,20 @@ def pose_typing(arm, layout):
         con.use_stretch = False
     bpy.context.view_layer.update()
     for side in ("l", "r"):
-        orient_hand(arm, side, 0.0)
+        orient_hand(arm, side, hand_frame(side, 0.0, 0.0, 0.0))
         bpy.context.view_layer.update()
-        yaw, wrist = place_hand(arm, side, heights, home)
+        frame, wrist = place_hand(arm, side, home, key_top)
         wrist_targets[side].location = wrist
         bpy.context.view_layer.update()
-        orient_hand(arm, side, yaw)
+        orient_hand(arm, side, frame)
         bpy.context.view_layer.update()
+        reached = arm.pose.bones[f"hand_{side}"].head
+        print(f"WRIST {side} reached within {(reached - wrist).length * 1000:.1f}mm")
 
     finger_targets = {}
+    flex_axes = {}
     for side, mapping in FINGER_KEYS.items():
         frame = anatomical_frame(arm, side)
-        flex_axis = -frame.col[0].to_3d()  # positive angles curl toward the palm
-        up_axis = frame.col[2].to_3d()
-        forward = frame.col[1].to_3d()
         for finger, key in mapping.items():
             pos = gltf_to_blender(home[key])
             finger_targets[(side, finger)] = pos
@@ -389,7 +458,7 @@ def pose_typing(arm, layout):
                 con.iterations = 128
                 con.use_stretch = False
             else:
-                fit_finger(arm, side, finger, pos, flex_axis, up_axis, forward)
+                flex_axes[(side, finger)] = fit_finger(arm, side, finger, pos, frame)
     for _ in range(4):
         bpy.context.view_layer.update()
 
@@ -413,6 +482,7 @@ def pose_typing(arm, layout):
     for target in targets:
         bpy.data.objects.remove(target, do_unlink=True)
     bpy.ops.object.mode_set(mode="OBJECT")
+    return flex_axes
 
 
 def apply_pose_as_rest(human, arm):
@@ -436,12 +506,14 @@ def apply_pose_as_rest(human, arm):
     mod.use_deform_preserve_volume = True
 
 
-def normalize_control_axes(arm):
+def normalize_control_axes(arm, flex_axes):
     """Give every phalanx one predictable local-axis animation convention.
 
-    Bone local +Y runs down each phalanx. Aligning local +Z toward the
-    keyboard makes positive local-X rotation carry +Y toward +Z, so the same
-    positive X delta curls every finger downward.
+    Bone local +Y runs down each phalanx and local +X is the finger's flex
+    axis (from pose_typing), so +X rotation carries +Y toward +Z, palmward:
+    the same positive X delta curls every phalanx in the finger's own plane,
+    even a fingertip that points straight down. Hand and thumb bones take
+    local +Z toward the desk.
     """
     bpy.context.view_layer.objects.active = arm
     bpy.ops.object.mode_set(mode="EDIT")
@@ -451,9 +523,13 @@ def normalize_control_axes(arm):
         forward = (arm.data.edit_bones[f"middle_01_{side}"].head - hand.head).normalized()
         hand.tail = hand.head + forward * 0.075
         hand.align_roll(down)
-        for finger in ("thumb", "index", "middle", "ring", "pinky"):
+        for part in (1, 2, 3):
+            arm.data.edit_bones[f"thumb_{part:02d}_{side}"].align_roll(down)
+        for finger in ("index", "middle", "ring", "pinky"):
+            axis = flex_axes[(side, finger)]
             for part in (1, 2, 3):
-                arm.data.edit_bones[f"{finger}_{part:02d}_{side}"].align_roll(down)
+                bone = arm.data.edit_bones[f"{finger}_{part:02d}_{side}"]
+                bone.align_roll(axis.cross((bone.tail - bone.head).normalized()))
     bpy.ops.object.mode_set(mode="OBJECT")
 
 
@@ -484,17 +560,13 @@ def prune_skin(human, arm):
 
 
 def enhance_skin_geometry(human, arm):
-    """Add restrained knuckle/tendon relief, then smooth with one subdivision."""
+    """Add restrained knuckle relief, then smooth with one subdivision. (The
+    extensor tendons are texture detail: under a curled hand's skin they are
+    too soft for the mesh's resolution.)"""
     mesh = human.data
     mesh.update()
-    knuckles = []
-    tendons = []
-    for side in ("l", "r"):
-        wrist = arm.data.bones[f"hand_{side}"].head_local.copy()
-        for finger in ("index", "middle", "ring", "pinky"):
-            mcp = arm.data.bones[f"{finger}_01_{side}"].head_local.copy()
-            knuckles.append(mcp)
-            tendons.append((wrist, mcp))
+    knuckles = [arm.data.bones[f"{finger}_01_{side}"].head_local.copy()
+                for side in ("l", "r") for finger in ("index", "middle", "ring", "pinky")]
     for vert in mesh.vertices:
         p = vert.co
         lift = 0.0
@@ -503,18 +575,6 @@ def enhance_skin_geometry(human, arm):
             if planar < 0.014:
                 top_weight = max(0.0, min(1.0, (p.z - (mcp.z - 0.012)) / 0.014))
                 lift += 0.0022 * math.exp(-((planar / 0.0085) ** 2)) * top_weight
-        for wrist, mcp in tendons:
-            line = mcp - wrist
-            denom = line.x * line.x + line.y * line.y
-            if denom < 1e-8:
-                continue
-            t = max(0.0, min(1.0, ((p.x-wrist.x)*line.x + (p.y-wrist.y)*line.y) / denom))
-            if 0.18 < t < 0.92:
-                nearest = wrist.lerp(mcp, t)
-                planar = Vector((p.x-nearest.x, p.y-nearest.y, 0.0)).length
-                if planar < 0.0045:
-                    top_weight = max(0.0, min(1.0, (p.z - (nearest.z - 0.010)) / 0.012))
-                    lift += 0.00065 * math.exp(-((planar / 0.0025) ** 2)) * math.sin(t * math.pi) * top_weight
         p.z += min(lift, 0.0028)
     sub = human.modifiers.new("Skin silhouette", "SUBSURF")
     sub.subdivision_type = "CATMULL_CLARK"
@@ -861,9 +921,10 @@ def main():
     skin_path = ensure_assets()
     human, arm = create_mpfb_human(skin_path)
     transform_character_to_layout(human, arm, layout)
-    pose_typing(arm, layout)
+    correct_finger_lengths(human, arm)
+    flex_axes = pose_typing(arm, layout)
     apply_pose_as_rest(human, arm)
-    normalize_control_axes(arm)
+    normalize_control_axes(arm, flex_axes)
     prune_skin(human, arm)
     enhance_skin_geometry(human, arm)
     mh_diffuse = next(n.image for n in human.data.materials[0].node_tree.nodes

@@ -421,24 +421,29 @@ def bake_skin(human, arm, mh_image, size=2048, cache=None):
         wrist = _vec(bones[f"hand_{side}"].head_local)
         up = _vec(_dorsal(bones[f"hand_{side}"]))
         knuckles = [_vec(bones[f"{f}_01_{side}"].head_local) for f in FINGERS[1:]]
-        start = wrist + (np.mean(knuckles, 0) - wrist) * 0.12
+        mean = np.mean(knuckles, 0)
         for j0 in knuckles:
             rel = p - j0
             planar = rel - np.outer(rel @ up, up)
             domes = np.maximum(domes, on_side * np.exp(-(np.linalg.norm(planar, axis=1) / 0.0055) ** 2))
+            # Extensor tendon: out from under the wrist, where the four run
+            # within ~2 cm, fanning to its knuckle. Relaxed over a curled hand:
+            # a soft ridge a few mm wide, only across the middle of the hand.
+            start = wrist + (mean - wrist) * 0.15 + (j0 - mean) * 0.35
             seg = j0 - start
             t = np.clip(((p - start) @ seg) / (seg @ seg), 0, 1)
             d = p - (start + t[:, None] * seg)
             d -= np.outer(d @ up, up)
-            ridge = np.exp(-(np.linalg.norm(d, axis=1) / 0.0017) ** 2) * _smoothstep(0.1, 0.35, t) * (1 - _smoothstep(0.8, 1.0, t))
+            ridge = np.exp(-(np.linalg.norm(d, axis=1) / 0.0032) ** 2) * _smoothstep(0.15, 0.45, t) * (1 - _smoothstep(0.7, 0.92, t))
             tendons = np.maximum(tendons, on_side * ridge)
     domes *= dorsal_hand
     tendons *= dorsal_hand
-    # Veins: zero crossings of smooth noise stretched along the hand make a
-    # wandering, branching network; strongest mid-hand, gone at the knuckles.
-    q = np.stack([hand_u / 0.035, hand_v / 0.011, p[:, 0] * 40], 1).astype(np.float32)
+    # Veins: zero crossings of smooth noise, a little stretched along the
+    # hand, make a wandering, branching network (not parallel streaks);
+    # strongest mid-hand, gone at the knuckles.
+    q = np.stack([hand_u / 0.022, hand_v / 0.013, p[:, 0] * 40], 1).astype(np.float32)
     net = value_noise(q, 1.0, seed=11) + 0.2 * value_noise(q * 2.3, 1.0, seed=12)
-    veins = np.exp(-(net / 0.12) ** 2) * dorsal_hand * _smoothstep(0.0, 0.025, hand_u) * (1 - _smoothstep(0.05, 0.075, hand_u))
+    veins = np.exp(-(net / 0.1) ** 2) * dorsal_hand * _smoothstep(0.0, 0.025, hand_u) * (1 - _smoothstep(0.05, 0.075, hand_u))
     g1, g2, _ = voronoi(p, 0.0011, seed=2)
     groove = np.exp(-((g2 - g1) / 0.00008) ** 2)
     warp = value_noise(p, 0.0015, seed=3)
@@ -447,7 +452,7 @@ def bake_skin(human, arm, mh_image, size=2048, cache=None):
     pore = np.exp(-(voronoi(p, 0.0007, seed=1)[0] / 0.00016) ** 2)
     # Faint lengthwise ridges on the nails (0.6 mm apart across the nail).
     ridges = np.sin(wr_lat * (2 * np.pi / 0.0006) + 2 * value_noise(p, 0.002, seed=4)) * nail
-    height = skin * (550e-6 * domes + 380e-6 * tendons + 170e-6 * veins
+    height = skin * (550e-6 * domes + 130e-6 * tendons + 110e-6 * veins
                      - 90e-6 * wrinkle - 16e-6 * groove - 10e-6 * pore) + 3e-6 * ridges
 
     # Albedo: MakeHuman's colour variation at half strength around SKIN_TONE.
@@ -460,7 +465,7 @@ def bake_skin(human, arm, mh_image, size=2048, cache=None):
     albedo *= 1 + (redden - 1) * np.clip(0.75 * knuckle + 0.6 * tip, 0, 1)[:, None]
     albedo *= 1 - veins[:, None] * np.array([0.12, 0.06, -0.03], np.float32)
     # Skin stretched over tendons and knuckles is paler and less red.
-    albedo *= 1 + np.clip(0.6 * tendons + 0.4 * domes, 0, 1)[:, None] * np.array([0.03, 0.05, 0.05], np.float32)
+    albedo *= 1 + np.clip(0.3 * tendons + 0.4 * domes, 0, 1)[:, None] * np.array([0.03, 0.05, 0.05], np.float32)
     albedo *= (1 - 0.06 * pore - 0.035 * groove - 0.1 * wrinkle)[:, None]
     h1, _, spot = voronoi(p, 0.0016, seed=8)
     freckle = (spot > 0.965) * np.exp(-(h1 / 0.00032) ** 2) * (1 - 0.6 * handness)
