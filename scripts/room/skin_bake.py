@@ -1,5 +1,5 @@
 """Skin for the POV arms: anatomical fields, nail plates, a hand-weighted
-UV layout, and baked albedo / roughness / normal textures.
+UV layout, and baked albedo / occlusion-roughness / normal textures.
 
 Colour starts from the MakeHuman CC0 skin (low-frequency tone only: its
 hands are ~400 px wide). Everything finer is procedural and computed per
@@ -57,7 +57,7 @@ def anatomy_fields(human, arm):
             weight[names[g.group]][v.index] = g.weight
     zero = np.zeros(n, np.float32)
     out = {k: zero.copy() for k in ("wr_d", "wr_lat", "wr_mask", "knuckle", "tip", "dorsal", "hand_u", "hand_v",
-                                    "handness", "arm_u", "arm_v", "hairy", "nail_region", "nail_u")}
+                                    "handness", "arm_u", "arm_v", "hairy", "nail_region", "nail_u", "nail_c")}
     bones = arm.data.bones
     for side in ("l", "r"):
         on_side = (co[:, 0] < 0) if side == "l" else (co[:, 0] >= 0)
@@ -129,11 +129,13 @@ def anatomy_fields(human, arm):
             radius = np.linalg.norm(radial, axis=1) + 1e-6
             up_frac = np.sum(radial * dors, 1) / radius
             lat = np.sum(radial * side_axis, 1)
-            # Knuckle wrinkles: nearest joint along the finger, back of the finger only.
+            # Knuckle wrinkles: nearest joint along the finger, back of the
+            # finger only; none over the MCP knuckles (the skin there is
+            # stretched over the bone as the finger curls).
             if finger == "thumb":
-                joint_s, strength, sigma = [starts[1], starts[2]], [0.8, 1.0], [0.006, 0.0045]
+                joint_s, strength, sigma = [starts[1], starts[2]], [0.5, 0.6], [0.006, 0.0045]
             else:
-                joint_s, strength, sigma = [0.0, starts[1], starts[2]], [0.55, 1.0, 0.75], [0.008, 0.006, 0.0042]
+                joint_s, strength, sigma = [starts[1], starts[2]], [0.7, 0.5], [0.006, 0.0042]
             offsets = np.stack([s - js for js in joint_s], 1)
             nearest = np.argmin(np.abs(offsets), 1)
             jd = offsets[np.arange(len(idx)), nearest]
@@ -153,6 +155,7 @@ def anatomy_fields(human, arm):
             region = (seg == 2) & (t_distal > 0.4) & (t_distal < 0.98) & (up_frac > 0.55) & (w_chain[idx] > 0.5)
             out["nail_region"][idx] = np.where(region, 1.0, out["nail_region"][idx])
             out["nail_u"][idx] = np.where(seg == 2, np.clip((t_distal - 0.4) / 0.58, 0, 1), out["nail_u"][idx])
+            out["nail_c"][idx] = np.where(seg == 2, up_frac, out["nail_c"][idx])
     for name, values in out.items():
         attr = mesh.attributes.get(name) or mesh.attributes.new(name, "FLOAT", "POINT")
         attr.data.foreach_set("value", values.astype(np.float32))
@@ -312,7 +315,7 @@ def _attr(nt, name, scale=1.0, offset=0.0):
     return math_node.outputs[0]
 
 
-def _bake(human, material, size):
+def _bake(human, material, size, kind="EMIT"):
     image = bpy.data.images.new(f"bake_{material.name}", size, size, alpha=False, float_buffer=True)
     image.colorspace_settings.name = "Non-Color"
     nt = material.node_tree
@@ -328,12 +331,48 @@ def _bake(human, material, size):
     bake = bpy.context.scene.render.bake
     bake.margin = 16
     bake.margin_type = "EXTEND"
-    bpy.ops.object.bake(type="EMIT", margin=16)
+    bpy.ops.object.bake(type=kind, margin=16)
     pixels = np.empty(size * size * 4, np.float32)
     image.pixels.foreach_get(pixels)
     bpy.data.images.remove(image)
     bpy.data.materials.remove(material)
     return pixels.reshape(size, size, 4)[..., :3]
+
+
+def _bake_occlusion(human, size, distance=0.02, samples=96):
+    """The posed skin's ambient occlusion by itself within `distance` metres:
+    dark in the valleys between knuckles, the gaps between fingers and the
+    creases of bent joints. Baked at half resolution (it is smooth),
+    lightly blurred and upsampled."""
+    scene = bpy.context.scene
+    if scene.world is None:
+        scene.world = bpy.data.worlds.new("bake_world")
+    scene.world.light_settings.distance = distance
+    scene.cycles.samples = samples
+    material, _, _ = _emit_material("field_ao")
+    half = _bake(human, material, size // 2, kind="AO")[..., 0]
+    scene.cycles.samples = 1
+    # Average out the sampling noise, within the UV islands.
+    inside = (half > 0.0).astype(np.float32)
+    total = np.zeros_like(half)
+    weight = np.zeros_like(half)
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            total += np.roll(half * inside, (dy, dx), (0, 1))
+            weight += np.roll(inside, (dy, dx), (0, 1))
+    # Outside the UV islands: unoccluded, so mipmaps don't darken their edges.
+    half = np.where(inside > 0.0, total / np.maximum(weight, 1.0), 1.0)
+    return _upsample2(half)
+
+
+def _upsample2(image):
+    """Bilinear 2x upsample of a 2D array (pixel centres preserved)."""
+    def rows(a):
+        out = np.empty((2 * (a.shape[0] - 2), *a.shape[1:]), np.float32)
+        out[0::2] = 0.75 * a[1:-1] + 0.25 * a[:-2]
+        out[1::2] = 0.75 * a[1:-1] + 0.25 * a[2:]
+        return out
+    return rows(rows(np.pad(image, 1, mode="edge")).T).T
 
 
 def _bake_fields(human, packs, size):
@@ -361,7 +400,7 @@ def _to_image(name, rgb, colorspace):
 
 
 def bake_skin(human, arm, mh_image, size=2048, cache=None):
-    """Bake albedo, roughness and normal textures for the skin into SKIN_UV
+    """Bake albedo, occlusion-roughness and normal textures for the skin into SKIN_UV
     and give the mesh its final material. Returns the material."""
     scene = bpy.context.scene
     scene.render.engine = "CYCLES"
@@ -398,9 +437,10 @@ def bake_skin(human, arm, mh_image, size=2048, cache=None):
         (field("knuckle"), field("tip"), field("dorsal", 0.5, 0.5)),
         (field("hand_u", 5, 0.5), field("hand_v", 5, 0.5), field("handness")),
         (field("arm_u", 3), field("arm_v", 5, 0.5), field("hairy")),
-        (field("nail"), field("nail_u"), None),
+        (field("nail"), field("nail_u"), field("nail_c", 0.5, 0.5)),
     ], size)
 
+    occlusion = _bake_occlusion(human, size).ravel()
     flat = lambda a: a.reshape(-1, a.shape[-1]) if a.ndim == 3 else a.ravel()  # noqa: E731
     p = flat(position)
     wr_d, wr_lat, wr_mask = (wr[..., 0].ravel() - 0.5) / 10, (wr[..., 1].ravel() - 0.5) / 10, wr[..., 2].ravel()
@@ -408,11 +448,16 @@ def bake_skin(human, arm, mh_image, size=2048, cache=None):
     hand_u, hand_v, handness = (handf[..., 0].ravel() - 0.5) / 5, (handf[..., 1].ravel() - 0.5) / 5, handf[..., 2].ravel()
     arm_u, arm_v, hairy = armf[..., 0].ravel() / 3, (armf[..., 1].ravel() - 0.5) / 5, armf[..., 2].ravel()
     nail, nail_u = np.clip(nailf[..., 0].ravel(), 0, 1), nailf[..., 1].ravel()
+    # How near the nail's midline (1) from its sides (0).
+    nail_mid = np.clip((nailf[..., 2].ravel() - 0.5) / 0.5 - 0.55, 0, 0.45) / 0.45
     skin = 1.0 - nail
+    print(f"SKIN hand occlusion percentiles 1/10/50: {np.percentile(occlusion[handness > 0.5], [1, 10, 50]).round(2)}")
 
     # Height (metres). The texture resolves ~0.2 mm on the hands, so the
-    # detail is what reads at that scale: knuckle domes and extensor tendons,
-    # veins, knuckle wrinkles, the ~1 mm polygonal micro-relief of skin.
+    # detail is what reads at that scale: extensor tendons, veins, knuckle
+    # wrinkles, the ~1 mm polygonal micro-relief of skin. (The knuckles
+    # themselves are geometry, build_arms.sculpt_hand_back; `domes` only
+    # pales the skin stretched over them.)
     dorsal_hand = handness * _smoothstep(0.2, 0.7, dorsal)
     domes = np.zeros(len(p), np.float32)
     tendons = np.zeros(len(p), np.float32)
@@ -445,15 +490,15 @@ def bake_skin(human, arm, mh_image, size=2048, cache=None):
     net = value_noise(q, 1.0, seed=11) + 0.2 * value_noise(q * 2.3, 1.0, seed=12)
     veins = np.exp(-(net / 0.1) ** 2) * dorsal_hand * _smoothstep(0.0, 0.025, hand_u) * (1 - _smoothstep(0.05, 0.075, hand_u))
     g1, g2, _ = voronoi(p, 0.0011, seed=2)
-    groove = np.exp(-((g2 - g1) / 0.00008) ** 2)
+    # Grooves at least a texel wide, or they alias into a regular mesh.
+    groove = np.exp(-((g2 - g1) / 0.00016) ** 2)
     warp = value_noise(p, 0.0015, seed=3)
     phase = (wr_d + 2.5 * wr_lat ** 2) / 0.00125 + 0.35 * warp
     wrinkle = np.exp(-((phase - np.round(phase)) / 0.18) ** 2) * wr_mask
     pore = np.exp(-(voronoi(p, 0.0007, seed=1)[0] / 0.00016) ** 2)
     # Faint lengthwise ridges on the nails (0.6 mm apart across the nail).
     ridges = np.sin(wr_lat * (2 * np.pi / 0.0006) + 2 * value_noise(p, 0.002, seed=4)) * nail
-    height = skin * (550e-6 * domes + 130e-6 * tendons + 110e-6 * veins
-                     - 90e-6 * wrinkle - 16e-6 * groove - 10e-6 * pore) + 3e-6 * ridges
+    height = skin * (90e-6 * tendons + 110e-6 * veins - 90e-6 * wrinkle - 8e-6 * groove - 8e-6 * pore) + 3e-6 * ridges
 
     # Albedo: MakeHuman's colour variation at half strength around SKIN_TONE.
     mh_rgb = flat(mh)
@@ -466,7 +511,7 @@ def bake_skin(human, arm, mh_image, size=2048, cache=None):
     albedo *= 1 - veins[:, None] * np.array([0.12, 0.06, -0.03], np.float32)
     # Skin stretched over tendons and knuckles is paler and less red.
     albedo *= 1 + np.clip(0.3 * tendons + 0.4 * domes, 0, 1)[:, None] * np.array([0.03, 0.05, 0.05], np.float32)
-    albedo *= (1 - 0.06 * pore - 0.035 * groove - 0.1 * wrinkle)[:, None]
+    albedo *= (1 - 0.04 * pore - 0.02 * groove - 0.1 * wrinkle)[:, None]
     h1, _, spot = voronoi(p, 0.0016, seed=8)
     freckle = (spot > 0.965) * np.exp(-(h1 / 0.00032) ** 2) * (1 - 0.6 * handness)
     albedo *= 1 - freckle[:, None] * np.array([0.12, 0.2, 0.24], np.float32)
@@ -475,26 +520,34 @@ def bake_skin(human, arm, mh_image, size=2048, cache=None):
     hh, _, hid = voronoi(hair_q, 1.0, seed=9)
     hair = (hid > 0.35) * np.exp(-(hh / 0.1) ** 2) * hairy
     albedo *= 1 - 0.35 * hair[:, None] * np.array([0.8, 0.85, 0.88], np.float32)
-    # Nails: pink bed, pale lunula at the cuticle, white free edge.
+    # Nails: pink bed, a pale half-moon lunula at the cuticle (reaching
+    # furthest along the midline), white free edge.
     bed = np.array([0.72, 0.42, 0.37], np.float32)
-    lunula = np.array([0.84, 0.68, 0.63], np.float32)
+    lunula = np.array([0.8, 0.6, 0.55], np.float32)
     free_edge = np.array([0.88, 0.84, 0.78], np.float32)
-    nail_color = bed + (lunula - bed) * (1 - _smoothstep(0.06, 0.2, nail_u))[:, None]
+    reach = 0.2 * np.sqrt(nail_mid)
+    nail_color = bed + (lunula - bed) * (1 - _smoothstep(reach - 0.06, reach, nail_u))[:, None]
     nail_color = nail_color + (free_edge - nail_color) * (0.7 * _smoothstep(0.9, 0.97, nail_u))[:, None]
     albedo = albedo * skin[:, None] + nail_color * nail[:, None]
     albedo = np.clip(albedo, 0, 1)
 
-    # Skin's sheen is broad and soft (roughness ~0.6); knuckles and
-    # fingertips a little shinier, creases and pores duller.
+    # Skin's sheen is broad and soft (roughness ~0.6), breaking up over a few
+    # millimetres; knuckles and fingertips a little shinier, creases and
+    # pores duller.
     roughness = (0.6 - 0.05 * np.clip(knuckle + tip, 0, 1) + 0.06 * pore + 0.08 * groove
-                 + 0.08 * wrinkle) * skin + (0.22 + 0.04 * np.abs(ridges)) * nail
+                 + 0.08 * wrinkle + 0.05 * value_noise(p, 0.0025, seed=13)) * skin + (0.32 + 0.04 * np.abs(ridges)) * nail
     roughness = np.clip(roughness, 0.1, 0.8)
 
     shape = (size, size)
     srgb = np.where(albedo <= 0.0031308, albedo * 12.92, 1.055 * np.power(albedo, 1 / 2.4) - 0.055)
     albedo_img = _to_image("skin_albedo", srgb.reshape(*shape, 3), "sRGB")
     albedo_img.colorspace_settings.name = "sRGB"
-    rough_img = _to_image("skin_roughness", np.repeat(roughness.reshape(*shape, 1), 3, -1), "Non-Color")
+    # Occlusion, roughness and (no) metalness in one texture (glTF's ORM
+    # packing): the valleys between knuckles, the gaps between fingers and
+    # the creases, which the realtime lights can't resolve; skin.ts darkens
+    # direct light there too.
+    orm = np.stack([occlusion, roughness, np.zeros_like(roughness)], -1)
+    rough_img = _to_image("skin_orm", orm.reshape(*shape, 3), "Non-Color")
 
     # Height → tangent-space normal map, differentiating in texel space and
     # scaling by metres per texel along u and v (MikkTSpace tangents follow
@@ -522,10 +575,22 @@ def bake_skin(human, arm, mh_image, size=2048, cache=None):
     material.use_nodes = True
     nt = material.node_tree
     bsdf = nt.nodes["Principled BSDF"]
-    for image, socket in ((albedo_img, "Base Color"), (rough_img, "Roughness")):
-        tex = nt.nodes.new("ShaderNodeTexImage")
-        tex.image = image
-        nt.links.new(tex.outputs["Color"], bsdf.inputs[socket])
+    tex = nt.nodes.new("ShaderNodeTexImage")
+    tex.image = albedo_img
+    nt.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
+    tex = nt.nodes.new("ShaderNodeTexImage")
+    tex.image = rough_img
+    channels = nt.nodes.new("ShaderNodeSeparateColor")
+    nt.links.new(tex.outputs["Color"], channels.inputs["Color"])
+    nt.links.new(channels.outputs["Green"], bsdf.inputs["Roughness"])
+    # The glTF exporter takes occlusion from this node group's input.
+    gltf_output = bpy.data.node_groups.get("glTF Material Output")
+    if gltf_output is None:
+        gltf_output = bpy.data.node_groups.new("glTF Material Output", "ShaderNodeTree")
+        gltf_output.interface.new_socket("Occlusion", in_out="INPUT", socket_type="NodeSocketFloat")
+    group = nt.nodes.new("ShaderNodeGroup")
+    group.node_tree = gltf_output
+    nt.links.new(channels.outputs["Red"], group.inputs["Occlusion"])
     tex = nt.nodes.new("ShaderNodeTexImage")
     tex.image = normal_img
     normal_map = nt.nodes.new("ShaderNodeNormalMap")
@@ -538,7 +603,7 @@ def bake_skin(human, arm, mh_image, size=2048, cache=None):
     human.data.uv_layers.active = human.data.uv_layers[SKIN_UV]
     human.data.uv_layers[SKIN_UV].active_render = True
     for name in ("wr_d", "wr_lat", "wr_mask", "knuckle", "tip", "dorsal", "hand_u", "hand_v", "handness",
-                 "arm_u", "arm_v", "hairy", "nail_region", "nail_u", "nail"):
+                 "arm_u", "arm_v", "hairy", "nail_region", "nail_u", "nail_c", "nail"):
         human.data.attributes.remove(human.data.attributes[name])
     return material
 

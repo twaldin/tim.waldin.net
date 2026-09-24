@@ -3,7 +3,9 @@
 // by the finger a touch typist would use: the hand shifts toward far keys
 // (two-bone arm IK), the finger reaches and strikes (damped-least-squares
 // IK over its three joints), holds while the key is held, and relaxes back.
-import { Bone, MathUtils, Matrix3, Quaternion, Vector3, type Object3D } from 'three';
+// While the visitor uses their mouse the right hand reaches over and holds
+// the desk mouse in the palm grip authored with the arms.
+import { Bone, MathUtils, Matrix3, Quaternion, SkinnedMesh, Vector3, type Object3D } from 'three';
 import type { KeyboardRig } from './keyboard';
 import type { MouseRig } from './mouse';
 import { HOME_KEYS, KEY_BY_CODE, KEY_UNIT, type Finger, type Hand } from './keymap';
@@ -23,11 +25,31 @@ const HOVER = 0.004;
 // pad that touches the key is this far below it.
 const PAD = 0.0055;
 const HAND_RETURN_SECONDS = 0.45;
-// Mouse grip: palm surface below the wrist→knuckle midline, roll onto the
-// pinky side, and how far the index pushes the button on click.
-const PALM_DEPTH = 0.025;
-const MOUSE_ROLL = 0.2;
-const MOUSE_CLICK_DEPTH = 0.0015;
+// Moving the right hand between keyboard and mouse: a minimum-jerk reach
+// arcing up to GRAB_LIFT above the straight path, highest over the
+// keyboard's edge, the hand turning over the 70% nearest the keyboard. On
+// the way the hand takes the shape it's heading for, as a real reach does
+// (gripShare): in the air the fingers are a loose cup, FINGERS_FLIGHT of
+// the way between the typing curl and the mouse grip, and the thumb stays
+// near its typing place under the palm (THUMB_FLIGHT of the way), curled in
+// (THUMB_TUCK radians at its MCP and IP joints) rather than sticking out;
+// both settle the rest of the way as the hand lands. Reaching for the
+// mouse, ring and little finger lag a beat; the palm arrives at 90% and
+// settles GRAB_SETTLE onto the shell. Leaving it, the palm lifts off first
+// and the fingers let go (extending RELEASE_OPEN radians in passing), the
+// thumb tucking in straight away.
+const GRAB_SECONDS = 0.5;
+const GRAB_LIFT = 0.032;
+const FINGERS_FLIGHT = 0.5;
+const THUMB_FLIGHT = 0.3;
+const THUMB_TUCK = 0.25;
+const GRAB_SETTLE = 0.002;
+const RELEASE_OPEN = 0.08;
+// The index finger's extra flex (radians) pressing the left button.
+const MOUSE_CLICK_FLEX = 0.05;
+// The share of the hand's roll the forearm carries: pronation turns the
+// forearm along its length, so the wrist itself barely twists.
+const FOREARM_TWIST = 0.8;
 
 interface FingerState {
   hand: Hand;
@@ -62,14 +84,26 @@ interface HandState {
   offsetGoal: Vector3;
   lastActive: number;
   dip: number;
-  // Right hand only: 0 on the keyboard, 1 holding the mouse.
-  mouseBlend: number;
+  // Right hand only: progress of the reach from the keyboard (0) to holding
+  // the mouse (1), and whether it runs back to the keyboard (set at each
+  // end, so a reach reversed midway retraces its own curves).
+  grab: number;
+  releasing: boolean;
   fingers: FingerState[];
 }
 
 export interface MouseGrip {
   holding: boolean;
   clicking: boolean;
+}
+
+// The right hand's palm grip, authored by build_arms.py: the hand bone's
+// position and world rotation in the mouse's frame (mouse at rest), and
+// each hand bone's rotation relative to its bind.
+interface GripPose {
+  wrist: Vector3;
+  hand: Quaternion;
+  bones: Record<string, Quaternion>;
 }
 
 export interface HandsRig {
@@ -84,7 +118,46 @@ const tmpA = new Vector3();
 const tmpB = new Vector3();
 const tmpQ = new Quaternion();
 const tmpQ2 = new Quaternion();
+const tmpQ3 = new Quaternion();
+const tmpQ4 = new Quaternion();
 const UP = new Vector3(0, 1, 0);
+
+const minJerk = (t: number) => t * t * t * (10 - 15 * t + 6 * t * t);
+
+// How much of the way from one pose to another (the typing pose, the mouse
+// grip) a hand moving between them has taken, `along` the move (0-1): the
+// share `flight` over its first `lift`, the rest over the 35% from `land`.
+function gripShare(along: number, flight: number, lift: number, land: number): number {
+  return (
+    flight * minJerk(MathUtils.clamp(along / lift, 0, 1)) +
+    (1 - flight) * minJerk(MathUtils.clamp((along - land) / 0.35, 0, 1))
+  );
+}
+
+function numbers(value: unknown, length: number): number[] {
+  if (!Array.isArray(value) || value.length !== length || !value.every((n) => typeof n === 'number')) {
+    throw new Error('arms.glb has a malformed mouse grip');
+  }
+  return value;
+}
+
+function readGrip(root: Object3D): GripPose {
+  const text: unknown = root.getObjectByName('ArmsRig')?.userData.mouseGrip;
+  if (typeof text !== 'string') throw new Error('arms.glb has no mouse grip');
+  const raw: unknown = JSON.parse(text);
+  if (!raw || typeof raw !== 'object' || !('wrist' in raw) || !('hand' in raw) || !('bones' in raw)) {
+    throw new Error('arms.glb has a malformed mouse grip');
+  }
+  const { bones } = raw;
+  if (!bones || typeof bones !== 'object') throw new Error('arms.glb has a malformed mouse grip');
+  return {
+    wrist: new Vector3().fromArray(numbers(raw.wrist, 3)),
+    hand: new Quaternion().fromArray(numbers(raw.hand, 4)),
+    bones: Object.fromEntries(
+      Object.entries(bones).map(([name, q]) => [name, new Quaternion().fromArray(numbers(q, 4))]),
+    ),
+  };
+}
 
 function setWorldRotation(bone: Bone, world: Quaternion) {
   const parentWorld = bone.parent ? bone.parent.getWorldQuaternion(tmpQ2) : tmpQ2.identity();
@@ -158,7 +231,8 @@ export function createHands(root: Object3D, keyboard: KeyboardRig, mouse: MouseR
       offsetGoal: new Vector3(),
       lastActive: -10,
       dip: 0,
-      mouseBlend: 0,
+      grab: 0,
+      releasing: false,
       fingers,
     };
   }
@@ -253,31 +327,49 @@ export function createHands(root: Object3D, keyboard: KeyboardRig, mouse: MouseR
     const elbowNow = h.lower.getWorldPosition(new Vector3());
     aimBone(h.lower, h.hand.getWorldPosition(new Vector3()).sub(elbowNow), wrist.clone().sub(elbowNow));
 
+    // Pronation: turn the forearm about its own axis by most of the hand's
+    // twist from where the forearm would carry it, so the wrist doesn't wring.
+    const axis = tmpA.copy(wrist).sub(elbowNow).normalize();
+    const lowerWorld = h.lower.getWorldQuaternion(tmpQ3);
+    const twist = tmpQ4.copy(lowerWorld).multiply(h.handBind).invert().premultiply(handWorld);
+    const along = axis.x * twist.x + axis.y * twist.y + axis.z * twist.z;
+    if (Math.hypot(along, twist.w) > 1e-6) {
+      twist.set(axis.x * along, axis.y * along, axis.z * along, twist.w).normalize();
+      setWorldRotation(h.lower, tmpQ.identity().slerp(twist, FOREARM_TWIST).multiply(lowerWorld));
+      h.lower.updateMatrixWorld(true);
+    }
+
     setWorldRotation(h.hand, handWorld);
     h.hand.updateMatrixWorld(true);
   };
 
-  // Mouse grip for the right hand: the palm rests on the mouse's hump and
-  // each fingertip is solved onto its contact point on the shell (see
-  // mouse.ts), so the hand stays on the mouse as it moves.
-  const right = hands.R;
-  const mcp = (finger: Finger) => right.fingers[finger - 1].bones[0].getWorldPosition(new Vector3());
-  const forward = mcp(3).sub(right.wristBind);
-  // Down out of the palm: across the knuckles (pinky → index) × forward.
-  const palmDown = mcp(2).sub(mcp(5)).cross(forward).normalize();
-  const palmBind = right.wristBind.clone().addScaledVector(forward, 0.5).addScaledVector(palmDown, PALM_DEPTH);
-  // The palm point relative to the wrist, in the hand's own orientation.
-  const palmFromWrist = palmBind.sub(right.wristBind).applyQuaternion(right.handBindWorld.clone().invert());
-  const gripBase = new Quaternion()
-    .setFromUnitVectors(forward.clone().setY(0).normalize(), new Vector3(0, 0, -1))
-    .premultiply(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), -MOUSE_ROLL))
-    .multiply(right.handBindWorld);
+  // The right hand's grip on the mouse: its fingers' bone rotations, and
+  // where the hand sits relative to the mouse, which it follows.
+  const grip = readGrip(root);
+  const gripBones = new Map(
+    hands.R.fingers.map((f) => [
+      f,
+      f.bones.map((b, i) => {
+        const q = grip.bones[b.name];
+        if (!q) throw new Error(`arms.glb mouse grip is missing ${b.name}`);
+        return f.bind[i].clone().multiply(q);
+      }),
+    ]),
+  );
+  // The grip's corrective shape (build_arms.py add_grip_corrective), on
+  // each skin primitive carrying it.
+  const gripShapes: { influences: number[]; index: number }[] = [];
+  root.traverse((o) => {
+    const index = o instanceof SkinnedMesh ? o.morphTargetDictionary?.MouseGrip : undefined;
+    if (o instanceof SkinnedMesh && index !== undefined && o.morphTargetInfluences) {
+      gripShapes.push({ influences: o.morphTargetInfluences, index });
+    }
+  });
   const mouseState = { holding: false, clicking: false };
+  let click = 0;
   const handWorld = new Quaternion();
   const gripWorld = new Quaternion();
-  const contactWorld = new Vector3();
-  const contactNormal = new Vector3();
-  const relaxedTip = new Vector3();
+  const gripWrist = new Vector3();
 
   return {
     setMouse(grip) {
@@ -331,19 +423,48 @@ export function createHands(root: Object3D, keyboard: KeyboardRig, mouse: MouseR
         wrist.y += breathe - h.dip * 0.0018;
         handWorld.setFromAxisAngle(UP, -h.offset.x * 2.5).multiply(h.handBindWorld);
 
+        // Right hand: how far the fingers and the thumb have closed onto the
+        // mouse, how far the hand opens letting go of it and how far the
+        // thumb is tucked in.
+        let fingersClose = 0;
+        let outerClose = 0; // ring and little finger
+        let thumbClose = 0;
+        let fingersOpen = 0;
+        let thumbTuck = 0;
         if (side === 'R') {
-          h.mouseBlend = MathUtils.damp(h.mouseBlend, mouseState.holding ? 1 : 0, mouseState.holding ? 6 : 16, dt);
-          if (h.mouseBlend > 0.001) {
+          if (h.grab === 0) h.releasing = false;
+          else if (h.grab === 1) h.releasing = true;
+          const step = dt / GRAB_SECONDS;
+          h.grab = MathUtils.clamp(h.grab + (mouseState.holding ? step : -step), 0, 1);
+          click = MathUtils.damp(click, mouseState.clicking ? 1 : 0, 40, dt);
+          const along = h.releasing ? 1 - h.grab : h.grab; // from where this reach began
+          if (h.releasing) {
+            fingersClose = 1 - gripShare(along, FINGERS_FLIGHT, 0.3, 0.35);
+            outerClose = fingersClose;
+            thumbClose = 1 - gripShare(along, 1 - THUMB_FLIGHT, 0.3, 0.35);
+            fingersOpen = RELEASE_OPEN * Math.sin(Math.PI * MathUtils.clamp(along / 0.35, 0, 1));
+            thumbTuck = THUMB_TUCK * Math.sin(Math.PI * MathUtils.clamp(along / 0.8, 0, 1));
+          } else {
+            fingersClose = gripShare(along, FINGERS_FLIGHT, 0.4, 0.6);
+            outerClose = gripShare(along - 0.05, FINGERS_FLIGHT, 0.4, 0.6);
+            thumbClose = gripShare(along, THUMB_FLIGHT, 0.4, 0.5);
+            thumbTuck = THUMB_TUCK * Math.sin(Math.PI * MathUtils.clamp(along / 0.9, 0, 1));
+          }
+          for (const shape of gripShapes) shape.influences[shape.index] = thumbClose;
+          if (h.grab > 0) {
             mouse.group.updateMatrixWorld();
-            gripWorld.copy(mouse.group.quaternion).multiply(gripBase);
-            const palm = mouse.group.localToWorld(contactWorld.copy(mouse.palm.point));
-            palm.y += breathe;
-            const grip = palm.sub(tmpA.copy(palmFromWrist).applyQuaternion(gripWorld));
-            const t = h.mouseBlend * h.mouseBlend * (3 - 2 * h.mouseBlend);
-            wrist.lerp(grip, t);
-            // Lift over the keyboard edge on the way across.
-            wrist.y += Math.sin(t * Math.PI) * 0.028;
-            handWorld.slerp(gripWorld, t);
+            gripWorld.copy(mouse.group.quaternion).multiply(grip.hand);
+            mouse.group.localToWorld(gripWrist.copy(grip.wrist));
+            gripWrist.y += breathe;
+            // The palm arrives at 90% and leaves after the first 10%.
+            wrist.lerp(gripWrist, minJerk(Math.min(1, h.grab / 0.9)));
+            // Arc over the keyboard edge; leaving the mouse, lift off first.
+            const travel = minJerk(along);
+            wrist.y += Math.sin(Math.PI * Math.pow(travel, h.releasing ? 0.6 : 0.55)) * GRAB_LIFT;
+            if (!h.releasing) {
+              wrist.y += GRAB_SETTLE * MathUtils.smoothstep(along, 0.5, 0.8) * (1 - MathUtils.smoothstep(along, 0.88, 1));
+            }
+            handWorld.slerp(gripWorld, minJerk(Math.min(1, h.grab / 0.7)));
           }
         }
         solveArm(h, wrist, handWorld);
@@ -362,27 +483,31 @@ export function createHands(root: Object3D, keyboard: KeyboardRig, mouse: MouseR
             solveFinger(f, f.target);
           } else {
             if (f.key && !f.down) f.key = null;
-            // Relax toward the bind pose with a faint idle drift, or onto the
-            // mouse (the index presses the left button on click).
+            // Relax toward the bind pose with a faint idle drift.
             const drift = Math.sin(time * 0.7 + f.noisePhase) * 0.025 + Math.sin(time * 1.9 + f.noisePhase * 2) * 0.01;
-            const onMouse = side === 'R' ? h.mouseBlend : 0;
-            if (onMouse > 0.001) {
-              const held: [number, number, number] = [...f.params];
-              f.params = [drift, drift * 0.6, 0];
-              applyFinger(f);
-              const relaxed = tipWorld(f, relaxedTip);
-              f.params = held;
-              const contact = mouse.fingertips[f.finger];
-              contactNormal.copy(contact.normal).transformDirection(mouse.group.matrixWorld);
-              mouse.group.localToWorld(contactWorld.copy(contact.point));
-              const press = f.finger === 2 && mouseState.clicking ? MOUSE_CLICK_DEPTH : 0;
-              contactWorld.addScaledVector(contactNormal, PAD - press);
-              solveFinger(f, relaxed.lerp(contactWorld, onMouse * onMouse * (3 - 2 * onMouse)));
-            } else {
-              f.params[0] = MathUtils.damp(f.params[0], drift, RELAX_RATE, dt);
-              f.params[1] = MathUtils.damp(f.params[1], drift * 0.6, RELAX_RATE, dt);
-              f.params[2] = MathUtils.damp(f.params[2], 0, RELAX_RATE, dt);
-              applyFinger(f);
+            f.params[0] = MathUtils.damp(f.params[0], drift, RELAX_RATE, dt);
+            f.params[1] = MathUtils.damp(f.params[1], drift * 0.6, RELAX_RATE, dt);
+            f.params[2] = MathUtils.damp(f.params[2], 0, RELAX_RATE, dt);
+            applyFinger(f);
+            const held = side === 'R' ? gripBones.get(f) : undefined;
+            if (held && h.grab > 0) {
+              // Close onto the mouse, then hold with a faint drift; the index
+              // presses the left button.
+              const thumb = f.finger === 1;
+              const close = thumb ? thumbClose : f.finger >= 4 ? outerClose : fingersClose;
+              // Opening: the fingers extend at their MCP and PIP joints, the
+              // thumb at its MCP and IP joints (where it also tucks in).
+              for (let i = 0; i < 3; i++) {
+                const q = f.bones[i].quaternion.slerp(held[i], close);
+                if (i === 0) {
+                  const press = f.finger === 2 ? click * MOUSE_CLICK_FLEX : 0;
+                  q.multiply(tmpQ.setFromAxisAngle(FLEX_AXIS, press + drift * 0.4 * close - (thumb ? 0 : fingersOpen)));
+                } else {
+                  const open = fingersOpen * (thumb ? 0.5 : i === 1 ? 0.6 : 0);
+                  q.multiply(tmpQ.setFromAxisAngle(FLEX_AXIS, (thumb ? thumbTuck : 0) - open));
+                }
+              }
+              f.bones[0].updateMatrixWorld(true);
             }
           }
         }

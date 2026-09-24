@@ -39,6 +39,7 @@ import { attachScreenPointer, createTerminalScreen } from './screen';
 import { disposeTree, loadRoom } from './room';
 import { createHands } from './hands';
 import { applySkinShading } from './skin';
+import { smoothShadowPenumbrae } from './shadows';
 import { createRoomAudio } from './audio';
 import { typeText } from './autotype';
 import { createMouse } from './mouse';
@@ -83,6 +84,7 @@ const DAY_TRANSITION_SECONDS = 2.4;
 export async function createRoomEngine(options: RoomEngineOptions): Promise<RoomEngine> {
   const { canvas, getTerminal, reducedMotion } = options;
   RectAreaLightUniformsLib.init();
+  smoothShadowPenumbrae();
 
   const renderer = new WebGLRenderer({
     canvas,
@@ -132,7 +134,7 @@ export async function createRoomEngine(options: RoomEngineOptions): Promise<Room
   const keyboard = createKeyboard(renderer);
   scene.add(keyboard.group);
   scene.updateMatrixWorld(true);
-  const mouse = createMouse();
+  const mouse = createMouse(arms.scene);
   scene.add(mouse.group);
   const hands = createHands(arms.scene, keyboard, mouse);
   const audio = createRoomAudio(false);

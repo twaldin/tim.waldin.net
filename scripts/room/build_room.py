@@ -209,11 +209,16 @@ def camera(name, eye, target, vfov_deg):
 
 
 def add_preview_stand_ins():
-    """Arms (bind pose = hands on the home row) and a keyboard mock-up so
-    previews show the runtime composition. Never exported."""
+    """Arms (bind pose = hands on the home row) with their mouse, and a
+    keyboard mock-up so previews show the runtime composition. Never
+    exported."""
     before = set(bpy.data.objects)
     bpy.ops.import_scene.gltf(filepath=str(REPO / "frontend/public/room/arms.glb"))
+    mouse_plastic = rs.material("preview_mouse", color=(0.02, 0.02, 0.022), roughness=0.48)
     for obj in set(bpy.data.objects) - before:
+        if obj.type == "MESH" and obj.name.startswith("Mouse"):
+            obj.data.materials.clear()
+            obj.data.materials.append(mouse_plastic)
         if obj.type == "MESH" and obj.name == "Skin":
             bsdf = obj.active_material.node_tree.nodes["Principled BSDF"]
             bsdf.inputs["Subsurface Weight"].default_value = 1.0
