@@ -12,14 +12,22 @@ set -u
 LOG=/var/log/term-monitor.log
 BOUND="timeout 30"
 
+# Line count of a bounded docker command's stdout, or n/a if it failed or
+# timed out (a failed call must not read as zero).
+count_lines() {
+  local out
+  out=$($BOUND "$@" 2>/dev/null) || { echo n/a; return; }
+  printf '%s' "$out" | grep -c .
+}
+
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 # Sandbox containers, warm pool included.
-SANDBOXES=$($BOUND docker ps -q --filter label=app=terminal-portfolio 2>/dev/null | wc -l)
+SANDBOXES=$(count_lines docker ps -q --filter label=app=terminal-portfolio)
 MEM=$(free -m | awk '/^Mem:/ {printf "used=%dMB avail=%dMB", $3, $7}')
 SWAP=$(free -m | awk '/^Swap:/ {printf "%dMB", $3}')
 DISK=$(df -h / | awk 'NR==2 {print $5}')
 LOAD=$(awk '{print $1}' /proc/loadavg)
 # nginx writes its access log to container stdout; stderr carries the error log.
-HITS=$($BOUND docker logs --since 1h term-nginx 2>/dev/null | wc -l)
+HITS=$(count_lines docker logs --since 1h term-nginx)
 
 echo "[$TS] sandboxes=$SANDBOXES load=$LOAD $MEM swap=$SWAP disk=$DISK hits_1h=$HITS" >> "$LOG"
