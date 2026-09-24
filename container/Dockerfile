@@ -71,7 +71,7 @@ RUN ARCH=$(dpkg --print-architecture) && \
 RUN --mount=type=secret,id=github_token,required=false,mode=0644 \
     tok="$(cat /run/secrets/github_token 2>/dev/null || true)" && \
     if [ -n "$tok" ]; then export GITHUB_TOKEN="$tok"; fi && \
-    git clone https://github.com/twaldin/dotfiles.git /home/portfolio/.dotfiles && \
+    git clone --depth 20 --single-branch https://github.com/twaldin/dotfiles.git /home/portfolio/.dotfiles && \
     ln -sf /home/portfolio/.dotfiles/nvim /home/portfolio/.config/nvim && \
     # The OMP template renders `{{ .UserName }} {{ .Path }}` — replace the
     # session-segment UserName with a literal "tim.waldin.net" so the prompt
@@ -90,14 +90,21 @@ RUN --mount=type=secret,id=github_token,required=false,mode=0644 \
       -c qa && \
     mkdir -p /home/portfolio/projects && \
     cd /home/portfolio/projects && \
-    git clone https://github.com/twaldin/flt.git && \
-    git clone https://github.com/twaldin/agentelo.git && \
-    git clone https://github.com/twaldin/stm32-games.git && \
-    (git clone https://github.com/twaldin/term-site.git || mkdir -p term-site) && \
-    git clone https://github.com/twaldin/trade-up-bot.git && \
-    git clone https://github.com/twaldin/hone.git && \
-    git clone https://github.com/twaldin/harness.git && \
-    git clone https://github.com/twaldin/studyspot.git && \
+    # Shallow clones: project pages show the last five commits, and full
+    # histories only grow the image.
+    CLONE="git clone --depth 20 --single-branch" && \
+    $CLONE https://github.com/twaldin/flt.git && \
+    $CLONE https://github.com/twaldin/agentelo.git && \
+    $CLONE https://github.com/twaldin/stm32-games.git && \
+    ($CLONE https://github.com/twaldin/term-site.git || mkdir -p term-site) && \
+    $CLONE https://github.com/twaldin/trade-up-bot.git && \
+    # hone's capsules/*/ hold ~3.3 GB of benchmark toolchains and fixtures;
+    # keep each capsule's top-level config/manifest files, not its subtrees.
+    # blob:none fetches only the blobs that sparse checkout writes out.
+    $CLONE --filter=blob:none --sparse https://github.com/twaldin/hone.git && \
+    git -C hone sparse-checkout set --no-cone '/*' '!/capsules/*/*/' && \
+    $CLONE https://github.com/twaldin/harness.git && \
+    $CLONE https://github.com/twaldin/studyspot.git && \
     ln -sf /home/portfolio/scripts/flt.sh /home/portfolio/projects/flt/flt.sh && \
     ln -sf /home/portfolio/scripts/agentelo.sh /home/portfolio/projects/agentelo/agentelo.sh && \
     ln -sf /home/portfolio/scripts/stm32-games.sh /home/portfolio/projects/stm32-games/stm32-games.sh && \
@@ -130,6 +137,11 @@ RUN ls /home/portfolio/.local/share/nvim/site/pack/core/opt | head -20
 # Container-owned startup avoids workstation-only aliases and nvm hooks.
 COPY --chown=portfolio:portfolio zshrc /home/portfolio/.zshrc
 COPY --chown=portfolio:portfolio shell-aliases.sh /home/portfolio/.portfolio-aliases
+
+# Build the completion dump now: every session starts from a fresh copy of
+# this image, and building ~/.zcompdump at startup cost ~0.9 s of the 0.5-CPU
+# sandbox budget before the first prompt (1.0 s -> 0.1 s to prompt).
+RUN zsh -i -c exit && test -s /home/portfolio/.zcompdump
 
 # Switch back to root to continue setup
 USER root

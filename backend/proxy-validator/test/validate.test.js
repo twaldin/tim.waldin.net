@@ -74,7 +74,7 @@ test('rejects an image swap', () => {
   expectRejected((spec) => { spec.Image = 'evil:latest'; });
 });
 
-for (const field of ['Memory', 'PidsLimit', 'CpuQuota']) {
+for (const field of ['Memory', 'MemorySwap', 'PidsLimit', 'CpuQuota']) {
   test(`rejects missing resource limit HostConfig.${field}`, () => {
     expectRejected((spec) => { delete spec.HostConfig[field]; });
   });
@@ -93,6 +93,7 @@ for (const field of ['Memory', 'PidsLimit', 'CpuQuota']) {
 test('accepts stricter positive resource limits', () => {
   const spec = compliantSpec();
   spec.HostConfig.Memory -= 1;
+  spec.HostConfig.MemorySwap -= 1;
   spec.HostConfig.PidsLimit -= 1;
   spec.HostConfig.CpuQuota -= 1;
   assert.doesNotThrow(() => assertSandboxCompliant(spec));

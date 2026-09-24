@@ -13,7 +13,7 @@ const HOST_NAMESPACE_FIELDS = [
   'UTSMode',
   'CgroupParent',
 ];
-const RESOURCE_FIELDS = ['Memory', 'PidsLimit', 'CpuQuota'];
+const RESOURCE_FIELDS = ['Memory', 'MemorySwap', 'PidsLimit', 'CpuQuota'];
 
 function reject(reason) {
   throw new Error(`Sandbox policy violation: ${reason}`);

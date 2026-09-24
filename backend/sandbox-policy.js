@@ -36,6 +36,9 @@ const SANDBOX_POLICY = Object.freeze({
   // storage quota, no-new-privileges (blocked by the sudo demo).
   hostConfig: Object.freeze({
     Memory: 512 * 1024 * 1024,
+    // Equal to Memory: no swap. Docker's default (2x Memory) let each session
+    // push 512 MB into the host's shared 2 GB swap.
+    MemorySwap: 512 * 1024 * 1024,
     CpuQuota: 50000,
     PidsLimit: 100,
     ReadonlyRootfs: false,
@@ -43,6 +46,10 @@ const SANDBOX_POLICY = Object.freeze({
     CapDrop: Object.freeze(['ALL']),
     CapAdd: Object.freeze(['SETUID', 'SETGID']),
     Tmpfs: Object.freeze({ '/tmp': 'rw,noexec,nosuid,size=100m' }),
+    // Output reaches the visitor only through the attach stream; nothing
+    // reads `docker logs`. json-file made dockerd encode and write every
+    // byte (up to ~1.5 MB per boot animation) for nothing.
+    LogConfig: Object.freeze({ Type: 'none', Config: Object.freeze({}) }),
   }),
 });
 
@@ -69,6 +76,7 @@ function buildContainerSpec(sessionId) {
     Labels: { ...SANDBOX_POLICY.label, session: sessionId || 'pool' },
     HostConfig: {
       Memory: SANDBOX_POLICY.hostConfig.Memory,
+      MemorySwap: SANDBOX_POLICY.hostConfig.MemorySwap,
       CpuQuota: SANDBOX_POLICY.hostConfig.CpuQuota,
       PidsLimit: SANDBOX_POLICY.hostConfig.PidsLimit,
       ReadonlyRootfs: SANDBOX_POLICY.hostConfig.ReadonlyRootfs,
@@ -76,6 +84,7 @@ function buildContainerSpec(sessionId) {
       CapDrop: [...SANDBOX_POLICY.hostConfig.CapDrop],
       CapAdd: [...SANDBOX_POLICY.hostConfig.CapAdd],
       Tmpfs: { ...SANDBOX_POLICY.hostConfig.Tmpfs },
+      LogConfig: { Type: SANDBOX_POLICY.hostConfig.LogConfig.Type, Config: {} },
     },
   };
 }

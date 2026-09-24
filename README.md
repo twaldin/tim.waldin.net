@@ -83,7 +83,7 @@ Native package commands remain available for isolated work: `cd frontend && pnpm
 ## Security
 
 Each visitor gets an isolated Docker container with:
-- 512 MB RAM limit, 0.5 CPU limit, 100 process limit, 100 MB `noexec,nosuid` tmpfs on `/tmp`
+- 512 MB RAM limit (no swap), 0.5 CPU limit, 100 process limit, 100 MB `noexec,nosuid` tmpfs on `/tmp`
 - No network access (`NetworkMode: none`)
 - Non-root `portfolio` user; all capabilities dropped, then only `SETUID` and `SETGID` added back for the `sudo` demo
 - Docker Socket Proxy restricts the backend's API access to containers, images, POST, info, and ping (no networks, volumes, build, exec)
