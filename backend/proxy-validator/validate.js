@@ -98,6 +98,11 @@ function assertSandboxCompliant(createBody) {
       reject(`${field} exceeds SANDBOX_POLICY`);
     }
   }
+
+  // SANDBOX_POLICY means "no swap"; Docker also rejects MemorySwap < Memory.
+  if (hostConfig.MemorySwap !== hostConfig.Memory) {
+    reject('MemorySwap must equal Memory');
+  }
 }
 
 module.exports = { assertSandboxCompliant };

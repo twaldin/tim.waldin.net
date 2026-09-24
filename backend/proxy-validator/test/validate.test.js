@@ -90,6 +90,10 @@ for (const field of ['Memory', 'MemorySwap', 'PidsLimit', 'CpuQuota']) {
   });
 }
 
+test('rejects swap: MemorySwap must equal Memory', () => {
+  expectRejected((spec) => { spec.HostConfig.MemorySwap = spec.HostConfig.Memory - 1; });
+});
+
 test('accepts stricter positive resource limits', () => {
   const spec = compliantSpec();
   spec.HostConfig.Memory -= 1;
