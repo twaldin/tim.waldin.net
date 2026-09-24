@@ -2,7 +2,9 @@
 unsetopt PROMPT_CR
 # EDITOR=nvim must not switch command-line editing to vi mode.
 bindkey -e
-autoload -Uz compinit && compinit
+# The image bakes ~/.zcompdump (container/Dockerfile); -C loads it without
+# rescanning fpath, which the image never changes after build.
+autoload -Uz compinit && compinit -C
 source /home/portfolio/.portfolio-aliases
 source /home/portfolio/scripts/shared-functions.sh
 

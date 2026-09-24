@@ -13,7 +13,7 @@ const HOST_NAMESPACE_FIELDS = [
   'UTSMode',
   'CgroupParent',
 ];
-const RESOURCE_FIELDS = ['Memory', 'PidsLimit', 'CpuQuota'];
+const RESOURCE_FIELDS = ['Memory', 'MemorySwap', 'PidsLimit', 'CpuQuota'];
 
 function reject(reason) {
   throw new Error(`Sandbox policy violation: ${reason}`);
@@ -97,6 +97,11 @@ function assertSandboxCompliant(createBody) {
     if (requested > maximum) {
       reject(`${field} exceeds SANDBOX_POLICY`);
     }
+  }
+
+  // SANDBOX_POLICY means "no swap"; Docker also rejects MemorySwap < Memory.
+  if (hostConfig.MemorySwap !== hostConfig.Memory) {
+    reject('MemorySwap must equal Memory');
   }
 }
 
