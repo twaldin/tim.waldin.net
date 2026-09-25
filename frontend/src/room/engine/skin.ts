@@ -44,12 +44,12 @@ const WRAPPED = /* glsl */ `{
     float smoothNdl = dot( skinSmoothNormal, directLight.direction );
     float band = ( saturate( ( smoothNdl + SKIN_WRAP ) / ( 1.0 + SKIN_WRAP ) ) - saturate( smoothNdl ) )
       * smoothstep( -SKIN_WRAP, 0.05, smoothNdl );
-    // Light wraps SKIN_SOFT past the detail terminator, and what wraps has
+    // Light wraps skinSoft past the detail terminator, and what wraps has
     // come out of skin away from where it went in, so it's scatter-coloured.
     // (A wrap per channel, red's widest, leaves a strip only red reaches,
     // which the tone mapper's toe turns crimson in the lamp's dark.)
     vec3 lit = saturate( ndl );
-    vec3 wrapped = saturate( ( ndl + SKIN_SOFT ) / ( 1.0 + SKIN_SOFT ) );
+    vec3 wrapped = saturate( ( ndl + skinSoft ) / ( 1.0 + skinSoft ) );
     reflectedLight.directDiffuse += directLight.color
       * ( lit + ( wrapped - lit + band ) * SKIN_SCATTER )
       * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );
@@ -194,7 +194,13 @@ const SKIN_SHADOW_REACH = '1.5';
 // lamp's terminator (the underside of a thumb at night, lit by nothing
 // else), and a paler one into orange putty where light grazes thick tissue
 // (fingertips, the palm's edge). SKIN_SOFT is how far past the terminator
-// light wraps.
+// light wraps on a finger's broad curve. Light spreads SKIN_DIFFUSION under
+// skin whatever the surface does above it, so where the surface turns
+// faster (the groove around a thumbnail turns 40° in two millimetres) it
+// wraps further: the wrap follows the vertex normals' curvature, from their
+// screen-space derivatives, as pre-integrated skin shading does. At night
+// the groove's far wall, turned from the light bar, had no light at all and
+// drew a black line around each thumbnail; skin that thin is lit through.
 //
 // The sun's colour is the room's golden stripes on its white walls and grey
 // desk. Skin is orange itself, and the sun's warmth on top of it (red over
@@ -208,6 +214,8 @@ vec3 skinSmoothNormal;
 vec3 skinArriving = vec3( 0.0 );
 const vec3 SKIN_SCATTER = vec3( 0.9, 0.7, 0.6 );
 const float SKIN_SOFT = 0.15;
+const float SKIN_DIFFUSION = 0.0015;
+float skinSoft = SKIN_SOFT;
 const float SKIN_SUN_CHROMA = 0.2;
 vec3 skinSunlight( const in vec3 color ) {
   return mix( vec3( dot( color, vec3( 0.2126, 0.7152, 0.0722 ) ) ), color, SKIN_SUN_CHROMA );
@@ -215,6 +223,13 @@ vec3 skinSunlight( const in vec3 color ) {
 vec3 skinShadowReach( const in float shadow, const in float wideShadow ) {
   return vec3( mix( shadow, wideShadow, 0.5 ), mix( shadow, wideShadow, 0.15 ), shadow );
 }`;
+// Copied out of main() once the normal map is applied: the vertex normal,
+// and how fast it turns (radians per metre across the pixel, both
+// derivatives in view space) for the wrap's reach.
+const SKIN_NORMALS = /* glsl */ `
+  skinSmoothNormal = nonPerturbedNormal;
+  float skinCurvature = length( fwidth( skinSmoothNormal ) ) / max( length( fwidth( vViewPosition ) ), 1e-7 );
+  skinSoft = clamp( skinCurvature * SKIN_DIFFUSION, SKIN_SOFT, 0.8 );`;
 const SUN_LOOKUP = 'getDirectionalLightInfo( directionalLight, directLight );';
 
 // engine.ts tone maps with Khronos PBR Neutral, whose toe takes a dark
@@ -253,6 +268,7 @@ const SKIN_NORMAL_BIAS = '2.5';
 const PATCHABLE =
   ShaderChunk.lights_physical_pars_fragment.includes(LAMBERT_LINE) &&
   ShaderChunk.normal_fragment_begin.includes('vec3 nonPerturbedNormal') &&
+  ShaderChunk.meshphysical_frag.includes('varying vec3 vViewPosition;') &&
   ShaderChunk.lights_fragment_maps.includes('iblIrradiance +=') &&
   ShaderChunk.aomap_fragment.includes('texture2D( aoMap, vAoMapUv )') &&
   ShaderChunk.lights_pars_begin.includes('void getSpotLightInfo(') &&
@@ -285,7 +301,7 @@ export function applySkinShading(material: MeshStandardMaterial) {
         '#include <lights_physical_pars_fragment>',
         `${SKIN_GLOBALS}\n${ShaderChunk.lights_physical_pars_fragment.replace(LAMBERT_LINE, WRAPPED)}`,
       )
-      .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nskinSmoothNormal = nonPerturbedNormal;')
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>\n${SKIN_NORMALS}`)
       .replace(
         '#include <lights_fragment_begin>',
         ShaderChunk.lights_fragment_begin

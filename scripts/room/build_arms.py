@@ -150,7 +150,7 @@ SKIN_TUCK = 0.045
 # joints and no fingertips: a claw); curled, they fan a little, one per key
 # (drawn together, the index rode over the middle finger and each hand read
 # as a bunched paw).
-CURL = {"index": (18, 20, -1), "middle": (20, 24, 0), "ring": (20, 24, 1), "pinky": (24, 28, 3)}
+CURL = {"index": (22, 48, 0), "middle": (26, 36, 0), "ring": (26, 36, 0), "pinky": (20, 50, 1)}
 # How far a finger may comfortably depart from CURL to reach its key,
 # degrees: curling or opening its MCP and PIP joints together, trading one
 # against the other (which bends the finger out of its arc, into a straight
@@ -174,22 +174,25 @@ SPLAY_RANGE = 15.0
 # down and read as tucked under the ring finger).
 HAND_PRIOR = {"yaw": (8, 8), "pitch": (22, 6), "roll": (6, 3)}
 # How high the wrist joint hovers above the front-row key tops and how
-# firmly (m): low, near the desk.
-TYPING_WRIST = (0.01, 0.012)
+# firmly (m): low, but high enough that the arched fingers drop their tips
+# onto the keys.
+TYPING_WRIST = (0.018, 0.01)
 # Where each fingertip bone's tail rests over its home key (m): how far
 # toward the typist of the key centre (negative: past it), and how far above
 # the key top there (the tail sits within ~3 mm of the pad; lower, the pad
-# sinks into the cap). The tips arc with the fingers' reach: the index and
-# little finger short of the centre, the long middle and ring beyond it, so
-# neither pair has to curl or stretch out of the others' gentle arc.
-TYPING_PADS = {"index": (0.008, 0.0014), "middle": (-0.003, 0.0), "ring": (-0.002, 0.0004), "pinky": (0.006, 0.0023)}
+# sinks into the cap). All within 3 mm of the centres (6-8 mm short, the
+# index tips read as between the home and bottom rows), arcing with the
+# fingers' reach: the index and little finger short of it, the long middle
+# and ring beyond, so their end segments fall alike (~47° and ~58°).
+TYPING_PADS = {"index": (0.003, 0.0001), "middle": (-0.003, -0.0018), "ring": (-0.003, -0.0004), "pinky": (0.003, 0.0005)}
 TYPING_TILT = math.radians(6)
-# The steepest a typing fingertip's end segment may fall below level
-# (degrees: limit, tolerance): the seated eye looks down on the home row
-# ~46° from level, so steeper the nail turns away from it and the finger
-# ends in a rounded nailless knob (the middle and ring fingers fell 69° and
-# read as stubs tucked under the index).
-TYPING_SLOPE = (32.0, 2.0)
+# How steeply a typing fingertip's end segment falls below level (degrees:
+# least, most, tolerance): an arch dropping each tip onto its key, the
+# nail still tilted toward the seated eye (which looks down on the home row
+# ~46° from level). At 69° the middle and ring fingers ended in rounded
+# nailless knobs tucked under the index; at 38° they lay out flat and
+# straight along the keys, a hand pressing down rather than typing.
+TYPING_SLOPE = (49.0, 56.0, 2.0)
 # The typing thumbs (fit_thumb, as on the mouse) rest on the space bar,
 # angled in toward the keyboard's centre and resting on the outer (radial)
 # side of the tip, rolled so the nail faces half up, half out toward the
@@ -560,9 +563,9 @@ def place_hand(arm, side, curls, targets, prior, floor, give=CURL_GIVE, anchors=
     wrist `height` ((world z, tolerance in metres)), if given. The wrist
     stays above `floor`. `lift(frame, wrist)`, if given, is how far the
     best candidates' wrists must rise to clear something; they are raised
-    and costed there (the fingers reaching further down). `slope` ((degrees,
-    tolerance)), if given, is the steepest each fingertip's end segment
-    should fall below level. Returns (frame, wrist)."""
+    and costed there (the fingers reaching further down). `slope` ((least,
+    most, tolerance), degrees), if given, is how steeply each fingertip's end
+    segment should fall below level. Returns (frame, wrist)."""
     frame = anatomical_frame(arm, side)
     to_local = frame.transposed()
     wrist = arm.pose.bones[f"hand_{side}"].head.copy()
@@ -628,7 +631,7 @@ def place_hand(arm, side, curls, targets, prior, floor, give=CURL_GIVE, anchors=
             if slope:
                 end = world @ (distal + turns @ turn)
                 fall = math.degrees(math.asin(max(-1.0, min(1.0, -end.z / end.length))))
-                cost += (max(0.0, fall - slope[0]) / slope[1]) ** 2
+                cost += ((max(0.0, fall - slope[1]) + max(0.0, slope[0] - fall)) / slope[2]) ** 2
         for name, angle in (("yaw", yaw), ("pitch", pitch), ("roll", roll)):
             mean, spread = prior[name]
             cost += ((angle - mean) / spread) ** 2
