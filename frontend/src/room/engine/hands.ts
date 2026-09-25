@@ -9,6 +9,7 @@ import { Bone, MathUtils, Matrix3, Quaternion, SkinnedMesh, Vector3, type Object
 import type { KeyboardRig } from './keyboard';
 import type { MouseRig } from './mouse';
 import { HOME_KEYS, KEY_BY_CODE, KEY_UNIT, type Finger, type Hand } from './keymap';
+import { contactOccluders } from './contact';
 import { layout } from '../layout';
 
 // Rig conventions reported by scripts/room/build_arms.py.
@@ -24,6 +25,18 @@ const HOVER = 0.004;
 // The rig's fingertip point (distal bone tail) sits inside the finger; the
 // pad that touches the key is this far below it.
 const PAD = 0.0055;
+// The spheres standing in for each hand in the keys' and mouse's contact
+// shadows (contact.ts): a fingertip reaches its pad (thumbs are broader),
+// the last finger joint and the middle of the first phalanx are about as
+// thick as the finger, and four spheres halfway between the wrist and each
+// knuckle fill the palm's width, so under a hand hovering over the keys
+// the palm's broad shadow darkens them a third.
+const TIP_RADIUS = PAD + 0.001;
+const THUMB_TIP_RADIUS = PAD + 0.002;
+const JOINT_RADIUS = 0.0065;
+const PHALANX_RADIUS = 0.008;
+const PALM_RADIUS = 0.015;
+const OCCLUDERS_PER_HAND = 19;
 const HAND_RETURN_SECONDS = 0.45;
 // Moving the right hand between keyboard and mouse: a minimum-jerk reach
 // arcing up to GRAB_LIFT above the straight path, highest over the
@@ -116,6 +129,7 @@ export interface HandsRig {
 
 const tmpA = new Vector3();
 const tmpB = new Vector3();
+const tmpC = new Vector3();
 const tmpQ = new Quaternion();
 const tmpQ2 = new Quaternion();
 const tmpQ3 = new Quaternion();
@@ -509,6 +523,21 @@ export function createHands(root: Object3D, keyboard: KeyboardRig, mouse: MouseR
               }
               f.bones[0].updateMatrixWorld(true);
             }
+          }
+        }
+
+        let occluder = side === 'L' ? 0 : OCCLUDERS_PER_HAND;
+        const wristAt = h.hand.getWorldPosition(tmpC);
+        for (const f of h.fingers) {
+          tipWorld(f, tmpA);
+          contactOccluders[occluder++].set(tmpA.x, tmpA.y, tmpA.z, f.finger === 1 ? THUMB_TIP_RADIUS : TIP_RADIUS);
+          f.bones[2].getWorldPosition(tmpA);
+          contactOccluders[occluder++].set(tmpA.x, tmpA.y, tmpA.z, JOINT_RADIUS);
+          f.bones[0].getWorldPosition(tmpA).lerp(f.bones[1].getWorldPosition(tmpB), 0.5);
+          contactOccluders[occluder++].set(tmpA.x, tmpA.y, tmpA.z, PHALANX_RADIUS);
+          if (f.finger !== 1) {
+            f.bones[0].getWorldPosition(tmpA).lerp(wristAt, 0.5);
+            contactOccluders[occluder++].set(tmpA.x, tmpA.y, tmpA.z, PALM_RADIUS);
           }
         }
       }

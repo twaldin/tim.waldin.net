@@ -5,6 +5,7 @@
 // button seam dips on click.
 import { Group, MathUtils, Mesh, MeshPhysicalMaterial, MeshStandardMaterial, Vector2, Vector3, type Object3D } from 'three';
 import { layout } from '../layout';
+import { applyContactShadows } from './contact';
 
 const TRAVEL = new Vector2(0.06, 0.04); // metres across the full window
 
@@ -39,15 +40,22 @@ export function createMouse(arms: Object3D): MouseRig {
   model.position.set(0, 0, 0);
   group.add(model);
 
+  // Space grey: on the charcoal felt mat a black shell vanishes at night and
+  // the hand on it reads as gripping nothing, while a pale one is the
+  // brightest thing in the foreground and reads as an egg. A satin coat puts
+  // the lamp's reflection along the shell's back and edges. The seam is a
+  // shade darker than the shell, a split rather than a gash; the metal wheel
+  // catches a thin highlight along its rim.
   const shellMaterial = new MeshPhysicalMaterial({
-    color: '#141416',
-    roughness: 0.48,
+    color: '#6c7077',
+    roughness: 0.42,
     metalness: 0,
-    clearcoat: 0.25,
-    clearcoatRoughness: 0.6,
+    clearcoat: 0.5,
+    clearcoatRoughness: 0.32,
   });
-  const seamMaterial = new MeshStandardMaterial({ color: '#050506', roughness: 0.9 });
-  const wheelMaterial = new MeshStandardMaterial({ color: '#232427', roughness: 0.7 });
+  applyContactShadows(shellMaterial);
+  const seamMaterial = new MeshStandardMaterial({ color: '#2c2e32', roughness: 0.9 });
+  const wheelMaterial = new MeshStandardMaterial({ color: '#8a8d92', roughness: 0.35, metalness: 1 });
   shell.material = shellMaterial;
   seam.material = seamMaterial;
   wheel.material = wheelMaterial;

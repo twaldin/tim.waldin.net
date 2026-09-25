@@ -18,12 +18,15 @@ import room_scene as rs
 LIGHTMAP_UV = "Lightmap"
 ATLAS_SIZE = 2048
 # Texel density weights: what the seated camera sees up close gets more. The
-# mug is small, curved and near the eye: its shading turns fast around it.
+# phone and the mug's and speaker's small baked parts are near the eye: their
+# shading turns fast around them (the earbuds case most of all). (The mug
+# and speaker themselves are `live_` for that reason.)
 IMPORTANCE = [
-    (("mug", "coffee"), 8.0),
-    (("desk_top", "desk_mat"), 4.0),
-    (("wall_front", "window", "monitor", "book", "binder", "stationery", "round_spectacles", "rubber_duck",
-      "sticky", "desk_lamp", "cable", "pc_", "potted_plant"), 2.0),
+    (("earbuds",), 16.0),
+    (("mug", "coffee", "phone", "speaker"), 8.0),
+    (("desk_top", "desk_mat", "hex_panel"), 4.0),
+    (("wall_front", "window", "monitor", "clock", "rubber_duck", "lamp", "laptop", "cable", "pc_",
+      "potted_plant"), 2.0),
     (("floor", "ceiling", "wall_back", "wall_left", "wall_right", "skirting"), 0.25),
 ]
 
@@ -36,8 +39,9 @@ def importance(name):
 
 
 def is_static(obj):
-    """Room geometry that gets lightmaps (the street outside is baked separately)."""
-    return (obj.type == "MESH" and not obj.name.startswith(("rt_", "proxy_", "preview_", "emit_", "street_"))
+    """Room geometry that gets lightmaps (the street outside is baked
+    separately; `live_` props are lit by the realtime lights)."""
+    return (obj.type == "MESH" and not obj.name.startswith(("rt_", "proxy_", "preview_", "emit_", "street_", "live_"))
             and obj.visible_camera)
 
 
@@ -225,7 +229,7 @@ def encode_lightmap(rgb, path, rng, percentile=99.7):
     return scale
 
 
-def downscale_textures(limit_default=1024, hero=("desk", "deskmat", "desk_lamp_arm_01")):
+def downscale_textures(limit_default=1024, hero=("desk", "deskmat")):
     """Cap texture sizes, and give greyscale images RGB copies (Blender's
     WebP writer cannot encode greyscale)."""
     for image in list(bpy.data.images):

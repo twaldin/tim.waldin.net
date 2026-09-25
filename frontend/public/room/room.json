@@ -8,16 +8,16 @@
   "units": "Cycles diffuse lighting: outgoing radiance of an albedo-1 surface",
   "night": {
    "file": "lightmap_night.webp",
-   "scale": 7.003064155578613
+   "scale": 7.550328254699707
   },
   "day": {
    "file": "lightmap_day.webp",
-   "scale": 162.38658142089844,
+   "scale": 60.72608184814453,
    "note": "without the sun's direct light, which the runtime's shadowed sun adds"
   },
   "screen": {
    "file": "lightmap_screen.webp",
-   "scale": 0.9847438335418701,
+   "scale": 0.9871029853820801,
    "note": "monitor alone emitting white at strength 1; multiply by the live screen radiance"
   }
  },
@@ -50,30 +50,30 @@
   ],
   "night": {
    "file": "street_night.webp",
-   "scale": 1.930100679397583
+   "scale": 1.9300259351730347
   },
   "day": {
    "file": "street_day.webp",
-   "scale": 89.73994445800781
+   "scale": 89.59400939941406
   }
  },
  "emitters": {
-  "emit_ledStrip": {
+  "emit_mugLed": {
    "color": [
-    0.46,
-    0.4,
+    0.85,
+    0.95,
+    1.0
+   ],
+   "night": 4.0,
+   "day": 2.0
+  },
+  "emit_biasLight": {
+   "color": [
+    0.5,
+    0.42,
     1.0
    ],
    "night": 10.0,
-   "day": 0.0
-  },
-  "emit_lampBulb": {
-   "color": [
-    1.0,
-    0.72,
-    0.42
-   ],
-   "night": 25.0,
    "day": 0.0
   },
   "emit_pcFans": {
@@ -84,26 +84,125 @@
    ],
    "night": 14.0,
    "day": 4.2
+  },
+  "emit_hexPanel3": {
+   "color": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "night": 1.2,
+   "day": 0.0
+  },
+  "emit_hexPanel0": {
+   "color": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "night": 1.2,
+   "day": 0.0
+  },
+  "emit_lampLed": {
+   "color": [
+    1.0,
+    0.88,
+    0.77
+   ],
+   "night": 12.0,
+   "day": 0.0
+  },
+  "emit_lampTouch": {
+   "color": [
+    1.0,
+    0.9,
+    0.8
+   ],
+   "night": 2.0,
+   "day": 0.0
+  },
+  "emit_pcLedWhite": {
+   "color": [
+    0.93,
+    0.92,
+    1.0
+   ],
+   "night": 6.0,
+   "day": 1.8
+  },
+  "emit_hexPanel4": {
+   "color": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "night": 1.2,
+   "day": 0.0
+  },
+  "emit_speakerGlow": {
+   "color": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "night": 2.0,
+   "day": 1.0
+  },
+  "emit_hexPanel1": {
+   "color": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "night": 1.2,
+   "day": 0.0
+  },
+  "emit_ledStrip": {
+   "color": [
+    0.46,
+    0.4,
+    1.0
+   ],
+   "night": 10.0,
+   "day": 0.0
+  },
+  "emit_hexPanel5": {
+   "color": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "night": 1.2,
+   "day": 0.0
+  },
+  "emit_hexPanel2": {
+   "color": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "night": 1.2,
+   "day": 0.0
   }
  },
  "lights": {
   "lamp": {
    "position": [
-    -0.6473,
-    1.2947,
-    -0.2067
+    -0.4969,
+    1.3042,
+    -0.4025
    ],
    "direction": [
-    0.4771,
-    -0.8788,
-    -0.0107
+    0.6134,
+    -0.7256,
+    0.3119
    ],
-   "angle": 0.9811472296714783,
+   "angle": 1.0821040868759155,
    "penumbra": 0.6000000238418579,
    "color": [
     1.0,
-    0.587413489818573,
-    0.3420485258102417
+    0.8754968643188477,
+    0.7708147764205933
    ],
    "intensity": 2.3873241463784303
   },

@@ -1,6 +1,7 @@
 // The room renderer: scene assembly, lighting for the realtime objects, the
 // post-processing chain and the frame loop. RoomView owns its lifetime.
 import {
+  Box3,
   Color,
   DirectionalLight,
   HalfFloatType,
@@ -39,11 +40,13 @@ import { attachScreenPointer, createTerminalScreen } from './screen';
 import { disposeTree, loadRoom } from './room';
 import { createHands } from './hands';
 import { applySkinShading } from './skin';
-import { smoothShadowPenumbrae } from './shadows';
+import { fitSunDetail, smoothShadowPenumbrae, SUN_SHADOW_DEPTH } from './shadows';
+import { captureProbes, propSites, type LocalProbes } from './probes';
 import { createRoomAudio } from './audio';
 import { typeText } from './autotype';
 import { createMouse } from './mouse';
 import { createAtmosphere } from './atmosphere';
+import { createDeskDevices } from './devices';
 
 export interface RoomEngineOptions {
   canvas: HTMLCanvasElement;
@@ -69,6 +72,13 @@ const TYPING_DECAY_SECONDS = 1.6;
 // Scene-linear radiance (bake units) → display, before the tone map. The
 // room atlases are scaled for 1.
 const EXPOSURE = 1;
+// By day the room is several times brighter than at night: the window's sky
+// lights the whole room to about 1.6 (albedo-1 irradiance) and the sun's
+// patches on the desk several times that, so at night's exposure the sunlit
+// desk and walls clip and skin in open shade already sits near the tone
+// mapper's white, leaving the sun nothing to add. A camera stops down in
+// daylight: every light, the lightmaps and the panorama take this share.
+const DAY_EXPOSURE = 0.55;
 // Bloom starts above this scene luminance: the monitor's text glows at night;
 // by day only what is brighter than the sunlit desk does.
 const BLOOM_THRESHOLD = { night: 0.82, day: 2.2 };
@@ -111,7 +121,6 @@ export async function createRoomEngine(options: RoomEngineOptions): Promise<Room
     new GLTFLoader().loadAsync('/room/arms.glb'),
   ]);
   scene.add(room.scene);
-  room.setExposure(EXPOSURE);
   arms.scene.traverse((object) => {
     if (!(object instanceof Mesh)) return;
     object.castShadow = true;
@@ -141,10 +150,12 @@ export async function createRoomEngine(options: RoomEngineOptions): Promise<Room
   audio.setDay(resolvedMode() === 'light' ? 1 : 0);
 
   // --- Lights for the realtime objects -------------------------------------
-  // The baked room only lights itself. The keyboard, hands and mouse get the
-  // same light from the room panorama (bounce light, skylight, reflections),
-  // the monitor as an area light, and shadowed direct lights placed and
-  // sized like the Blender lamp and sun (room.json `lights`).
+  // The baked room only lights itself. The keyboard, hands, mouse and the
+  // live_ props get the room's light from light probes captured beside
+  // each of them at night and from the room panorama by day (probes.ts;
+  // bounce light, skylight, reflections), the monitor as an area light,
+  // and shadowed direct lights placed and sized like the Blender lamp and
+  // sun (room.json `lights`).
   const pose = screenPose();
   const screenNormal = new Vector3(0, 0, 1).applyQuaternion(pose.quaternion);
   const screenLight = new RectAreaLight('#ffffff', 0, pose.width, pose.height);
@@ -161,7 +172,7 @@ export async function createRoomEngine(options: RoomEngineOptions): Promise<Room
   lamp.shadow.bias = -0.0004;
   lamp.shadow.normalBias = 0.006;
   lamp.shadow.radius = 4;
-  // Starts past the lamp's own shade, which surrounds the light.
+  // Starts past the lamp's own head, just behind the light.
   lamp.shadow.camera.near = 0.06;
   lamp.shadow.camera.far = 3;
   scene.add(lamp, lamp.target);
@@ -174,30 +185,57 @@ export async function createRoomEngine(options: RoomEngineOptions): Promise<Room
   sun.target.position.set(0, 1.2, -0.3);
   sun.position.copy(sun.target.position).addScaledVector(sunDirection, -4);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(4096, 4096);
+  // 2.3 mm texels: fine for the blinds' stripes, whose penumbra is wider;
+  // the hands' own shadows on the desk come from sunDetail below.
+  sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.bias = -0.0002;
-  sun.shadow.normalBias = 0.0025;
+  // The tent filter compares each tap along the receiver's plane
+  // (shadows.ts), but inside one hardware 2×2 lookup a surface the sun
+  // grazes still drops several millimetres, which speckles the back of a
+  // hand near its terminator. Sampling from 6 mm off the skin clears that;
+  // contact shadows under the fingertips shift by less than their penumbra.
+  sun.shadow.normalBias = 0.006;
   // The sun's disc softens the blinds' slat shadows by about a centimetre
-  // at the desk: wide filtering reproduces that instead of hard stripes.
-  sun.shadow.radius = 5;
-  Object.assign(sun.shadow.camera, { left: -2.4, right: 2.4, top: 2.4, bottom: -2.4, near: 0.5, far: 9 });
+  // at the desk: a tent filter reaching four texels (9 mm) either side
+  // reproduces that instead of hard stripes.
+  sun.shadow.radius = 4;
+  Object.assign(sun.shadow.camera, { left: -2.4, right: 2.4, top: 2.4, bottom: -2.4, ...SUN_SHADOW_DEPTH });
   sun.shadow.camera.updateProjectionMatrix();
   scene.add(sun, sun.target);
+  // The sun's shadow over the desk (shadows.ts): dark itself, 0.5 mm texels
+  // around the keyboard and mouse. A fingertip's contact shadow keeps within
+  // a millimetre of it with a 2 mm normal offset, and a tent two texels
+  // either side stays smooth where the sun grazes the desk.
+  const sunDetail = new DirectionalLight(0xffffff, 0);
+  sunDetail.castShadow = true;
+  sunDetail.shadow.mapSize.set(2048, 2048);
+  sunDetail.shadow.bias = -0.0002;
+  sunDetail.shadow.normalBias = 0.002;
+  sunDetail.shadow.radius = 2;
+  fitSunDetail(sun, sunDetail, new Vector3(0.05, 0.8, -0.08));
+  scene.add(sunDetail, sunDetail.target);
 
   let day = resolvedMode() === 'light' ? 1 : 0;
   let dayGoal = day;
   const unsubscribeMode = subscribeTheme(() => {
     dayGoal = resolvedMode() === 'light' ? 1 : 0;
   });
+  let probes: LocalProbes | null = null;
   const lighting = (blend: number) => {
-    lamp.intensity = lampSpec.intensity * EXPOSURE * (1 - blend);
-    sun.intensity = sunSpec.intensity * EXPOSURE * blend;
+    const exposure = EXPOSURE * MathUtils.lerp(1, DAY_EXPOSURE, blend);
+    lamp.intensity = lampSpec.intensity * exposure * (1 - blend);
+    sun.intensity = sunSpec.intensity * exposure * blend;
     // A light that is off keeps its last shadow map instead of re-rendering it.
     lamp.shadow.autoUpdate = blend < 1;
     sun.shadow.autoUpdate = blend > 0;
+    sunDetail.shadow.autoUpdate = blend > 0;
     // Swap panoramas at the midpoint, where their contribution dips.
     scene.environment = blend < 0.5 ? room.environments.night : room.environments.day;
-    scene.environmentIntensity = EXPOSURE * (0.35 + 0.65 * Math.abs(blend - 0.5) * 2);
+    scene.environmentIntensity = exposure * (0.35 + 0.65 * Math.abs(blend - 0.5) * 2);
+    probes?.apply(blend < 0.5, scene.environmentIntensity);
+    screen.setEnvironment(scene.environment, scene.environmentIntensity);
+    devices.setEnvironment(scene.environment, scene.environmentIntensity);
+    room.setExposure(exposure);
     room.setDayBlend(blend);
     bloom.luminanceMaterial.threshold = MathUtils.lerp(BLOOM_THRESHOLD.night, BLOOM_THRESHOLD.day, blend);
   };
@@ -211,6 +249,7 @@ export async function createRoomEngine(options: RoomEngineOptions): Promise<Room
     sunColor: sun.color.clone(),
   });
   scene.add(...atmosphereObjects);
+  const devices = createDeskDevices(room.scene);
 
   // --- Post-processing -----------------------------------------------------
   const composer = new EffectComposer(renderer, { frameBufferType: HalfFloatType, multisampling: 4 });
@@ -229,11 +268,36 @@ export async function createRoomEngine(options: RoomEngineOptions): Promise<Room
   const effects = new EffectPass(camera, bloom, toneMapping, vignette, grain);
   effects.dithering = true;
   composer.addPass(effects);
-  lighting(day);
-  // Render both shadow maps once even if their light starts off: a shadow
+  // Every shadow map renders once even if its light starts off: a shadow
   // sampler without a depth map makes every shadow-receiving draw fail.
-  lamp.shadow.needsUpdate = true;
-  sun.shadow.needsUpdate = true;
+  // The night probes (probes.ts) are captured first, lit as at night.
+  const renderShadowsOnce = () => {
+    lamp.shadow.needsUpdate = true;
+    sun.shadow.needsUpdate = true;
+    sunDetail.shadow.needsUpdate = true;
+  };
+  lighting(0);
+  renderShadowsOnce();
+  devices.update(Date.now(), 0);
+  const keyboardBox = new Box3().setFromObject(keyboard.group);
+  const lampLed = room.scene.getObjectByName('emit_lampLed');
+  probes = captureProbes(
+    renderer,
+    scene,
+    [
+      // One probe over the home row for the hands, the keys and the mouse:
+      // seen from any of them the room differs by a few percent, and each
+      // probe costs six renders of the room while it loads.
+      {
+        at: keyboardBox.getCenter(new Vector3()).setY(keyboardBox.max.y + 0.04),
+        objects: [arms.scene, keyboard.group, mouse.group],
+      },
+      ...propSites(room.scene),
+    ],
+    [arms.scene, screen.mesh, ...atmosphereObjects, ...(lampLed ? [lampLed] : [])],
+  );
+  lighting(day);
+  renderShadowsOnce();
 
   // --- Input -----------------------------------------------------------------
   const pointer = new Vector2();
@@ -367,6 +431,7 @@ export async function createRoomEngine(options: RoomEngineOptions): Promise<Room
       audio.setDay(day);
     }
     atmosphere.update(seconds, day, 1 - day);
+    devices.update(Date.now(), day);
     pov.update(dt, { pointer, typing, zoom });
     composer.render(dt);
   };
@@ -418,10 +483,12 @@ export async function createRoomEngine(options: RoomEngineOptions): Promise<Room
       keyboard.dispose();
       mouse.dispose();
       atmosphere.dispose();
+      probes?.dispose();
       room.dispose();
       disposeTree(arms.scene);
       lamp.shadow.dispose();
       sun.shadow.dispose();
+      sunDetail.shadow.dispose();
       audio.dispose();
       composer.dispose();
       renderer.dispose();

@@ -102,9 +102,6 @@ for (const [chunk, line] of [
 const staticLightsPars = `float roomDirectDiffuse;\n${ShaderChunk.lights_physical_pars_fragment
   .replace(LAMBERT_DIRECT, LAMBERT_DIRECT.replace('+= irradiance', '+= roomDirectDiffuse * irradiance'))
   .replace(RECT_AREA_DIFFUSE, '')}`;
-const staticLightsBegin = ShaderChunk.lights_fragment_begin
-  .replace(FIRST_LIGHT_LOOP, `roomDirectDiffuse = 0.0;\n${FIRST_LIGHT_LOOP}`)
-  .replace(DIRECTIONAL_LOOP, `roomDirectDiffuse = 1.0;\n${DIRECTIONAL_LOOP}`);
 const staticLightsMaps = ShaderChunk.lights_fragment_maps
   .replace(
     LIGHTMAP_SAMPLE,
@@ -245,7 +242,14 @@ export async function loadRoom(onProgress: (fraction: number) => void): Promise<
           }`,
         )
         .replace('#include <lights_physical_pars_fragment>', staticLightsPars)
-        .replace('#include <lights_fragment_begin>', staticLightsBegin)
+        // Read at compile time: engine.ts has shadows.ts patch the sun's
+        // shadow lookup into this chunk after this module has loaded.
+        .replace(
+          '#include <lights_fragment_begin>',
+          ShaderChunk.lights_fragment_begin
+            .replace(FIRST_LIGHT_LOOP, `roomDirectDiffuse = 0.0;\n${FIRST_LIGHT_LOOP}`)
+            .replace(DIRECTIONAL_LOOP, `roomDirectDiffuse = 1.0;\n${DIRECTIONAL_LOOP}`),
+        )
         .replace('#include <lights_fragment_maps>', staticLightsMaps);
     };
     material.customProgramCacheKey = () => 'room-baked';
@@ -285,6 +289,11 @@ export async function loadRoom(onProgress: (fraction: number) => void): Promise<
     }
     if (object.geometry.getAttribute('uv1')) {
       bake(material);
+      object.castShadow = true;
+      object.receiveShadow = true;
+    } else if (name.startsWith('live_')) {
+      // Small curved props lit by the realtime lights instead of a lightmap
+      // (their materials are their own, never shared with baked meshes).
       object.castShadow = true;
       object.receiveShadow = true;
     }

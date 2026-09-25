@@ -19,6 +19,7 @@ import {
   Vector4,
   type Camera,
   type IUniform,
+  type Texture,
   type WebGLRenderer,
 } from 'three';
 import type { IDisposable } from '@xterm/xterm';
@@ -34,6 +35,10 @@ const GLYPH_COVERAGE = 0.2;
 const PANEL_GAIN = 1.0;
 // An IPS panel never reaches black in a dark room.
 const BLACK_LEVEL = new Color(0.0028, 0.003, 0.0042);
+// The share of the room's reflection the anti-glare coating keeps: at a
+// plain dielectric's, the day room behind the seat veils a light-theme
+// terminal's text to grey.
+const PANEL_REFLECTANCE = 0.1;
 
 export interface ScreenLight {
   color: Color; // average linear radiance of the panel (picture × gain)
@@ -45,6 +50,10 @@ export interface TerminalScreen {
   bind(handle: TerminalScreenHandle | null): void;
   // Uploads a fresh terminal frame if xterm rendered since the last call.
   update(): void;
+  // The room panorama the panel reflects, at the scene's intensity. The
+  // panel takes it as its own envMap: three scales only a material's own
+  // envMap by envMapIntensity, never the scene's environment.
+  setEnvironment(environment: Texture | null, intensity: number): void;
   light: ScreenLight;
   dispose(): void;
 }
@@ -105,7 +114,6 @@ export function createTerminalScreen(renderer: WebGLRenderer): TerminalScreen {
     metalness: 0,
     emissive: '#ffffff',
     emissiveMap: main.texture,
-    envMapIntensity: 0.5,
   });
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
@@ -234,6 +242,10 @@ export function createTerminalScreen(renderer: WebGLRenderer): TerminalScreen {
       const lit = Math.min(1, textCoverage * GLYPH_COVERAGE);
       light.color.copy(bgColor).lerp(fgColor, lit).multiplyScalar(PANEL_GAIN);
       light.luminance = light.color.r * 0.2126 + light.color.g * 0.7152 + light.color.b * 0.0722;
+    },
+    setEnvironment(environment, intensity) {
+      material.envMap = environment;
+      material.envMapIntensity = intensity * PANEL_REFLECTANCE;
     },
     dispose() {
       disposables.forEach((d) => d.dispose());

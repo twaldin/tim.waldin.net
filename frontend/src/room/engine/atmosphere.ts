@@ -119,9 +119,14 @@ function createDust(lights: AtmosphereLights, windowCenter: Vector3) {
   return { object: points, material, geometry };
 }
 
-function createSteam(anchor: Vector3, lampColor: Color) {
-  const geometry = new PlaneGeometry(0.07, 0.16, 1, 1);
-  geometry.translate(0, 0.08, 0);
+// Coffee steam is a faint pale wisp a few centimetres tall. Tinted by the
+// lamp or sun colour it read as an orange-brown smoke column, and its
+// billboard tinted the speaker behind it.
+const STEAM_COLOR = new Color(0.8, 0.83, 0.88);
+
+function createSteam(anchor: Vector3) {
+  const geometry = new PlaneGeometry(0.06, 0.09, 1, 1);
+  geometry.translate(0, 0.045, 0);
   const material = new ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -129,7 +134,7 @@ function createSteam(anchor: Vector3, lampColor: Color) {
     blending: NormalBlending,
     uniforms: {
       time: { value: 0 },
-      tint: { value: lampColor.clone() },
+      tint: { value: STEAM_COLOR.clone() },
       strength: { value: 1 },
     },
     vertexShader: /* glsl */ `
@@ -162,7 +167,7 @@ function createSteam(anchor: Vector3, lampColor: Color) {
         float column = smoothstep(0.5, 0.08, abs(uv.x - 0.5));
         float n = fbm(vec2(uv.x * 4.0, uv.y * 3.0 - rise * 2.0));
         float fade = smoothstep(0.0, 0.12, uv.y) * smoothstep(1.0, 0.35, uv.y);
-        float a = column * smoothstep(0.35, 0.85, n) * fade * 0.16 * strength;
+        float a = column * smoothstep(0.35, 0.85, n) * fade * 0.07 * strength;
         gl_FragColor = vec4(tint, a);
       }
     `,
@@ -251,7 +256,7 @@ export function createAtmosphere(
   const coffee = roomScene.getObjectByName('coffee');
   if (coffee) {
     const box = new Box3().setFromObject(coffee);
-    steam = createSteam(new Vector3((box.min.x + box.max.x) / 2, box.max.y + 0.004, (box.min.z + box.max.z) / 2), lights.lampColor);
+    steam = createSteam(new Vector3((box.min.x + box.max.x) / 2, box.max.y + 0.004, (box.min.z + box.max.z) / 2));
     objects.push(steam.object);
   }
 
@@ -267,7 +272,7 @@ export function createAtmosphere(
         dust.material.uniforms.lampOn.value = lampOn;
         if (steam) {
           steam.material.uniforms.time.value = time;
-          steam.material.uniforms.tint.value.copy(lights.lampColor).lerp(lights.sunColor, day).multiplyScalar(0.35);
+          steam.material.uniforms.tint.value.copy(STEAM_COLOR).multiplyScalar(0.5 + 0.3 * day);
         }
         rain.material.uniforms.time.value = time;
         rain.material.uniforms.wet.value = 1 - day;

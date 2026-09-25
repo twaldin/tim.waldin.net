@@ -5,18 +5,22 @@
 // terminator, red most, so millimetre-scale valleys (between the knuckles)
 // turned from the light stay warm instead of going grey; past the smooth
 // terminator a thin orange band of scattered light fades out instead of
-// plain Lambert's hard, waxy edge. Ambient light (the room panorama) comes
-// out of skin a little warmer, so a hand in shade under a blue sky stays
-// skin-coloured instead of turning to grey clay. The baked occlusion (the
-// aoMap) takes ambient light out of creases, keeping more red, as light
-// bouncing inside a crease does, and a little of the direct light (shadow
-// maps can't resolve millimetre creases). Patches three's lighting chunks
-// for this material only.
+// plain Lambert's hard, waxy edge. Ambient light is the room's, as on the
+// keyboard beside the hands (probes.ts), plus what no capture of the room
+// can hold: the neighbouring fingers lit around the hands. The baked
+// occlusion (the aoMap) takes ambient light out of creases, keeping more
+// red, as light bouncing inside a crease does, and a little of the direct
+// light (shadow maps can't resolve millimetre creases). Patches three's
+// lighting chunks for this material only.
 import { ShaderChunk, type MeshStandardMaterial } from 'three';
 
 const LAMBERT_LINE =
   'reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );';
 const AO_LINE = 'reflectedLight.indirectDiffuse *= ambientOcclusion;';
+
+// The baked normal map's pores read as glittering stucco at full strength
+// under the lamp; this keeps the pores and creases without the grit.
+const SKIN_NORMAL_SCALE = 0.6;
 
 // `geometryNormal` here is the normal-mapped one; `skinSmoothNormal` is the
 // interpolated vertex normal, copied out of main() below.
@@ -33,19 +37,57 @@ const WRAPPED = /* glsl */ `{
     // the shadow side. Measured on the smooth normal: skin detail must not
     // draw lines where it crosses the terminator.
     const float SKIN_WRAP = 0.07;
-    const vec3 SKIN_SCATTER = vec3( 1.0, 0.46, 0.31 );
     float smoothNdl = dot( skinSmoothNormal, directLight.direction );
     float band = ( saturate( ( smoothNdl + SKIN_WRAP ) / ( 1.0 + SKIN_WRAP ) ) - saturate( smoothNdl ) )
       * smoothstep( -SKIN_WRAP, 0.05, smoothNdl );
-    // How far each channel's light wraps past the detail terminator.
-    const vec3 SKIN_SOFT = vec3( 0.14, 0.09, 0.06 );
+    // Light wraps SKIN_SOFT past the detail terminator, and what wraps has
+    // come out of skin away from where it went in, so it's scatter-coloured.
+    // (A wrap per channel, red's widest, leaves a strip only red reaches,
+    // which the tone mapper's toe turns crimson in the lamp's dark.)
+    vec3 lit = saturate( ndl );
+    vec3 wrapped = saturate( ( ndl + SKIN_SOFT ) / ( 1.0 + SKIN_SOFT ) );
     reflectedLight.directDiffuse += directLight.color
-      * ( saturate( ( ndl + SKIN_SOFT ) / ( 1.0 + SKIN_SOFT ) ) + band * SKIN_SCATTER )
+      * ( lit + ( wrapped - lit + band ) * SKIN_SCATTER )
       * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );
   }`;
 
-// Scattered ambient light's shift toward red (at about equal luminance).
-const AMBIENT_TINT = 'vec3( 1.12, 0.97, 0.88 )';
+// Skin takes the room's light as the keyboard does (probes.ts: a probe
+// over the home row at night, the panorama by day): cool from the window
+// by day, the lamp-lit keys below and the LED-lit wall ahead at night.
+// What no capture of the room can hold is the hand itself: between two
+// fingers, or in the web of the thumb, the skin a crease looks at is its
+// neighbour, lit by the sun or the lamp: the part of the view the baked
+// occlusion takes away is skin, about half of it lit, returning its
+// albedo's share of the light (where the occlusion says it is a crease,
+// so the open back of a hand under a shadow doesn't glow).
+const SKIN_AMBIENT = /* glsl */ `{
+    // Half the neighbour lit, and that half turned about 70 degrees from
+    // the light on average (a finger's side, not its back).
+    const float SKIN_CREASE_BOUNCE = 0.15;
+    vec3 creaseLight = vec3( 0.0 );
+    #if NUM_DIR_LIGHTS > 0
+      creaseLight += skinSunlight( directionalLights[ 0 ].color );
+    #endif
+    #if NUM_SPOT_LIGHTS > 0
+      IncidentLight lampLight;
+      getSpotLightInfo( spotLights[ 0 ], geometryPosition, lampLight );
+      creaseLight += lampLight.color;
+    #endif
+    #ifdef USE_AOMAP
+      float creaseOcclusion = ( texture2D( aoMap, vAoMapUv ).r - 1.0 ) * aoMapIntensity + 1.0;
+      iblIrradiance += creaseLight * material.diffuseContribution * ( smoothstep( 0.9, 0.3, creaseOcclusion ) * SKIN_CREASE_BOUNCE );
+    #endif
+  }`;
+
+// Skin reflects about 2.8% of light head-on (index of refraction 1.4); three's
+// standard material assumes 4%, which on a sunlit hand reads as a milky film.
+// The room's reflection takes half again: the baked occlusion is too
+// shallow to take the sky's grazing sheen out of the valleys between the
+// knuckles, where it reads as a cool bruise by day.
+const SKIN_SPECULAR = /* glsl */ `
+  reflectedLight.directSpecular *= 0.7;
+  reflectedLight.indirectSpecular *= 0.35;`;
+
 // Occlusion takes ambient light out of creases, keeping more red than blue,
 // but never to black (skin scatters light into its creases), and dims the
 // direct diffuse light slightly; direct highlights stay to the shadow maps.
@@ -53,13 +95,143 @@ const SKIN_OCCLUSION = /* glsl */ `
   reflectedLight.indirectDiffuse *= pow( vec3( mix( 0.55, 1.0, ambientOcclusion ) ), vec3( 0.6, 1.0, 1.2 ) );
   reflectedLight.directDiffuse *= mix( 1.0, ambientOcclusion, 0.15 );`;
 
+// Sunlight on the back of a hand is three to four times brighter than the
+// tone mapper's white, which then drains it to a milky pink. Skin exposes
+// its direct light down so its brightest channel lands on a knee's white,
+// hue kept, and sunlit skin stays peach. The exposure comes from the light
+// that would arrive unshadowed (the lights on the smooth normal plus the
+// room's ambient light, on a blurred albedo), and only scales the direct
+// light: a curve over each pixel instead would flatten pores and creases
+// with the brightness, and squeeze a shadow's penumbra into its last few
+// percent of coverage, where the shadow map's texels show. The lamp lights
+// skin to about 1.0, which the tone mapper rolls off well, so the knee
+// comes down from there only as the sun takes over from the lamp (the
+// room's one directional and one spot light).
+const SKIN_SHOULDER = /* glsl */ `{
+    const vec3 LUMINANCE = vec3( 0.2126, 0.7152, 0.0722 );
+    vec3 unshadowed = iblIrradiance;
+    float sunColor = 0.0;
+    float lampColor = 0.0;
+    #if NUM_DIR_LIGHTS > 0
+      sunColor = dot( directionalLights[ 0 ].color, LUMINANCE );
+      float sunNdl = dot( skinSmoothNormal, directionalLights[ 0 ].direction );
+      unshadowed += skinSunlight( directionalLights[ 0 ].color ) * saturate( ( sunNdl + SKIN_SOFT ) / ( 1.0 + SKIN_SOFT ) );
+    #endif
+    #if NUM_SPOT_LIGHTS > 0
+      lampColor = dot( spotLights[ 0 ].color, LUMINANCE );
+      IncidentLight skinLamp;
+      getSpotLightInfo( spotLights[ 0 ], geometryPosition, skinLamp );
+      float lampNdl = dot( skinSmoothNormal, skinLamp.direction );
+      unshadowed += skinLamp.color * saturate( ( lampNdl + SKIN_SOFT ) / ( 1.0 + SKIN_SOFT ) );
+    #endif
+    float knee = mix( 1.0, 0.7, sunColor / max( sunColor + lampColor, 1e-6 ) );
+    // How far above the knee the brightest skin ends up.
+    const float SKIN_HEADROOM = 0.28;
+    vec3 smoothAlbedo = diffuse;
+    #ifdef USE_MAP
+      // Mip three of the map: pores out, fingertip and knuckle tints in.
+      smoothAlbedo *= texture( map, vMapUv, 3.0 ).rgb;
+    #endif
+    vec3 arriving = unshadowed * RECIPROCAL_PI * smoothAlbedo;
+    float skinPeak = max( max( arriving.r, arriving.g ), arriving.b );
+    if ( skinPeak > knee ) {
+      float over = skinPeak - knee;
+      float exposure = ( knee + over / ( 1.0 + over / SKIN_HEADROOM ) ) / skinPeak;
+      outgoingLight -= ( 1.0 - exposure ) * ( reflectedLight.directDiffuse + reflectedLight.directSpecular );
+    }
+  }`;
+
+// Shadow maps have no idea light diffuses under skin, so a shadow's edge on
+// a hand is as sharp in red as in blue and its penumbra comes out a greyer
+// version of the lit colour. Under skin red light spreads a few
+// millimetres, green less, blue barely: skin looks the shadow up a second
+// time with a filter SKIN_SHADOW_REACH texels wider (about 3 mm more: the
+// lamp's and the sun's texels are 1.5 and 2.3 mm at the desk) and gives red
+// the wide one half blended in, green a little of it and blue the sharp one
+// (all of the wide one lit a penumbra on the thick web of the thumb, a
+// centimetre from any thin edge, in orange paint). Like the diffusion it
+// stands for, a wider filter only moves light across an edge: the shadow
+// side of a tight edge turns red, its lit side loses a little red, and a
+// broad penumbra (the blinds' stripes across the back of a hand by day)
+// keeps its colour. It has to be the filter and not a curve over the
+// coverage: the blinds leave most of a sunlit hand in partial coverage,
+// which a curve would tint all over. The sun's lookup is shadows.ts's
+// two-layer one once that has patched the chunk.
+const SHADOW_LOOKUP =
+  /directLight\.color \*= \( directLight\.visible && receiveShadow \) \? (get(?:Sun)?Shadow\( [^;]*\)) : 1\.0;/g;
+const SKIN_SHADOW_REACH = '1.5';
+
+// Shared by the lighting patches. SKIN_SCATTER is the colour of light that
+// comes out of skin a few millimetres from where it went in (red travels
+// furthest); it is multiplied by the albedo, which is red already, so a
+// deeper red squares into crimson past the lamp's terminator (the underside
+// of a thumb at night, lit by nothing else), and into orange paint where
+// light grazes thick tissue (wrist, the palm's edge). SKIN_SOFT is how far
+// past the terminator light wraps.
+//
+// The sun's colour is the room's golden stripes on its white walls and grey
+// desk. Skin is orange itself, and the sun's warmth on top of it (red over
+// blue 1.8) reads as sunburn beside the blue-grey keys the same sun lights,
+// so skin takes the sun at SKIN_SUN_CHROMA of its colour, brightness kept.
+const SKIN_GLOBALS = /* glsl */ `
+vec3 skinSmoothNormal;
+const vec3 SKIN_SCATTER = vec3( 1.0, 0.85, 0.75 );
+const float SKIN_SOFT = 0.15;
+const float SKIN_SUN_CHROMA = 0.2;
+vec3 skinSunlight( const in vec3 color ) {
+  return mix( vec3( dot( color, vec3( 0.2126, 0.7152, 0.0722 ) ) ), color, SKIN_SUN_CHROMA );
+}
+vec3 skinShadowReach( const in float shadow, const in float wideShadow ) {
+  return vec3( mix( shadow, wideShadow, 0.5 ), mix( shadow, wideShadow, 0.15 ), shadow );
+}`;
+const SUN_LOOKUP = 'getDirectionalLightInfo( directionalLight, directLight );';
+
+// engine.ts tone maps with Khronos PBR Neutral, whose toe takes a dark
+// colour's weakest channel almost all out of every channel: skin in shade
+// (red over green over blue) arrives crimson, its green and blue near zero,
+// far redder than the grey-blue keys beside it in the same shade. Dark skin
+// is handed over lifted just enough that it comes out at the toe's
+// brightness in its own hue. Fades out where the toe does.
+const SKIN_TOE = /* glsl */ `{
+    const vec3 LUMINANCE = vec3( 0.2126, 0.7152, 0.0722 );
+    float darkest = min( min( outgoingLight.r, outgoingLight.g ), outgoingLight.b );
+    if ( darkest < 0.08 ) {
+      vec3 toned = outgoingLight - ( darkest - 6.25 * darkest * darkest );
+      vec3 ownHue = outgoingLight * ( max( dot( toned, LUMINANCE ), 0.0 ) / max( dot( outgoingLight, LUMINANCE ), 1e-6 ) );
+      // What the toe will take back out of ownHue.
+      float ownDarkest = min( min( ownHue.r, ownHue.g ), ownHue.b );
+      vec3 lifted = ownHue + ( ownDarkest < 0.04 ? 0.4 * sqrt( ownDarkest ) - ownDarkest : 0.04 );
+      outgoingLight = mix( outgoingLight, lifted, 1.0 - smoothstep( 0.04, 0.08, darkest ) );
+    }
+  }`;
+
+// A hand is its own worst occluder at the shadow filter's scale: across the
+// concave web between two knuckles, a filter 6 mm wide finds the
+// neighbouring skin nearer the light than the plane of the triangle it
+// shades, and each triangle there comes out as a dark tear. Skin looks its
+// shadows up SKIN_NORMAL_BIAS times further off its surface (about 1.5 cm)
+// than the rest of the room does; the shadows other things cast on a hand
+// come from centimetres away, so they barely move, and the keys' contact
+// shadows under the fingertips keep the lights' own smaller offset.
+const NORMAL_BIAS_LOOKUP = /(directionalLightShadows|spotLightShadows)\[ i \]\.shadowNormalBias/g;
+const SKIN_NORMAL_BIAS = '2.5';
+
 // Every name the patch relies on; if three renames any of them the skin keeps
 // three's stock shading instead of failing to compile.
 const PATCHABLE =
   ShaderChunk.lights_physical_pars_fragment.includes(LAMBERT_LINE) &&
   ShaderChunk.normal_fragment_begin.includes('vec3 nonPerturbedNormal') &&
+  ShaderChunk.lights_fragment_maps.includes('iblIrradiance +=') &&
+  ShaderChunk.aomap_fragment.includes('texture2D( aoMap, vAoMapUv )') &&
+  ShaderChunk.lights_pars_begin.includes('void getSpotLightInfo(') &&
   ShaderChunk.lights_fragment_end.includes('RE_IndirectSpecular') &&
-  ShaderChunk.aomap_fragment.includes(AO_LINE);
+  ShaderChunk.aomap_fragment.includes(AO_LINE) &&
+  ShaderChunk.opaque_fragment.includes('outgoingLight') &&
+  ShaderChunk.map_fragment.includes('vMapUv') &&
+  ShaderChunk.lights_fragment_begin.includes(SUN_LOOKUP) &&
+  (ShaderChunk.lights_fragment_begin.match(SHADOW_LOOKUP) ?? []).filter((line) => line.includes('Shadow.shadowRadius,'))
+    .length === 2 &&
+  (ShaderChunk.shadowmap_vertex.match(NORMAL_BIAS_LOOKUP) ?? []).length === 2;
 if (!PATCHABLE) {
   // three changed its lighting chunks: fail loudly in development rather
   // than silently shipping plain Lambert skin.
@@ -67,20 +239,35 @@ if (!PATCHABLE) {
 }
 
 export function applySkinShading(material: MeshStandardMaterial) {
-  material.envMapIntensity = 0.55;
+  material.normalScale.multiplyScalar(SKIN_NORMAL_SCALE);
   if (!PATCHABLE) return;
   material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <shadowmap_vertex>',
+      ShaderChunk.shadowmap_vertex.replace(NORMAL_BIAS_LOOKUP, `$& * ${SKIN_NORMAL_BIAS}`),
+    );
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <lights_physical_pars_fragment>',
-        `vec3 skinSmoothNormal;\n${ShaderChunk.lights_physical_pars_fragment.replace(LAMBERT_LINE, WRAPPED)}`,
+        `${SKIN_GLOBALS}\n${ShaderChunk.lights_physical_pars_fragment.replace(LAMBERT_LINE, WRAPPED)}`,
       )
       .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nskinSmoothNormal = nonPerturbedNormal;')
       .replace(
-        '#include <lights_fragment_end>',
-        `#include <lights_fragment_end>\nreflectedLight.indirectDiffuse *= ${AMBIENT_TINT};`,
+        '#include <lights_fragment_begin>',
+        ShaderChunk.lights_fragment_begin
+          .replace(SUN_LOOKUP, `${SUN_LOOKUP}\ndirectLight.color = skinSunlight( directLight.color );`)
+          .replace(
+            SHADOW_LOOKUP,
+            (_, lookup: string) =>
+              `directLight.color *= ( directLight.visible && receiveShadow ) ? skinShadowReach( ${lookup}, ${lookup.replace(
+                'Shadow.shadowRadius,',
+                `Shadow.shadowRadius + ${SKIN_SHADOW_REACH},`,
+              )} ) : vec3( 1.0 );`,
+          ),
       )
-      .replace('#include <aomap_fragment>', ShaderChunk.aomap_fragment.replace(AO_LINE, SKIN_OCCLUSION));
+      .replace('#include <lights_fragment_end>', `${SKIN_AMBIENT}\n#include <lights_fragment_end>\n${SKIN_SPECULAR}`)
+      .replace('#include <aomap_fragment>', ShaderChunk.aomap_fragment.replace(AO_LINE, SKIN_OCCLUSION))
+      .replace('#include <opaque_fragment>', `${SKIN_SHOULDER}\n${SKIN_TOE}\n#include <opaque_fragment>`);
   };
   material.customProgramCacheKey = () => 'room-skin';
   material.needsUpdate = true;

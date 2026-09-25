@@ -20,8 +20,8 @@ from mathutils import Vector
 
 FINGERS = ("thumb", "index", "middle", "ring", "pinky")
 SKIN_UV = "SkinUV"
-# Fair skin albedo (linear): sRGB ≈ (203, 163, 145).
-SKIN_TONE = np.array([0.6, 0.37, 0.28], np.float32)
+# Fair skin albedo (linear): sRGB ≈ (201, 168, 151).
+SKIN_TONE = np.array([0.59, 0.39, 0.31], np.float32)
 
 
 # --- anatomy -------------------------------------------------------------
@@ -145,14 +145,17 @@ def anatomy_fields(human, arm):
             out["wr_mask"][idx] = np.where(keep, mask, out["wr_mask"][idx])
             out["wr_d"][idx] = np.where(keep, jd, out["wr_d"][idx])
             out["wr_lat"][idx] = np.where(keep, lat, out["wr_lat"][idx])
-            knuckle = (np.exp(-(np.linalg.norm(p - joints[0], axis=1) / 0.009) ** 2)
-                       + 0.7 * np.exp(-(np.linalg.norm(p - joints[1], axis=1) / 0.0075) ** 2)) * _smoothstep(0.0, 0.6, up_frac)
+            # Faint over the knuckle itself (skin stretched over the flexed
+            # joint pales), clearer over the middle joint: bands across the
+            # finger, short along it like the creases, not round blush spots.
+            knuckle = (0.15 * np.exp(-((s - starts[0]) / 0.007) ** 2)
+                       + 0.7 * np.exp(-((s - starts[1]) / 0.0055) ** 2)) * _smoothstep(0.0, 0.6, up_frac)
             out["knuckle"][idx] = np.maximum(out["knuckle"][idx], knuckle if finger != "thumb" else 0.6 * knuckle)
             out["tip"][idx] = np.maximum(out["tip"][idx], np.exp(-(np.linalg.norm(p - joints[3], axis=1) / 0.011) ** 2))
             out["dorsal"][idx] = up_frac
             # Nail: back of the distal phalanx, from the cuticle to the tip.
             t_distal = (s - starts[2]) / lengths[2]
-            region = (seg == 2) & (t_distal > 0.4) & (t_distal < 0.98) & (up_frac > 0.55) & (w_chain[idx] > 0.5)
+            region = (seg == 2) & (t_distal > 0.4) & (t_distal < 0.98) & (up_frac > 0.66) & (w_chain[idx] > 0.5)
             out["nail_region"][idx] = np.where(region, 1.0, out["nail_region"][idx])
             out["nail_u"][idx] = np.where(seg == 2, np.clip((t_distal - 0.4) / 0.58, 0, 1), out["nail_u"][idx])
             out["nail_c"][idx] = np.where(seg == 2, up_frac, out["nail_c"][idx])
@@ -161,7 +164,7 @@ def anatomy_fields(human, arm):
         attr.data.foreach_set("value", values.astype(np.float32))
 
 
-def raise_nails(human, depth=0.00028, smoothing=3):
+def raise_nails(human, depth=0.0004, smoothing=2):
     """Lift the nail plates a fraction of a millimetre off the finger: the
     nail region's mask is blurred over the mesh so the plate rises from its
     folds without a wall. Stores the blurred mask as `nail`."""
@@ -339,11 +342,12 @@ def _bake(human, material, size, kind="EMIT"):
     return pixels.reshape(size, size, 4)[..., :3]
 
 
-def _bake_occlusion(human, size, distance=0.02, samples=96):
+def _bake_occlusion(human, size, distance=0.014, samples=96):
     """The posed skin's ambient occlusion by itself within `distance` metres:
     dark in the valleys between knuckles, the gaps between fingers and the
-    creases of bent joints. Baked at half resolution (it is smooth),
-    lightly blurred and upsampled."""
+    creases of bent joints (reaching further, neighbouring fingers blacken
+    each other's sides into a sooty outline). Baked at half resolution (it
+    is smooth), lightly blurred and upsampled."""
     scene = bpy.context.scene
     if scene.world is None:
         scene.world = bpy.data.worlds.new("bake_world")
@@ -363,6 +367,26 @@ def _bake_occlusion(human, size, distance=0.02, samples=96):
     # Outside the UV islands: unoccluded, so mipmaps don't darken their edges.
     half = np.where(inside > 0.0, total / np.maximum(weight, 1.0), 1.0)
     return _upsample2(half)
+
+
+def _dilate(image, inside, steps=16):
+    """Grow every UV island `steps` texels outward (each new texel the mean
+    of its filled neighbours). Unpadded, mipmaps and filtering at an island's
+    edge pulled in the empty atlas: a grey line along every seam, e.g. round
+    the wrist."""
+    image = image.copy()
+    filled = inside.copy()
+    for _ in range(steps):
+        total = np.zeros_like(image)
+        count = np.zeros(filled.shape, np.float32)
+        for shift in ((-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)):
+            near = np.roll(filled, shift, (0, 1))
+            total += np.roll(image, shift, (0, 1)) * near[..., None]
+            count += near
+        grow = ~filled & (count > 0)
+        image[grow] = total[grow] / count[grow][:, None]
+        filled |= grow
+    return image
 
 
 def _upsample2(image):
@@ -428,7 +452,10 @@ def bake_skin(human, arm, mh_image, size=2048, cache=None):
     nt.links.new(object_coords(nt), add.inputs[0])
     add.inputs[1].default_value = (1, 1, 1)
     nt.links.new(add.outputs[0], emit.inputs["Color"])
-    position = _bake(human, mat, size) - 1.0
+    raw = _bake(human, mat, size)
+    # Texels no UV island covers bake black (positions are offset positive).
+    inside = np.any(raw > 0.0, axis=-1)
+    position = raw - 1.0
     mat, nt, emit = _emit_material("field_mh")
     nt.links.new(mh_color(nt), emit.inputs["Color"])
     mh = _bake(human, mat, size)
@@ -485,32 +512,45 @@ def bake_skin(human, arm, mh_image, size=2048, cache=None):
     tendons *= dorsal_hand
     # Veins: zero crossings of smooth noise, a little stretched along the
     # hand, make a wandering, branching network (not parallel streaks);
-    # strongest mid-hand, gone at the knuckles.
+    # strongest mid-hand, gone at the knuckles. Wide and low, soft tubes
+    # (narrow, sunlight from behind the seat drew them as incised cracks).
     q = np.stack([hand_u / 0.022, hand_v / 0.013, p[:, 0] * 40], 1).astype(np.float32)
     net = value_noise(q, 1.0, seed=11) + 0.2 * value_noise(q * 2.3, 1.0, seed=12)
-    veins = np.exp(-(net / 0.1) ** 2) * dorsal_hand * _smoothstep(0.0, 0.025, hand_u) * (1 - _smoothstep(0.05, 0.075, hand_u))
+    veins = np.exp(-(net / 0.15) ** 2) * dorsal_hand * _smoothstep(0.0, 0.025, hand_u) * (1 - _smoothstep(0.05, 0.075, hand_u))
     g1, g2, _ = voronoi(p, 0.0011, seed=2)
     # Grooves at least a texel wide, or they alias into a regular mesh.
     groove = np.exp(-((g2 - g1) / 0.00016) ** 2)
     warp = value_noise(p, 0.0015, seed=3)
     phase = (wr_d + 2.5 * wr_lat ** 2) / 0.00125 + 0.35 * warp
-    wrinkle = np.exp(-((phase - np.round(phase)) / 0.18) ** 2) * wr_mask
+    wrinkle = np.exp(-((phase - np.round(phase)) / 0.24) ** 2) * wr_mask
     pore = np.exp(-(voronoi(p, 0.0007, seed=1)[0] / 0.00016) ** 2)
     # Faint lengthwise ridges on the nails (0.6 mm apart across the nail).
     ridges = np.sin(wr_lat * (2 * np.pi / 0.0006) + 2 * value_noise(p, 0.002, seed=4)) * nail
-    height = skin * (90e-6 * tendons + 110e-6 * veins - 90e-6 * wrinkle - 8e-6 * groove - 8e-6 * pore) + 3e-6 * ridges
+    # Amplitudes large enough to survive 8-bit lossy texture compression: a
+    # few tens of microns of relief per texel is only a code value or two.
+    height = skin * (130e-6 * tendons + 190e-6 * veins - 170e-6 * wrinkle - 28e-6 * groove - 24e-6 * pore) + 6e-6 * ridges
 
     # Albedo: MakeHuman's colour variation at half strength around SKIN_TONE.
     mh_rgb = flat(mh)
     reference = np.median(mh_rgb[handness > 0.5], axis=0)
     albedo = SKIN_TONE * np.power(np.clip(mh_rgb / reference, 0.2, 5.0), 0.45)
-    mottle = 0.6 * value_noise(p, 0.006, seed=5) + 0.4 * value_noise(p, 0.0022, seed=6)
-    albedo *= 1 + 0.05 * mottle[:, None] * np.array([1.0, -0.5, -0.7], np.float32)
-    redden = np.array([1.1, 0.86, 0.84], np.float32)
-    albedo *= 1 + (redden - 1) * np.clip(0.75 * knuckle + 0.6 * tip, 0, 1)[:, None]
-    albedo *= 1 - veins[:, None] * np.array([0.12, 0.06, -0.03], np.float32)
+    mottle = 0.4 * value_noise(p, 0.012, seed=7) + 0.35 * value_noise(p, 0.006, seed=5) + 0.25 * value_noise(p, 0.0022, seed=6)
+    albedo *= 1 + 0.08 * mottle[:, None] * np.array([1.0, -0.5, -0.7], np.float32)
+    # Blood shows through thin skin over the joints and at the fingertips: a
+    # faint flush with no edge, broken up so it never reads as a painted disc.
+    redden = np.array([1.06, 0.94, 0.92], np.float32)
+    flush = np.clip(0.9 * knuckle + 0.8 * tip, 0, 1) * (0.75 + 0.25 * value_noise(p, 0.005, seed=14))
+    albedo *= 1 + (redden - 1) * flush[:, None]
+    # The back of the hand a little yellower, the creases over the finger
+    # joints pinker.
+    albedo *= 1 + (dorsal_hand * (1 - wr_mask))[:, None] * np.array([0.0, 0.015, -0.03], np.float32)
+    albedo *= 1 + (0.5 * wr_mask)[:, None] * np.array([0.04, -0.06, -0.06], np.float32)
+    # The palm side is paler and yellower than the back of the hand.
+    palmar = handness * _smoothstep(0.0, 0.6, -dorsal)
+    albedo *= 1 + palmar[:, None] * np.array([0.05, 0.06, 0.02], np.float32)
+    albedo *= 1 - veins[:, None] * np.array([0.07, 0.035, -0.02], np.float32)
     # Skin stretched over tendons and knuckles is paler and less red.
-    albedo *= 1 + np.clip(0.3 * tendons + 0.4 * domes, 0, 1)[:, None] * np.array([0.03, 0.05, 0.05], np.float32)
+    albedo *= 1 + np.clip(0.3 * tendons + 0.2 * domes, 0, 1)[:, None] * np.array([0.03, 0.05, 0.05], np.float32)
     albedo *= (1 - 0.04 * pore - 0.02 * groove - 0.1 * wrinkle)[:, None]
     h1, _, spot = voronoi(p, 0.0016, seed=8)
     freckle = (spot > 0.965) * np.exp(-(h1 / 0.00032) ** 2) * (1 - 0.6 * handness)
@@ -520,25 +560,32 @@ def bake_skin(human, arm, mh_image, size=2048, cache=None):
     hh, _, hid = voronoi(hair_q, 1.0, seed=9)
     hair = (hid > 0.35) * np.exp(-(hh / 0.1) ** 2) * hairy
     albedo *= 1 - 0.35 * hair[:, None] * np.array([0.8, 0.85, 0.88], np.float32)
-    # Nails: pink bed, a pale half-moon lunula at the cuticle (reaching
-    # furthest along the midline), white free edge.
-    bed = np.array([0.72, 0.42, 0.37], np.float32)
-    lunula = np.array([0.8, 0.6, 0.55], np.float32)
-    free_edge = np.array([0.88, 0.84, 0.78], np.float32)
-    reach = 0.2 * np.sqrt(nail_mid)
-    nail_color = bed + (lunula - bed) * (1 - _smoothstep(reach - 0.06, reach, nail_u))[:, None]
-    nail_color = nail_color + (free_edge - nail_color) * (0.7 * _smoothstep(0.9, 0.97, nail_u))[:, None]
+    # Nails: a pink bed, lighter than the skin around it so the plate reads
+    # at arm's length; a small, faintly paler half-moon lunula just inside
+    # the cuticle (reaching furthest along the midline); a whitish free
+    # edge. The raised plate's blurred rim reaches back onto the cuticle
+    # fold, which stays skin, a little redder.
+    bed = np.array([0.7, 0.42, 0.36], np.float32)
+    lunula = np.array([0.8, 0.57, 0.5], np.float32)
+    free_edge = np.array([0.9, 0.85, 0.78], np.float32)
+    reach = 0.13 * np.sqrt(nail_mid)
+    nail_color = bed + (lunula - bed) * (_smoothstep(0.0, 0.03, nail_u) * (1 - _smoothstep(reach - 0.05, reach, nail_u)))[:, None]
+    nail_color = nail_color + (free_edge - nail_color) * (0.8 * _smoothstep(0.88, 0.96, nail_u))[:, None]
+    fold = albedo * np.array([1.03, 0.94, 0.94], np.float32)
+    nail_color = fold + (nail_color - fold) * _smoothstep(0.0, 0.04, nail_u)[:, None]
     albedo = albedo * skin[:, None] + nail_color * nail[:, None]
     albedo = np.clip(albedo, 0, 1)
 
-    # Skin's sheen is broad and soft (roughness ~0.6), breaking up over a few
-    # millimetres; knuckles and fingertips a little shinier, creases and
-    # pores duller.
-    roughness = (0.6 - 0.05 * np.clip(knuckle + tip, 0, 1) + 0.06 * pore + 0.08 * groove
-                 + 0.08 * wrinkle + 0.05 * value_noise(p, 0.0025, seed=13)) * skin + (0.32 + 0.04 * np.abs(ridges)) * nail
+    # Skin's sheen is broad and soft (roughness ~0.5), breaking up over a few
+    # millimetres; creases and pores duller; nail plates satin, not wet
+    # (glossier, the lamp drew a clipped streak down each). (Shinier
+    # knuckles drew a highlight disc on each under the sky.)
+    roughness = (0.5 + 0.06 * pore + 0.08 * groove + 0.08 * wrinkle + 0.05 * value_noise(p, 0.0025, seed=13)
+                 + 0.08 * domes) * skin + (0.32 + 0.04 * np.abs(ridges)) * nail
     roughness = np.clip(roughness, 0.1, 0.8)
 
     shape = (size, size)
+    albedo = _dilate(albedo.reshape(*shape, 3), inside)
     srgb = np.where(albedo <= 0.0031308, albedo * 12.92, 1.055 * np.power(albedo, 1 / 2.4) - 0.055)
     albedo_img = _to_image("skin_albedo", srgb.reshape(*shape, 3), "sRGB")
     albedo_img.colorspace_settings.name = "sRGB"
@@ -546,14 +593,16 @@ def bake_skin(human, arm, mh_image, size=2048, cache=None):
     # packing): the valleys between knuckles, the gaps between fingers and
     # the creases, which the realtime lights can't resolve; skin.ts darkens
     # direct light there too.
-    orm = np.stack([occlusion, roughness, np.zeros_like(roughness)], -1)
-    rough_img = _to_image("skin_orm", orm.reshape(*shape, 3), "Non-Color")
+    orm = _dilate(np.stack([occlusion, roughness, np.zeros_like(roughness)], -1).reshape(*shape, 3), inside)
+    rough_img = _to_image("skin_orm", orm, "Non-Color")
 
     # Height → tangent-space normal map, differentiating in texel space and
     # scaling by metres per texel along u and v (MikkTSpace tangents follow
     # dP/du and dP/dv closely on this unwrap).
-    h = height.reshape(shape)
-    pos = position
+    # Padded first, so the derivatives at an island's edge see its own
+    # surface continued, not the empty atlas.
+    h = _dilate(height.reshape(*shape, 1), inside)[..., 0]
+    pos = _dilate(position, inside)
     du = np.linalg.norm(np.roll(pos, -1, 1) - np.roll(pos, 1, 1), axis=-1) / 2
     dv = np.linalg.norm(np.roll(pos, -1, 0) - np.roll(pos, 1, 0), axis=-1) / 2
     typical = float(np.median(du[handness.reshape(shape) > 0.5]))

@@ -7,15 +7,16 @@ Run with Blender 5.1 and the MPFB 2.0.17 extension installed:
   blender -b -P scripts/room/build_arms.py
 
 Body and rig come from MakeHuman/MPFB (CC0), reshaped with its hand/forearm
-targets. The pose curls each finger to a natural resting shape (CURL), places
-each hand so those fingertips land on their home keys from layout.json, then
-adjusts each finger slightly to touch its key exactly. The mouse grip is
-placed the same way (GRIP_CURL, MOUSE_CONTACTS, the thumb by fit_thumb) and
-stored on the rig as the `mouseGrip` extra for hands.ts, with a MouseGrip
-shape key correcting the skinning in that pose. Knuckles, tendons and
-finger shapes are sculpted on the posed mesh; skin detail, nails, occlusion
-and textures come from skin_bake.py; the charcoal fleece sleeves are
-generated here.
+targets and its phalanges corrected to real proportions (FINGER_LENGTH_SCALE).
+The pose curls each finger to a natural resting shape (CURL), places each
+hand so those fingertips land on their home keys from layout.json, then
+adjusts each finger slightly to touch its key exactly; the thumbs rest on the
+space bar (fit_thumb). The mouse grip is placed the same way (GRIP_CURL,
+MOUSE_CONTACTS, the thumb by fit_thumb) and stored on the rig as the
+`mouseGrip` extra for hands.ts, with a MouseGrip shape key correcting the
+skinning in that pose. Knuckles, tendons and finger shapes are sculpted on
+the posed mesh; skin detail, nails, occlusion and textures come from
+skin_bake.py; the charcoal fleece sleeves are generated here.
 ARMS_DEBUG_BLEND=<path> saves the scene.
 """
 from __future__ import annotations
@@ -53,8 +54,12 @@ KEEP_BONES = {"Root", "pelvis", "spine_01", "spine_02", "spine_03"} | ARM_BONES
 SHAPE_TARGETS = [
     *[(group, f"{side}-{name}", weight) for side in ("l", "r") for group, name, weight in (
         ("hands", "hand-fingers-diameter-decr", 0.7),
+        # A smaller hand with longer fingers: MakeHuman's palm is long for
+        # its fingers (wrist to knuckles ~113 mm where a real hand's ~90);
+        # at full size the curled hand read as a spider on the keys and
+        # overhung the mouse.
         ("hands", "hand-fingers-length-incr", 0.35),
-        ("hands", "hand-scale-decr", 0.12),
+        ("hands", "hand-scale-decr", 0.7),
         # MakeHuman's knuckles span ~73 mm; a real hand's ~60 mm, near the
         # 57 mm from A to F, so fingers rest parallel instead of converging.
         ("hands", "hand-fingers-distance-decr", 1.0),
@@ -64,34 +69,53 @@ SHAPE_TARGETS = [
     ("hands", "measure-wrist-circ-decr", 0.45),
 ]
 # MakeHuman's finger proportions, corrected toward real hands before posing
-# (each finger stretched along its phalanges): its little finger is 65% of
-# the middle finger's length where a real hand's is ~76% (too short to curl
+# (each phalanx stretched along its length: proximal, middle, distal). Its
+# phalanges are near equal in length where a real finger's shrink ~1 : 0.6 :
+# 0.45 (its middle joint sat too close to the knuckle, so a curled finger
+# read as a stub hooked at its base); its little finger is 65% of the
+# middle finger's length where a real hand's is ~76% (too short to curl
 # onto its key, it reached down straight), and its middle finger outgrows
-# index and ring by ~12% where real hands differ by ~5%.
-FINGER_LENGTH_SCALE = {"pinky": 1.14, "middle": 0.955, "ring": 1.03}
+# index and ring by ~12% where real hands differ by ~5%. The fingers end
+# ~1.1x the hand's breadth from the knuckle (longer, the curled fingers
+# read as a spider's). Its thumb (metacarpal, then phalanges) bends at an
+# MCP joint 13 mm too near the wrist, and with the longer fingers reaches
+# 12 cm from its base where a real one's ~11 cm.
+FINGER_LENGTH_SCALE = {"index": (1.12, 0.83, 0.73), "middle": (1.04, 0.8, 0.7), "ring": (1.08, 0.89, 0.76),
+                       "pinky": (1.17, 0.97, 0.87), "thumb": (1.3, 0.78, 0.86)}
+# Each finger's half width mid-way along its first phalanx (m), and how much
+# it narrows per finger length (enhance_skin_geometry): its middle phalanx
+# ~8%, its fingertip pad ~14% narrower than its base; the index nearly as
+# thick as the middle finger. The thumb is ~1.2x as thick as the index
+# finger; MakeHuman's is as thin as one.
+FINGER_HALF_WIDTH = {"index": 0.0084, "middle": 0.0089, "ring": 0.0082, "pinky": 0.007}
+FINGER_TAPER = 0.22
+THUMB_FULLNESS = 1.18
 # Back-of-hand relief (sculpt_hand_back), metres. Knuckles: (peak height,
 # half width across) per finger, the middle finger's the tallest, ring and
 # little smaller down the ulnar arc; crest position along the metacarpal
 # from the joint centre; half length toward the wrist and onto the finger
 # (shorter than across: the heads are broad, flat-topped under the
-# extensor hood).
-KNUCKLES = {"index": (0.0038, 0.0088), "middle": (0.0042, 0.0092), "ring": (0.0036, 0.0080),
-            "pinky": (0.0029, 0.0068)}
+# extensor hood). Low and wide enough that neighbours merge into one arch
+# with shallow valleys: taller, the flexed heads read as marbles.
+KNUCKLES = {"index": (0.00135, 0.0106), "middle": (0.0015, 0.011), "ring": (0.0012, 0.0098),
+            "pinky": (0.0009, 0.0083)}
 KNUCKLE_CREST = -0.0015
 KNUCKLE_SPREAD = (0.0075, 0.0055)
 # The extensor hood carrying each knuckle's crown onto its finger: a low
 # swell (height, centre and half length along the finger from the joint
 # centre, as a share of the knuckle's width across) so the skin runs from
 # knuckle to finger in a shallow saddle, not a pit.
-HOOD = (0.0011, 0.0055, 0.0035, 0.75)
+HOOD = (0.0008, 0.0055, 0.0035, 0.75)
 # The web of skin joining neighbouring knuckles, raised so the saddle
-# between two knuckles is a shallow U, not a pit: (height, how far onto the
-# fingers its centre sits, half length along the fingers, half width as a
-# share of the knuckles' spacing).
-WEB = (0.0018, 0.004, 0.006, 0.28)
+# between two knuckles is a shallow U, not a pit (bent, the knuckles rise
+# around it and a pit's walls face away from the light: dark dots), and
+# the fingers part a third of the way along their first phalanges, not at
+# the knuckles: (height, how far onto the fingers its centre sits, half
+# length along the fingers, half width as a share of the knuckles' spacing).
+WEB = (0.0035, 0.009, 0.014, 0.4)
 # Extensor tendon ridges (height per finger; half width, doubling into the
 # extensor hood over the knuckle) and the grooves between the metacarpals.
-TENDONS = {"index": 0.00045, "middle": 0.00045, "ring": 0.00032, "pinky": 0.00025}
+TENDONS = {"index": 0.0007, "middle": 0.0007, "ring": 0.0005, "pinky": 0.0004}
 TENDON_WIDTH = 0.001
 GROOVE_DEPTH = 0.0004
 # How far the back of the hand sinks between wrist and knuckles, and more
@@ -102,49 +126,77 @@ CUFF_LENGTH = 0.045
 CUFF_RADIUS = 0.034
 CUFF_RIBS = 44
 # Resting touch-typing curl per finger, degrees: MCP and PIP flexion, and
-# splay from the hand's long axis (+ toward the little finger). The knuckles
-# are the hand's highest point (MCP joints flex, never bend backwards), the
-# fingers arch down to the keys in one curve and, curled, converge a little
-# toward the thumb's base as real fingers do.
-CURL = {"index": (35, 30, 4), "middle": (40, 36, 1), "ring": (38, 34, -1), "pinky": (32, 26, -4)}
+# splay from the hand's long axis (+ toward the little finger). The hand
+# crests at its knuckles and the fingers arch down to the keys in one
+# gentle C-curve, bending at the knuckle at least as much as at the middle
+# joint (bent mostly at the middle joint, the seat sees a row of domed
+# joints and no fingertips: a claw); curled, they fan a little, one per key
+# (drawn together, the index rode over the middle finger and each hand read
+# as a bunched paw).
+CURL = {"index": (26, 22, -1), "middle": (28, 26, 0), "ring": (28, 26, 1), "pinky": (24, 20, 3)}
 # How far a finger may comfortably depart from CURL to reach its key,
-# degrees (MCP, PIP, splay): fingers curl more or less easily, splaying
-# them sideways reads as wrong at once.
-CURL_GIVE = (10.0, 12.0, 3.0)
-# The DIP joint follows the PIP joint (they share a tendon). A resting hand
-# bends the fingertip joint less than hands.ts's striking fingers do.
-DIP_RATIO = 0.65
+# degrees: curling or opening its MCP and PIP joints together, trading one
+# against the other (which bends the finger out of its arc, into a straight
+# stick or a hook), and splaying sideways (reads as wrong at once).
+CURL_GIVE = (12.0, 4.0, 2.0)
+# The DIP joint follows the PIP joint (they share a tendon), but a pad
+# resting on a key or button presses its end joint nearly straight: at the
+# free hand's two-thirds the fingertips hook under, and from the seat the
+# fingers end at their middle joints. hands.ts's striking fingers bend it
+# more.
+DIP_RATIO = 0.3
 # What the per-finger fit may use to touch its key exactly (degrees).
 MCP_RANGE = (0.0, 65.0)
 PIP_RANGE = (5.0, 95.0)
 SPLAY_RANGE = 15.0
 # How typing hands are held, degrees (mean, spread): turned in toward the
 # keyboard's centre, the back of the hand rising from the wrist to the
-# knuckles, thumb side up (forearms are never fully pronated).
-HAND_PRIOR = {"yaw": (12, 10), "pitch": (18, 5), "roll": (18, 8)}
+# knuckles, level across (rolled thumb side up, the curled fingers sweep
+# toward the thumb, which from the seat reads as index fingers hooked
+# sideways).
+HAND_PRIOR = {"yaw": (12, 10), "pitch": (6, 4), "roll": (0, 3)}
+# How high the wrist joint hovers above the home-row key tops and how
+# firmly (m): low, so the fingers reach forward to the keys rather than
+# down onto them.
+TYPING_WRIST = (0.008, 0.004)
+# The typing thumbs (fit_thumb, as on the mouse) lie along the space bar,
+# angled in toward the keyboard's centre and resting on the outer (radial)
+# side of the tip, rolled so the nail faces out from the hand toward the
+# other thumb, a little up and toward the typist (nail up, a thumb reads as
+# a sixth finger); both joints bent, tucking the thumb in under the index
+# finger (straight, it reads long).
+TYPING_THUMB_NAIL = (-1.0, 0.25, 0.2)
+TYPING_THUMB_SPREAD = (48.0, 8.0)
+TYPING_THUMB_FLEX = {"mcp": (28.0, 5.0), "ip": (32.0, 5.0)}
 # The mouse the right hand holds (build_mouse): half width, half length and
-# height of its shell (m), a large palm-grip mouse for the model's large
-# hands; its top line's superellipse exponents in front of and behind the
-# centre (2 would be an ellipse; higher keeps the buttons fuller).
-MOUSE_SIZE = (0.033, 0.063, 0.042)
+# height of its shell (m), a large palm-grip mouse the size of an MX Master
+# (narrower, the hand swallowed it and read as clawing the desk); its top
+# line's superellipse exponents in front of and behind the centre (2 would
+# be an ellipse; higher keeps the buttons fuller).
+MOUSE_SIZE = (0.041, 0.066, 0.045)
 MOUSE_CROWN = (2.8, 2.2)
+# The mouse turned nose-right (degrees) in line with the right forearm,
+# which reaches out to it from the shoulder: square to the desk, the hand
+# bent sideways at the wrist to hold it.
+MOUSE_YAW = 12.0
 # The right hand's relaxed palm grip on the mouse: where the palm, index,
 # middle finger and thumb pads touch the shell, as rays onto it in the
 # mouse's own frame (glTF axes: x right, y up, z toward the typist; its
-# nose is at -z). The front of the palm rests on the back of the mouse, the
-# knuckles over its hump; index and middle drape along the two buttons,
-# their pads a centimetre behind the front edge; the thumb pad presses the
-# left flank low down, about 7.5 cm behind the nose, so the thumb curls
-# along the flank instead of pointing forward; ring and little finger curl down
-# until they rest on the right flank or the desk.
+# nose is at -z). The hollow of the palm rests on the hump, the knuckles
+# ahead of it (the palm behind the hump, the hand read as a claw perched on
+# the mouse); index and middle lie along the two buttons, their pads 6-8 mm
+# behind the front edge (nearer the palm, they hook); the thumb pad presses
+# the left flank low down, about 7 cm behind the nose, so the thumb curls
+# along the flank instead of pointing forward; ring and little finger curl
+# down until they rest on the right flank or the desk.
 MOUSE_CONTACTS = {
-    "palm": ((0.004, 0.1, 0.045), (0.0, -1.0, 0.0)),
-    "index": ((-0.012, 0.1, -0.047), (0.0, -1.0, 0.0)),
-    "middle": ((0.008, 0.1, -0.053), (0.0, -1.0, 0.0)),
-    "thumb": ((-0.1, 0.014, 0.012), (1.0, 0.0, 0.0)),
+    "palm": ((-0.01, 0.1, 0.0465), (0.0, -1.0, 0.0)),
+    "index": ((-0.016, 0.1, -0.0578), (0.0, -1.0, 0.0)),
+    "middle": ((0.005, 0.1, -0.0598), (0.0, -1.0, 0.0)),
+    "thumb": ((-0.1, 0.014, 0.0062), (1.0, 0.0, 0.0)),
 }
 # How far from the wrist toward the middle knuckle the palm touches the mouse.
-PALM_CONTACT = 0.8
+PALM_CONTACT = 0.58
 # A fingertip bone's tail sits inside the finger, this far above the pad
 # that touches (hands.ts's PAD).
 FINGER_PAD = 0.0055
@@ -155,27 +207,30 @@ FINGER_PAD = 0.0055
 # off the mouse's long axis: mean, spread), leaving a web between thumb and
 # index; MCP and IP flexion, degrees (mean, spread): the tip curls in.
 THUMB_NAIL = (-1.25, 1.0, 0.0)
-THUMB_PRESS = 0.002
+THUMB_PRESS = 0.0035
 THUMB_SPREAD = (12.0, 4.0)
 THUMB_FLEX = {"mcp": (20.0, 5.0), "ip": (30.0, 4.0)}
-THUMB_RADII = (0.0095, 0.0085)
+THUMB_RADII = (0.0105, 0.0092)
 # Radii of a finger at its PIP and DIP joints and fingertip bone tail, for
 # resting fingers on the mouse.
-FINGER_RADII = (0.0085, 0.0072, FINGER_PAD)
+FINGER_RADII = (0.0088, 0.0076, FINGER_PAD)
 # Natural curl of the fingers on the mouse (as CURL): index and middle
-# drape over the buttons, bending evenly at the knuckle and the middle
-# joint so the middle phalanx lies on the button; ring and little finger
-# curl a little more along the whole finger, converging onto the right
-# edge and flank, and rest there by the knuckle. On a mouse they may
-# converge or spread further (GRIP_GIVE) than on the keys.
-GRIP_CURL = {"index": (26, 18, 6), "middle": (26, 22, 2), "ring": (15, 42, -1), "pinky": (20, 46, -5)}
-GRIP_GIVE = (10.0, 12.0, 6.0)
-# The hand on a mouse: square to it, the back of the hand arching up from a
+# lie side by side, nearly flat along the buttons, bending gently at the
+# middle joint; ring and little finger curl further, drawn in against the middle
+# finger (fanned, they splay off the mouse's side), onto the right edge and
+# flank, and rest there by the knuckle. On a mouse they may curl or open
+# further (GRIP_GIVE) than on the keys.
+GRIP_CURL = {"index": (8, 16, 1), "middle": (8, 18, 0), "ring": (14, 40, -8), "pinky": (18, 44, -14)}
+GRIP_GIVE = (10.0, 6.0, 3.0)
+# The hand on a mouse: square to it (MOUSE_YAW), the back of the hand arching up from a
 # low wrist to the knuckles, the little-finger side ~13° lower. GRIP_WRIST
 # is place_hand's soft floor for the wrist (the hand bone's head): at 36 mm
 # the fit settles it ~22 mm up, its underside resting on the desk.
-GRIP_PRIOR = {"yaw": (0, 6), "pitch": (20, 5), "roll": (13, 5)}
+GRIP_PRIOR = {"yaw": (-MOUSE_YAW, 6), "pitch": (14, 5), "roll": (13, 5)}
 GRIP_WRIST = 0.036
+# The share of the knuckles' sculpted relief (sculpt_hand_back) the grip
+# corrective takes back.
+GRIP_KNUCKLE_SOFTEN = 0.45
 FINGER_KEYS = {
     "l": {"pinky": "KeyA", "ring": "KeyS", "middle": "KeyD", "index": "KeyF", "thumb": "SpaceLeftThumb"},
     "r": {"index": "KeyJ", "middle": "KeyK", "ring": "KeyL", "pinky": "Semicolon", "thumb": "SpaceRightThumb"},
@@ -298,14 +353,14 @@ def transform_character_to_layout(human, arm, layout):
 
 
 def correct_finger_lengths(human, arm):
-    """Rescale the fingers in FINGER_LENGTH_SCALE along their phalanges:
+    """Rescale the phalanges in FINGER_LENGTH_SCALE along their length:
     each phalanx bone and the skin weighted to it change length along the
     phalanx, and the joints beyond it move with it."""
     moves = {}  # bone name -> (head, axis, length, scale, shift of its head)
     for side in ("l", "r"):
-        for finger, scale in FINGER_LENGTH_SCALE.items():
+        for finger, scales in FINGER_LENGTH_SCALE.items():
             shift = Vector()
-            for part in (1, 2, 3):
+            for part, scale in zip((1, 2, 3), scales):
                 bone = arm.data.bones[f"{finger}_{part:02d}_{side}"]
                 head, tail = bone.head_local.copy(), bone.tail_local.copy()
                 axis, length = (tail - head).normalized(), (tail - head).length
@@ -405,7 +460,7 @@ def finger_rig(arm, side, finger, frame):
     return bones, joints, pose
 
 
-def place_hand(arm, side, curls, targets, prior, floor, give=CURL_GIVE, anchors=(), clearance=None):
+def place_hand(arm, side, curls, targets, prior, floor, give=CURL_GIVE, anchors=(), clearance=None, height=None):
     """Rigid hand pose from which each finger reaches its target (world, for
     its tip bone's tail) with the least departure from its natural curl
     (weighted by `give`), weighed against the `prior` hand angles. The
@@ -413,36 +468,49 @@ def place_hand(arm, side, curls, targets, prior, floor, give=CURL_GIVE, anchors=
     hand coordinates: search turn, pitch and roll, and per candidate solve
     the wrist position by weighted least squares on the linearised angle
     changes, together with any `anchors` ((hand point relative to the wrist
-    in the current hand frame, world target, tolerance in metres)). The
-    wrist stays above `floor`. `clearance(frame, wrist)`, if given, adds a
-    cost to the best candidates. Returns (frame, wrist)."""
+    in the current hand frame, world target, tolerance in metres)) and the
+    wrist `height` ((world z, tolerance in metres)), if given. The wrist
+    stays above `floor`. `clearance(frame, wrist)`, if given, adds a cost
+    to the best candidates. Returns (frame, wrist)."""
     frame = anatomical_frame(arm, side)
     to_local = frame.transposed()
     wrist = arm.pose.bones[f"hand_{side}"].head.copy()
-    give = Matrix.Diagonal([1 / math.radians(g) for g in give])
-    fingers = []
-    for finger, curl in curls.items():
-        _, _, pose = finger_rig(arm, side, finger, frame)
-        natural = [math.radians(a) for a in curl]
-        tip = pose(*natural)[1][3]
-        columns = []
-        for j in range(3):
-            nudged = list(natural)
-            nudged[j] += 1e-3
-            columns.append(to_local @ ((pose(*nudged)[1][3] - tip) / 1e-3))
-        to_angles = Matrix(columns).transposed().inverted()  # hand-local tip offset -> angle change
-        fingers.append((to_local @ (tip - wrist), to_angles, give @ to_angles, targets[finger], curl))
+    # Departures are weighed as (curl: MCP and PIP together, shape: MCP
+    # against PIP, splay).
+    give = Matrix.Diagonal([1 / math.radians(g) for g in give]) @ Matrix(((0.5, 0.5, 0), (0.5, -0.5, 0), (0, 0, 1)))
+    rigs = {finger: finger_rig(arm, side, finger, frame)[2] for finger in curls}
+    natural = {finger: Vector([math.radians(a) for a in curl]) for finger, curl in curls.items()}
+    ranges = [tuple(math.radians(a) for a in r) for r in (MCP_RANGE, PIP_RANGE)] + [(-math.pi, math.pi)]
+
+    def linearise(about):
+        """Each finger's tip and angle response about the angles `about`."""
+        fingers = []
+        for finger, curl in curls.items():
+            base = about[finger]
+            tip = rigs[finger](*base)[1][3]
+            columns = []
+            for j in range(3):
+                nudged = list(base)
+                nudged[j] += 1e-3
+                columns.append(to_local @ ((rigs[finger](*nudged)[1][3] - tip) / 1e-3))
+            to_angles = Matrix(columns).transposed().inverted()  # hand-local tip offset -> angle change
+            fingers.append((to_local @ (tip - wrist), to_angles, give @ to_angles, targets[finger], curl,
+                            base - natural[finger]))
+        return fingers
+
     anchors = [(to_local @ point, target, 1 / tolerance) for point, target, tolerance in anchors]
 
-    def fit(yaw, pitch, roll):
+    def fit(fingers, yaw, pitch, roll):
         world = hand_frame(side, *(math.radians(a) for a in (yaw, pitch, roll)))
         inverse = world.transposed()
         rows = []
-        for tip, _, weighted, target, _ in fingers:
+        for tip, _, weighted, target, _, offset in fingers:
             m = weighted @ inverse  # weighted angle change = b - m @ w
-            rows.append((m, m @ target - weighted @ tip))
+            rows.append((m, m @ target - weighted @ tip + give @ offset))
         for point, target, weight in anchors:
             rows.append((Matrix.Diagonal((weight, weight, weight)), (target - world @ point) * weight))
+        if height:
+            rows.append((Matrix.Diagonal((0.0, 0.0, 1 / height[1])), Vector((0.0, 0.0, height[0] / height[1]))))
         normal, rhs = Matrix.Diagonal((0.0, 0.0, 0.0)), Vector((0.0, 0.0, 0.0))
         for m, b in rows:
             normal += m.transposed() @ m
@@ -450,8 +518,8 @@ def place_hand(arm, side, curls, targets, prior, floor, give=CURL_GIVE, anchors=
         w = normal.inverted() @ rhs
         cost = sum((b - m @ w).length_squared for m, b in rows)
         changes = []
-        for tip, to_angles, _, target, curl in fingers:
-            change = [math.degrees(a) for a in to_angles @ (inverse @ (target - w) - tip)]
+        for tip, to_angles, _, target, curl, offset in fingers:
+            change = [math.degrees(a) for a in offset + to_angles @ (inverse @ (target - w) - tip)]
             changes.append(change)
             cost += (max(0.0, 2.0 - curl[0] - change[0]) / 1.0) ** 2  # no MCP hyperextension
             cost += (max(0.0, 8.0 - curl[1] - change[1]) / 1.0) ** 2
@@ -461,12 +529,21 @@ def place_hand(arm, side, curls, targets, prior, floor, give=CURL_GIVE, anchors=
         cost += (max(0.0, floor - w.z) / 0.005) ** 2
         return cost, world, w, changes, (yaw, pitch, roll)
 
-    fits = sorted((fit(yaw, pitch, roll) for yaw in range(-20, 37, 2) for pitch in range(-10, 31, 2)
-                   for roll in range(-10, 41, 2)), key=lambda r: r[0])
-    if clearance:
-        fits = sorted(((cost + clearance(world, w), world, w, changes, angles)
-                       for cost, world, w, changes, angles in fits[:300]), key=lambda r: r[0])
-    cost, world, w, changes, angles = fits[0]
+    # A fingertip moves along arcs, so its response linearised about the
+    # natural curl misjudges large changes (a finger the fit bends 20° more
+    # at the knuckle may, posed exactly, straighten instead): relinearise
+    # about the best fit's angles and search again.
+    about = natural
+    for _ in range(4):
+        fingers = linearise(about)
+        fits = sorted((fit(fingers, yaw, pitch, roll) for yaw in range(-36, 37, 2) for pitch in range(-10, 31, 2)
+                       for roll in range(-10, 41, 2)), key=lambda r: r[0])
+        if clearance:
+            fits = sorted(((cost + clearance(world, w), world, w, changes, angles)
+                           for cost, world, w, changes, angles in fits[:300]), key=lambda r: r[0])
+        cost, world, w, changes, angles = fits[0]
+        about = {finger: Vector([min(hi, max(lo, a + math.radians(c))) for a, c, (lo, hi) in zip(natural[finger], change, ranges)])
+                 for finger, change in zip(curls, changes)}
     span = (arm.pose.bones[f"index_01_{side}"].head - arm.pose.bones[f"pinky_01_{side}"].head).length
     misses = [round((target - w - world @ point).length * 1000, 1) for point, target, _ in anchors]
     print(f"HAND {side} knuckle span {span * 1000:.0f}mm yaw/pitch/roll {angles} wrist {tuple(round(c, 3) for c in w)} cost {cost:.2f} "
@@ -524,17 +601,19 @@ def fit_finger(arm, side, finger, frame, curl, target=None, gap=None):
     return axis
 
 
-def fit_thumb(arm, side, target, mouse, gap):
-    """Pose the thumb onto `target` (its tip bone's tail) on the mouse
-    (`mouse`: its rotation) with its nail (the distal bone's -Z, as
-    skin_bake paints it) facing THUMB_NAIL, spread by THUMB_SPREAD, flexed
-    near THUMB_FLEX and clear of what `gap(point)` measures (signed
-    distance, metres), by Levenberg-Marquardt over the metacarpal's swing
-    and roll at the CMC joint and the MCP and IP flexion (local +X, which
-    curls the tip toward the pad)."""
-    nail = (mouse @ gltf_to_blender(THUMB_NAIL)).normalized()
-    forward = mouse @ gltf_to_blender((0.0, 0.0, -1.0))
-    outward = mouse @ gltf_to_blender((-1.0, 0.0, 0.0))
+def fit_thumb(arm, side, target, axes, gap, nail=THUMB_NAIL, spread=THUMB_SPREAD, flex=THUMB_FLEX):
+    """Pose the thumb onto `target` (its tip bone's tail) with its nail (the
+    distal bone's -Z, as skin_bake paints it) facing `nail`, its proximal
+    phalanx turned `spread` (degrees: mean, spread) from forward toward the
+    thumb's side, MCP and IP flexion near `flex` and clear of what
+    `gap(point)` measures (signed distance, metres), by Levenberg-Marquardt
+    over the metacarpal's swing and roll at the CMC joint and the MCP and IP
+    flexion (local +X, which curls the tip toward the pad). `nail` is in
+    glTF axes of a frame whose -Z is forward and -X the thumb's side;
+    `axes` takes that frame to the world (a reflection for a left hand)."""
+    nail = (axes @ gltf_to_blender(nail)).normalized()
+    forward = axes @ gltf_to_blender((0.0, 0.0, -1.0))
+    outward = axes @ gltf_to_blender((-1.0, 0.0, 0.0))
     bones = [arm.pose.bones[f"thumb_{part:02d}_{side}"] for part in (1, 2, 3)]
     base = [b.matrix.to_3x3() for b in bones]
     cmc = bones[0].head.copy()
@@ -564,32 +643,40 @@ def fit_thumb(arm, side, target, mouse, gap):
         rotations, joints = pose(params)
         out = list((joints[3] - target) / 0.001)
         facing = -rotations[2].col[2]
-        out += list(facing.cross(nail) / 0.2) + [(1 - facing.dot(nail)) / 0.2]
+        out += list(facing.cross(nail) / 0.12) + [(1 - facing.dot(nail)) / 0.12]
         proximal = rotations[1].col[1]
-        spread = math.degrees(math.atan2(proximal.dot(outward), proximal.dot(forward)))
-        out.append((spread - THUMB_SPREAD[0]) / THUMB_SPREAD[1])
-        for (name, (mean, spread)), rest, flex in zip(THUMB_FLEX.items(), rest_bend, params[3:]):
-            out.append((math.degrees(rest + flex) - mean) / spread)
-        out += [p / 0.8 for p in params[:3]]
+        out.append((math.degrees(math.atan2(proximal.dot(outward), proximal.dot(forward))) - spread[0]) / spread[1])
+        for (mean, width), rest, bent in zip(flex.values(), rest_bend, params[3:]):
+            out.append((math.degrees(rest + bent) - mean) / width)
+        # Swinging the metacarpal far from its rest strains the hand; rolling
+        # it is the thumb's own opposition, freer.
+        out += [params[0] / 0.8, params[1] / 0.8, params[2] / 1.6]
         for k, radius in ((1, THUMB_RADII[0]), (2, THUMB_RADII[1])):
             for t in (0.35, 0.7, 1.0):
                 point = joints[k] + (joints[k + 1] - joints[k]) * t
                 out.append(max(0.0, radius * (1.0 if t < 1.0 else 0.9) - gap(point)) / 0.001)
         return np.array(out)
 
-    params = np.zeros(5)
-    damping = 1e-2
-    current = residuals(params)
-    for _ in range(200):
-        jac = np.column_stack([(residuals(params + step) - current) / 1e-4 for step in np.eye(5) * 1e-4])
-        delta = np.linalg.solve(jac.T @ jac + damping * np.eye(5), -jac.T @ current)
-        trial = residuals(params + delta)
-        if trial @ trial < current @ current:
-            params, current, damping = params + delta, trial, damping * 0.5
-            if np.abs(delta).max() < 1e-6:
-                break
-        else:
-            damping *= 4.0
+    def solve(params):
+        damping = 1e-2
+        current = residuals(params)
+        for _ in range(200):
+            jac = np.column_stack([(residuals(params + step) - current) / 1e-4 for step in np.eye(5) * 1e-4])
+            delta = np.linalg.solve(jac.T @ jac + damping * np.eye(5), -jac.T @ current)
+            trial = residuals(params + delta)
+            if trial @ trial < current @ current:
+                params, current, damping = params + delta, trial, damping * 0.5
+                if np.abs(delta).max() < 1e-6:
+                    break
+            else:
+                damping *= 4.0
+        return current @ current, params
+
+    # From several starting rolls: rolling the thumb far enough to turn its
+    # nail swings its tip off target on the way, a valley one start can't
+    # cross.
+    _, params = min((solve(np.array([0.0, 0.0, roll, 0.0, 0.0])) for roll in (-1.2, -0.6, 0.0, 0.6, 1.2)),
+                    key=lambda r: r[0])
     rotations, joints = pose(params)
     for bone, rotation, head in zip(bones, rotations, joints):
         bone.matrix = Matrix.Translation(head) @ rotation.to_4x4()
@@ -632,7 +719,8 @@ def pose_typing(arm, layout):
         orient_hand(arm, side, hand_frame(side, 0.0, 0.0, 0.0))
         bpy.context.view_layer.update()
         targets_for = {f: gltf_to_blender(home[FINGER_KEYS[side][f]]) for f in CURL}
-        frame, wrist = place_hand(arm, side, CURL, targets_for, HAND_PRIOR, key_top + 0.03)
+        frame, wrist = place_hand(arm, side, CURL, targets_for, HAND_PRIOR, key_top,
+                                  height=(key_top + TYPING_WRIST[0], TYPING_WRIST[1]))
         wrist_targets[side].location = wrist
         bpy.context.view_layer.update()
         orient_hand(arm, side, frame)
@@ -648,14 +736,10 @@ def pose_typing(arm, layout):
             pos = gltf_to_blender(home[key])
             finger_targets[(side, finger)] = pos
             if finger == "thumb":
-                target = empty_target(f"_ik_{finger}_{side}", pos)
-                targets.append(target)
-                con = arm.pose.bones[f"{finger}_03_{side}"].constraints.new("IK")
-                con.name = "Home key IK"
-                con.target = target
-                con.chain_count = 3
-                con.iterations = 128
-                con.use_stretch = False
+                # The frame's -X is the thumb's side: +X for a left hand.
+                axes = Matrix.Diagonal((-1.0, 1.0, 1.0)) if side == "l" else Matrix.Identity(3)
+                fit_thumb(arm, side, pos, axes, lambda p: p.z - key_top,
+                          TYPING_THUMB_NAIL, TYPING_THUMB_SPREAD, TYPING_THUMB_FLEX)
             else:
                 flex_axes[(side, finger)] = fit_finger(arm, side, finger, frame, CURL[finger], target=pos)
     for _ in range(4):
@@ -739,14 +823,15 @@ def normalize_control_axes(arm, flex_axes):
 
 def build_mouse(layout):
     """The mouse the right hand holds, exported with the arms so the grip is
-    authored against the exact shell: glTF node "Mouse" at its rest centre
-    with MouseShell (flat base, hump toward the palm, rounded nose),
-    MouseSeam (the button split) and MouseWheel. mouse.ts moves it and gives
-    it its materials. Returns (root, shell)."""
+    authored against the exact shell: glTF node "Mouse" at its rest centre,
+    turned MOUSE_YAW, with MouseShell (flat base, hump toward the palm,
+    rounded nose), MouseSeam (the button split) and MouseWheel. mouse.ts
+    moves it and gives it its materials. Returns (root, shell)."""
     half_width, half_length, height = MOUSE_SIZE
     root = bpy.data.objects.new("Mouse", None)
     bpy.context.scene.collection.objects.link(root)
     root.location = gltf_to_blender(layout["mouse"]["restCenter"])
+    root.rotation_euler = (0.0, 0.0, -math.radians(MOUSE_YAW))
 
     def part(name, bm):
         mesh = bpy.data.meshes.new(name)
@@ -864,8 +949,15 @@ def pose_mouse_grip(human, arm, mouse):
     up = frame.col[2].to_3d()
     wrist = arm.pose.bones[f"hand_{side}"].head.copy()
     hand_group = human.vertex_groups[f"hand_{side}"].index
-    palm = [v.co - wrist for v in human.data.vertices
-            if v.normal.dot(up) < -0.5 and any(g.group == hand_group and g.weight > 0.7 for g in v.groups)]
+
+    def underside(weight):
+        return [v.co - wrist for v in human.data.vertices
+                if v.normal.dot(up) < -0.5 and any(g.group == hand_group and g.weight > weight for g in v.groups)]
+
+    palm = underside(0.7)
+    # The heel of the hand blends into the forearm's weights; left out, it
+    # sinks into the mouse's back unseen.
+    heel = underside(0.3)
     to_local = frame.transposed()
     reach = to_local @ ((arm.pose.bones[f"middle_01_{side}"].head - wrist) * PALM_CONTACT)
     contact = min(palm, key=lambda p: ((to_local @ p).xy - reach.xy).length)
@@ -878,7 +970,7 @@ def pose_mouse_grip(human, arm, mouse):
     def clearance(world, w):
         """Cost of the palm sinking into the shell or the desk."""
         depth = 0.0
-        for p in palm[::2]:
+        for p in heel[::2]:
             q = w + world @ to_local @ p
             nearest, normal, _, _ = bvh.find_nearest(q)
             depth = max(depth, (nearest - q).dot(normal), desk - q.z)
@@ -951,7 +1043,8 @@ def add_grip_corrective(human, arm, pose):
     wrist, linear skinning (glTF's) pinches the thumb's fleshy base and the
     wrist into creases. Pose the grip, let a Corrective Smooth modifier
     restore the rest pose's local shape over the right hand and wrist, and
-    map each vertex's correction back through its blended bone transforms."""
+    map each vertex's correction back through its blended bone transforms;
+    soften the knuckles by GRIP_KNUCKLE_SOFTEN of their sculpted relief."""
     mesh = human.data
     names = {g.index: g.name for g in human.vertex_groups}
     region = human.vertex_groups.new(name="_grip_fix")
@@ -999,6 +1092,15 @@ def add_grip_corrective(human, arm, pose):
                 total += g.weight
         if total > 0:
             offsets[v.index] = (blend * (1 / total)).inverted() @ delta
+    # On the mouse the fingers are near straight, so the metacarpal heads
+    # hardly stand out: take back part of the knuckles' sculpted relief.
+    relief = np.empty(len(mesh.vertices) * 3, np.float32)
+    mesh.attributes["knuckle_relief"].data.foreach_get("vector", relief)
+    rest = np.empty(len(mesh.vertices) * 3, np.float32)
+    mesh.vertices.foreach_get("co", rest)
+    right = rest.reshape(-1, 3)[:, 0] > 0
+    offsets -= GRIP_KNUCKLE_SOFTEN * relief.reshape(-1, 3) * right[:, None]
+    mesh.attributes.remove(mesh.attributes["knuckle_relief"])
     offsets[np.linalg.norm(offsets, axis=1) < 5e-5] = 0.0  # keep the shape key sparse
     human.modifiers.remove(smooth)
     human.vertex_groups.remove(region)
@@ -1113,6 +1215,8 @@ def sculpt_hand_back(human, arm):
     mesh = human.data
     mesh.update()
     group_names = {group.index: group.name for group in human.vertex_groups}
+    # The knuckles' share of the relief, for add_grip_corrective to soften.
+    relief = mesh.attributes.new("knuckle_relief", "FLOAT_VECTOR", "POINT")
     for side in ("l", "r"):
         wrist, forward_hand, up_hand, toward_pinky, reach = hand_back_frame(arm, side)
         knuckles = {f: arm.data.bones[f"{f}_01_{side}"].head_local.copy() for f in KNUCKLES}
@@ -1175,6 +1279,7 @@ def sculpt_hand_back(human, arm):
             # the skin folds in front of a flexed knuckle, vertex normals
             # cross and would push the fold through itself.
             vert.co += up_hand * ((max(knuckle, ridge) - groove - flatten) * dorsal)
+            relief.data[vert.index].vector = up_hand * (max(knuckle, ridge) - ridge) * dorsal
 
 
 def enhance_skin_geometry(human, arm):
@@ -1196,12 +1301,64 @@ def enhance_skin_geometry(human, arm):
     mesh = human.data
     group_names = {group.index: group.name for group in human.vertex_groups}
     finger_prefixes = ("thumb_", "index_", "middle_", "ring_", "pinky_")
-    # Shape the phalanges without moving any bone endpoint: taper each, keep
-    # a fleshy fingertip pad and slight joint flares, and give the proximal
-    # and middle phalanges a flatter back and slimmer waist (a D-shaped
-    # section under the extensor hood) instead of MakeHuman's round tubes.
-    # Each bone a vertex is weighted to proposes a position; they blend by
-    # weight, so the shape runs continuously through the joints.
+    # Shape the phalanges without moving any bone endpoint: each finger
+    # measured and rescaled onto one steady taper from its base width
+    # (FINGER_HALF_WIDTH, FINGER_TAPER; MakeHuman's fingers taper from 12% to
+    # 35% by finger, its index thinner than its ring), its middle and end
+    # joints swelling a little past the shafts beside them, a fleshy
+    # fingertip pad bulging below the bone, and a flatter back (a D-shaped
+    # section under the extensor hood, squarish over the bent middle and end
+    # joints) instead of MakeHuman's round tubes. The thumb, its bones
+    # modelled as thin as a finger's, fills out to THUMB_FULLNESS over its
+    # base and tapers back toward its tip (full to the end, it read as a log).
+    # Each bone a vertex is weighted to proposes a position; they blend by weight, so
+    # the shape runs continuously through the joints.
+    along = {}  # bone -> (where it starts along its finger, its share of it)
+    for side in ("l", "r"):
+        for finger in ("thumb", "index", "middle", "ring", "pinky"):
+            chain = [arm.data.bones[f"{finger}_{p:02d}_{side}"] for p in (1, 2, 3)]
+            total = sum(b.length for b in chain)
+            start = 0.0
+            for b in chain:
+                along[b.name] = (start / total, b.length / total)
+                start += b.length
+
+    def shaft_frame(bone):
+        axis = (bone.tail_local - bone.head_local).normalized()
+        dorsal = -(bone.matrix_local.to_3x3() @ Vector((0, 0, 1)))
+        dorsal = (dorsal - axis * dorsal.dot(axis)).normalized()
+        return axis, dorsal, axis.cross(dorsal)
+
+    # Each finger phalanx's cross-section mid-shaft: its centre (MakeHuman's
+    # bones run up to 8 mm off the middle of the finger) and its half width
+    # and depth, from the skin it carries alone.
+    sections = {}
+    for vert in mesh.vertices:
+        for item in vert.groups:
+            name = group_names.get(item.group, "")
+            if item.weight > 0.6 and name.startswith(finger_prefixes[1:]):
+                bone = arm.data.bones[name]
+                span = bone.tail_local - bone.head_local
+                t = (vert.co - bone.head_local).dot(span) / span.length_squared
+                if 0.4 < t < 0.7:
+                    _, dorsal, lateral = shaft_frame(bone)
+                    radial = vert.co - bone.head_local - span * t
+                    sections.setdefault(name, []).append((radial.dot(lateral), radial.dot(dorsal)))
+    shafts = {}  # bone -> (centre offset from its axis, mean half extent)
+    for name, points in sections.items():
+        _, dorsal, lateral = shaft_frame(arm.data.bones[name])
+        low, high = np.percentile(np.array(points), 3, axis=0), np.percentile(np.array(points), 97, axis=0)
+        centre = (low + high) / 2
+        shafts[name] = (lateral * float(centre[0]) + dorsal * float(centre[1]), float(np.mean(high - low)) / 2)
+    scale = {}  # bone -> its rescale onto the finger's profile
+    for name, (_, radius) in shafts.items():
+        finger, _, side = name.split("_")
+        start, share = along[name]
+        base_start, base_share = along[f"{finger}_01_{side}"]
+        taper = FINGER_TAPER * ((start + share / 2) - (base_start + base_share / 2))
+        scale[name] = FINGER_HALF_WIDTH[finger] * (1 - taper) / radius
+    print("FINGER_WIDTH rescale", {k: round(v, 2) for k, v in scale.items() if k.endswith("_r")},
+          "half widths (mm)", {k: round(v[1] * 1000, 1) for k, v in shafts.items() if k.endswith("_r")})
     for vert in mesh.vertices:
         influences = [(item.weight, group_names[item.group]) for item in vert.groups
                       if group_names.get(item.group, "").startswith(finger_prefixes)]
@@ -1213,29 +1370,33 @@ def enhance_skin_geometry(human, arm):
                 axis = (bone.tail_local - bone.head_local).normalized()
                 length = (bone.tail_local - bone.head_local).length
                 t = max(0.0, min(1.0, (vert.co - bone.head_local).dot(axis) / max(length, 1e-6)))
-                center = bone.head_local + axis * (t * length)
+                offset = shafts[group_name][0] if group_name in shafts else Vector()
+                center = bone.head_local + axis * (t * length) + offset
                 radial = vert.co - center
                 part = int(group_name.split("_")[-2])
-                if part == 3:
-                    # Gentle taper into a rounded fingertip pad, not a point.
-                    factor = 0.955 - 0.07 * t + 0.03 * math.exp(-(((t - 0.78) / 0.16) ** 2))
+                start, share = along[group_name]
+                # The PIP and DIP joints (not the knuckle: sculpt_hand_back's).
+                joint = (math.exp(-(((t - 1.0) / 0.14) ** 2)) if part < 3 else 0.0) + (
+                    math.exp(-((t / 0.14) ** 2)) if part > 1 else 0.0)
+                if group_name.startswith("thumb_"):
+                    u = start + t * share
+                    factor = 1 + (THUMB_FULLNESS - 1) * smoothstep(0.15, 0.4, u) * (1 - 0.85 * smoothstep(0.55, 0.95, u))
                 else:
-                    # Shafts narrowing toward the next joint, which flares
-                    # only a millimetre or so (its condyles).
-                    ends = math.exp(-(((t - 1.0) / 0.14) ** 2)) + (math.exp(-((t / 0.14) ** 2)) if part == 2 else 0.0)
-                    factor = 0.98 - 0.14 * t + 0.035 * ends
+                    factor = scale[group_name] + 0.035 * joint
+                if part == 3:
+                    factor += 0.04 * math.exp(-(((t - 0.72) / 0.18) ** 2))  # the pad under the nail
                 radial = radial * factor
-                if part < 3 and not group_name.startswith("thumb_"):
-                    shaft = smoothstep(0.12, 0.35, t) * (1 - smoothstep(0.7, 0.9, t))
-                    dorsal = -(bone.matrix_local.to_3x3() @ Vector((0, 0, 1)))
-                    dorsal = (dorsal - axis * dorsal.dot(axis)).normalized()
-                    lateral = axis.cross(dorsal)
-                    radial -= dorsal * max(0.0, radial.dot(dorsal)) * 0.22 * shaft
-                    radial -= lateral * radial.dot(lateral) * 0.06 * shaft
+                if not group_name.startswith("thumb_"):
+                    shaft = smoothstep(0.12, 0.35, t) * (1 - smoothstep(0.7, 0.9, t)) if part < 3 else 0.0
+                    _, dorsal, lateral = shaft_frame(bone)
+                    radial -= dorsal * max(0.0, radial.dot(dorsal)) * (0.22 * shaft + 0.18 * joint)
+                    # The joints widest across their condyles, flat on top:
+                    # round, a flexed middle joint reads as a dome.
+                    radial += lateral * radial.dot(lateral) * (0.05 * joint - 0.03 * shaft)
                 target = center + radial
                 if part == 3 and t > 0.72:
                     palmward = (bone.matrix_local.to_3x3() @ Vector((0, 0, 1))).normalized()
-                    target += palmward * (0.0008 * ((t - 0.72) / 0.28))
+                    target += palmward * (0.0016 * ((t - 0.72) / 0.28))
                 proposed += target * weight
             vert.co = vert.co.lerp(proposed / total, smoothstep(0.2, 0.6, total))
             if total > 0.35:
@@ -1501,7 +1662,7 @@ def export_glb(assets, arm):
     options = {
         "filepath": str(OUTPUT_PATH), "export_format": "GLB", "use_selection": True,
         "export_yup": True, "export_animations": False, "export_image_format": "WEBP",
-        "export_image_quality": 82, "export_apply": False, "export_skins": True,
+        "export_image_quality": 92, "export_apply": False, "export_skins": True,
         "export_morph": True, "export_morph_normal": False, "export_try_sparse_sk": True, "export_lights": False, "export_cameras": False,
         "export_leaf_bone": False, "export_def_bones": True,
         "export_all_influences": False, "export_attributes": False, "export_extras": True,
@@ -1576,7 +1737,7 @@ def main():
         bpy.ops.wm.save_as_mainfile(filepath=os.environ["ARMS_DEBUG_BLEND"])
     export_glb((*assets, *mouse[0].children, mouse[0]), arm)
     size = OUTPUT_PATH.stat().st_size
-    if size > 4 * 1024 * 1024:
+    if size > 5 * 1024 * 1024:
         raise RuntimeError(f"File budget exceeded: {size} bytes")
     print("ARMS_BUILD_RESULT", json.dumps({
         "output": str(OUTPUT_PATH), "bytes": size, "triangles": tris,

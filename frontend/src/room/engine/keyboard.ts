@@ -26,6 +26,7 @@ import {
   KEYS,
   type PlacedKey,
 } from './keymap';
+import { applyContactShadows } from './contact';
 
 const MM = 0.001;
 const TYPING_ANGLE = MathUtils.degToRad(6);
@@ -264,6 +265,7 @@ export function createKeyboard(renderer: WebGLRenderer): KeyboardRig {
 
   const atlas = buildLegendAtlas(renderer);
   const capMaterial = new MeshStandardMaterial({ map: atlas, roughness: 0.62, metalness: 0 });
+  applyContactShadows(capMaterial);
 
   interface KeyState { key: PlacedKey; mesh: Mesh; target: number; depth: number; }
   const states: Record<string, KeyState> = {};
@@ -302,6 +304,7 @@ export function createKeyboard(renderer: WebGLRenderer): KeyboardRig {
   const plateGeometry = new ExtrudeGeometry(plateShape, { depth: 1.5 * MM, bevelEnabled: false });
   plateGeometry.rotateX(Math.PI / 2);
   const plateMaterial = new MeshStandardMaterial({ color: '#0d0e10', roughness: 0.7, metalness: 0.3 });
+  applyContactShadows(plateMaterial);
   const plate = new Mesh(plateGeometry, plateMaterial);
   plate.receiveShadow = true;
   board.add(plate);
@@ -367,6 +370,7 @@ export function createKeyboard(renderer: WebGLRenderer): KeyboardRig {
     clearcoat: 0.15,
     clearcoatRoughness: 0.5,
   });
+  applyContactShadows(caseMaterial);
   const caseMesh = new Mesh(caseGeometry, caseMaterial);
   caseMesh.position.set(center[0], deskY, center[2]);
   caseMesh.castShadow = true;
