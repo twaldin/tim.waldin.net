@@ -23,6 +23,8 @@ ATLAS_SIZE = 2048
 # and speaker themselves are `live_` for that reason.)
 IMPORTANCE = [
     (("earbuds",), 16.0),
+    # The macro pad's body round its keys (coarse, it showed smeary AO blotches).
+    (("deck_",), 8.0),
     (("mug", "coffee", "phone", "speaker"), 8.0),
     (("desk_top", "desk_mat", "hex_panel"), 4.0),
     (("wall_front", "window", "monitor", "clock", "rubber_duck", "lamp", "laptop", "cable", "pc_",

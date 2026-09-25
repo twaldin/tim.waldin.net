@@ -81,6 +81,8 @@ const RECT_AREA_DIFFUSE =
   'reflectedLight.directDiffuse += lightColor * material.diffuseContribution * LTC_Evaluate( normal, viewDir, position, mat3( 1.0 ), rectCoords );';
 const LIGHTMAP_SAMPLE = 'vec3 lightMapIrradiance = lightMapTexel.rgb * lightMapIntensity;';
 const IBL_DIFFUSE = 'iblIrradiance += getIBLIrradiance( geometryNormal );';
+const IBL_SPECULAR = 'radiance += iblRadiance;';
+const IBL_CLEARCOAT = 'clearcoatRadiance += getIBLRadiance( geometryViewDir, geometryClearcoatNormal, material.clearcoatRoughness );';
 const FIRST_LIGHT_LOOP = '#if ( NUM_POINT_LIGHTS > 0 ) && defined( RE_Direct )';
 const DIRECTIONAL_LOOP = '#if ( NUM_DIR_LIGHTS > 0 ) && defined( RE_Direct )';
 
@@ -89,6 +91,8 @@ for (const [chunk, line] of [
   ['lights_physical_pars_fragment', RECT_AREA_DIFFUSE],
   ['lights_fragment_maps', LIGHTMAP_SAMPLE],
   ['lights_fragment_maps', IBL_DIFFUSE],
+  ['lights_fragment_maps', IBL_SPECULAR],
+  ['lights_fragment_maps', IBL_CLEARCOAT],
   ['lights_fragment_begin', FIRST_LIGHT_LOOP],
   ['lights_fragment_begin', DIRECTIONAL_LOOP],
 ] as const) {
@@ -102,6 +106,17 @@ for (const [chunk, line] of [
 const staticLightsPars = `float roomDirectDiffuse;\n${ShaderChunk.lights_physical_pars_fragment
   .replace(LAMBERT_DIRECT, LAMBERT_DIRECT.replace('+= irradiance', '+= roomDirectDiffuse * irradiance'))
   .replace(RECT_AREA_DIFFUSE, '')}`;
+// The panorama is one view from the seat, unoccluded: by day every baked
+// surface mirrored its bright window (walnut went grey-blue, dark metal
+// silver), at night its dark ceiling (the same metal went black) though the
+// LEDs light the desk. So reflections are scaled by how much light the
+// lightmap says reaches the surface against what the bound panorama alone
+// would give it (both at the scene's intensity, so the ratio follows the
+// panorama swap mid-transition). Clamped: the lightmap leaves out the live
+// sun, and where the panorama's irradiance is near zero the ratio is noise.
+const ROOM_REFLECTION = /* glsl */ `
+  float roomEnvIrradiance = dot( getIBLIrradiance( geometryNormal ), vec3( 0.2126, 0.7152, 0.0722 ) );
+  float roomReflection = clamp( dot( lightMapIrradiance, vec3( 0.2126, 0.7152, 0.0722 ) ) / max( roomEnvIrradiance, 1e-4 ), 0.15, 3.0 );`;
 const staticLightsMaps = ShaderChunk.lights_fragment_maps
   .replace(
     LIGHTMAP_SAMPLE,
@@ -114,7 +129,9 @@ const staticLightsMaps = ShaderChunk.lights_fragment_maps
       + decodeLightmap( texture2D( lightMapScreen, vLightMapUv ).rgb, lightMapScales.z ) * screenRadiance
     ) * lightMapIntensity;`,
   )
-  .replace(IBL_DIFFUSE, '');
+  .replace(IBL_DIFFUSE, '')
+  .replace(IBL_SPECULAR, `${ROOM_REFLECTION}\n  radiance += iblRadiance * roomReflection;`)
+  .replace(IBL_CLEARCOAT, IBL_CLEARCOAT.replace(');', ') * roomReflection;'));
 
 // Lightmaps hold log-encoded data (decoded in the shader), not colours.
 function loadTexture(loader: TextureLoader, url: string) {

@@ -132,6 +132,41 @@ float getSunShadow( sampler2DShadow shadowMap, vec2 shadowMapSize, float shadowI
 	return mix( 1.0, shadow, shadowIntensity );
 }
 `;
+
+// The hands' shadow in the room's ambient light. By day the hands stand in
+// the monitor's shade, lit only by the room (the window's sky, the walls),
+// which contact.ts's spheres take out right under the fingertips but not
+// in the soft shadow a whole hand throws over the keys between and around
+// the fingers and over the mouse it holds. A third, dark directional light
+// (index 2, after the sun and its detail light) sees only the arms (layer
+// SKY_SHADE_LAYER) from the window's side of the sky, SKY_SHADE_WIDTH
+// square around the keyboard and the mouse; its texels are coarse and its
+// filter wide, so the shadow is as soft as a hand's under a sky: centimetres
+// across. contact.ts and skin.ts take it out of the ambient light only, and
+// at most SKY_SHADE of it: the map sees the hand from one side of the sky,
+// and under a hand the rest of the room (the walls, the sky low in the
+// window) still reaches in from the sides. Shadows from the lights stay
+// their own maps'.
+export const SKY_SHADE_LAYER = 1;
+const SKY_SHADE_WIDTH = 0.9;
+const SKY_SHADE_DEPTH = 1.6;
+export const SKY_SHADE_GLSL = /* glsl */ `
+#define HAS_SKY_SHADE
+const float SKY_SHADE = 0.6;
+float getSkyShade() {
+	#if NUM_DIR_LIGHT_SHADOWS > 2
+		DirectionalLightShadow sky = directionalLightShadows[ 2 ];
+		vec3 coord = vDirectionalShadowCoord[ 2 ].xyz / vDirectionalShadowCoord[ 2 ].w;
+		coord.z += sky.shadowBias;
+		vec2 inside = smoothstep( 0.0, 0.1, coord.xy ) * smoothstep( 1.0, 0.9, coord.xy );
+		float share = inside.x * inside.y * step( 0.0, coord.z ) * step( coord.z, 1.0 );
+		if ( share == 0.0 ) return 1.0;
+		return 1.0 - SKY_SHADE * share * ( 1.0 - shadowTent( directionalShadowMap[ 2 ], sky.shadowMapSize, coord, shadowDepthSlope( coord ), sky.shadowRadius, 0.0 ) );
+	#else
+		return 1.0;
+	#endif
+}
+`;
 const SUN_CALL = 'getShadow( directionalShadowMap[ i ]';
 // Only the sun's own light looks its shadow up; the detail light's is dark.
 const DIRECTIONAL_SHADOWED = '( UNROLLED_LOOP_INDEX < NUM_DIR_LIGHT_SHADOWS )';
@@ -157,7 +192,7 @@ export function smoothShadowPenumbrae() {
   ShaderChunk.shadowmap_pars_fragment = chunk
     .replaceAll(NOISY_ROTATION, 'float phi = 0.0;')
     .replace(FIVE_TAPS, TENT_TAPS)
-    .replace(PCF_GET_SHADOW, `$1${TENT_FILTER}${SUN_SHADOW}$2`);
+    .replace(PCF_GET_SHADOW, `$1${TENT_FILTER}${SUN_SHADOW}${SKY_SHADE_GLSL}$2`);
   ShaderChunk.lights_fragment_begin = lights
     .replace(DIRECTIONAL_SHADOWED, '( UNROLLED_LOOP_INDEX == 0 ) && ( NUM_DIR_LIGHT_SHADOWS > 0 )')
     .replace(SUN_CALL, 'getSunShadow( directionalShadowMap[ i ]');
@@ -179,5 +214,21 @@ export function fitSunDetail(sun: DirectionalLight, detail: DirectionalLight, ce
   camera.top = local.y + SUN_DETAIL_WIDTH / 2;
   camera.near = -local.z - SUN_DETAIL_DEPTH / 2;
   camera.far = -local.z + SUN_DETAIL_DEPTH / 2;
+  camera.updateProjectionMatrix();
+}
+
+// Frames the sky shade light: from `from` (a direction toward the sky it
+// stands for) onto `center`, seeing only SKY_SHADE_LAYER.
+export function fitSkyShade(sky: DirectionalLight, from: Vector3, center: Vector3) {
+  sky.target.position.copy(center);
+  sky.position.copy(center).addScaledVector(from.clone().normalize(), SKY_SHADE_DEPTH / 2);
+  const camera = sky.shadow.camera;
+  camera.layers.set(SKY_SHADE_LAYER);
+  camera.left = -SKY_SHADE_WIDTH / 2;
+  camera.right = SKY_SHADE_WIDTH / 2;
+  camera.bottom = -SKY_SHADE_WIDTH / 2;
+  camera.top = SKY_SHADE_WIDTH / 2;
+  camera.near = 0;
+  camera.far = SKY_SHADE_DEPTH;
   camera.updateProjectionMatrix();
 }

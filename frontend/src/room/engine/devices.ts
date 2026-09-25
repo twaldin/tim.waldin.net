@@ -24,12 +24,13 @@ export interface DeskDevices {
 const GLASS_REFLECTANCE = 0.35;
 
 // Emissive strength. LEDs and LCDs hold their level by day and night (the
-// room around them changes); the phone's always-on display dims in the dark,
-// or it outshines everything but the monitor.
+// room around them changes); the phone's always-on display dims right down
+// in the dark, or the tallest screen at the frame's edge pulls the eye from
+// the monitor.
 const BRIGHTNESS: Record<'clock' | 'phone' | 'deck', { night: number; day: number }> = {
   clock: { night: 0.75, day: 1.8 },
-  phone: { night: 0.13, day: 0.9 },
-  deck: { night: 1.15, day: 1.1 },
+  phone: { night: 0.055, day: 0.9 },
+  deck: { night: 1.5, day: 1.1 },
 };
 
 // Canvas sizes follow the quads' aspect ratios (0.108 × 0.054 m, 0.0684 ×
@@ -38,9 +39,11 @@ const CLOCK_SIZE = [512, 256] as const;
 const PHONE_SIZE = [256, 544] as const;
 const DECK_SIZE = [500, 300] as const;
 
-// The display's 64 × 32 LED grid.
-const LED_COLUMNS = 64;
-const LED_ROWS = 32;
+// The display's 32 × 16 LED grid: the time (one LED per font pixel) and the
+// graph share it (the time drawn 2 × 2 on a finer grid read as doubled rows
+// beside the graph's single dots).
+const LED_COLUMNS = 32;
+const LED_ROWS = 16;
 const LED_OFF = '#0d0d0f';
 const LED_TIME = '#f1e9dc';
 // A contribution graph under the time: 32 weeks × 7 days, one LED per day.
@@ -62,26 +65,25 @@ const GLYPHS: Record<string, string[]> = {
   ':': ['0', '1', '1', '0', '1', '1', '0'],
 };
 
-// Macro-pad keys (5 × 3): a Nerd Font icon on an LCD tile, mostly dark grey
-// (near-black tiles made the icons float on a dead pad at night) with five
-// muted accents so the pad does not outshine the monitor.
-const DECK_DARK = '#2a2d33';
+// Macro-pad keys (5 × 3): a Nerd Font icon on a lit LCD tile, every key its
+// own muted colour (dark grey tiles read as unpowered keys at night), none
+// bright enough to outshine the monitor.
 const DECK_KEYS: [string, string][] = [
-  ['\uf120', DECK_DARK],
+  ['\uf120', '#3b4453'],
   ['\uf126', '#2a4f96'],
   ['\uf04b', '#15803d'],
   ['\uf131', '#b8323a'],
   ['\uf135', '#a4513f'],
-  ['\uf188', DECK_DARK],
-  ['\uf058', DECK_DARK],
-  ['\uf121', DECK_DARK],
-  ['\uf0f4', DECK_DARK],
+  ['\uf188', '#6b4f1d'],
+  ['\uf058', '#1f6f5c'],
+  ['\uf121', '#46407a'],
+  ['\uf0f4', '#6a4a36'],
   ['\uf186', '#3730a3'],
-  ['\uf023', DECK_DARK],
-  ['\uf028', DECK_DARK],
-  ['\uf073', DECK_DARK],
-  ['\uf0eb', DECK_DARK],
-  ['\uf013', DECK_DARK],
+  ['\uf023', '#4b5563'],
+  ['\uf028', '#1e5b7a'],
+  ['\uf073', '#7a2e4d'],
+  ['\uf0eb', '#7a6a1f'],
+  ['\uf013', '#3f4a5a'],
 ];
 // The lock screen's now-playing card: track, progress, and previous / pause /
 // next in Nerd Font glyphs.
@@ -148,35 +150,34 @@ function drawClock(context: CanvasRenderingContext2D, date: Date, graph: number[
   const [width, height] = CLOCK_SIZE;
   const pitch = width / LED_COLUMNS;
   const leds: string[] = new Array<string>(LED_COLUMNS * LED_ROWS).fill(LED_OFF);
-  // The time in the top half, each font pixel 2 × 2 LEDs.
+  // The time in rows 1–7, one LED per font pixel.
   const text = timeText(date);
-  const widths = [...text].map((char) => (GLYPHS[char]?.[0].length ?? 0) * 2);
-  let column = Math.round((LED_COLUMNS - (widths.reduce((a, b) => a + b, 0) + (text.length - 1) * 2)) / 2);
+  const widths = [...text].map((char) => GLYPHS[char]?.[0].length ?? 0);
+  let column = Math.round((LED_COLUMNS - (widths.reduce((a, b) => a + b, 0) + (text.length - 1))) / 2);
   for (const [i, char] of [...text].entries()) {
     GLYPHS[char]?.forEach((row, y) => {
-      for (let x = 0; x < row.length; x++) {
-        if (row[x] !== '1') continue;
-        for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) leds[(2 + y * 2 + dy) * LED_COLUMNS + column + x * 2 + dx] = LED_TIME;
-      }
+      for (let x = 0; x < row.length; x++) if (row[x] === '1') leds[(1 + y) * LED_COLUMNS + column + x] = LED_TIME;
     });
-    column += widths[i] + 2;
+    column += widths[i] + 1;
   }
-  // The graph below: every other LED, so each day reads as its own dot.
+  // The graph in rows 9–15, a week per column.
   const today = date.getDay();
   for (let week = 0; week < GRAPH_WEEKS; week++) {
     for (let day = 0; day < 7; day++) {
       const future = week === GRAPH_WEEKS - 1 && day > today;
       if (future) continue;
-      leds[(18 + day * 2) * LED_COLUMNS + week * 2] = GRAPH_LEVELS[graph[week * 7 + day]];
+      leds[(9 + day) * LED_COLUMNS + week] = GRAPH_LEVELS[graph[week * 7 + day]];
     }
   }
   context.fillStyle = '#000000';
   context.fillRect(0, 0, width, height);
+  // Round dots with dark gaps between them, as on a real matrix.
+  const gap = pitch * 0.16;
   for (let row = 0; row < LED_ROWS; row++) {
     for (let col = 0; col < LED_COLUMNS; col++) {
       context.fillStyle = leds[row * LED_COLUMNS + col];
       context.beginPath();
-      context.roundRect(col * pitch + 1, row * (height / LED_ROWS) + 1, pitch - 2, height / LED_ROWS - 2, 2);
+      context.roundRect(col * pitch + gap, row * pitch + gap, pitch - 2 * gap, pitch - 2 * gap, pitch * 0.34);
       context.fill();
     }
   }
@@ -326,9 +327,10 @@ function drawDeck(context: CanvasRenderingContext2D) {
     context.fillStyle = color;
     roundedRect(context, x, y, tile, tile, tile * 0.14);
     context.fill();
+    // Lit from within: brighter at the top, as a backlit LCD.
     const shade = context.createLinearGradient(0, y, 0, y + tile);
-    shade.addColorStop(0, 'rgba(0, 0, 0, 0)');
-    shade.addColorStop(1, 'rgba(0, 0, 0, 0.4)');
+    shade.addColorStop(0, 'rgba(255, 255, 255, 0.16)');
+    shade.addColorStop(1, 'rgba(0, 0, 0, 0.25)');
     context.fillStyle = shade;
     context.fill();
     // Full-white icons clear the night bloom threshold, so the keys glow like

@@ -10,7 +10,6 @@ import type { KeyboardRig } from './keyboard';
 import type { MouseRig } from './mouse';
 import { HOME_KEYS, KEY_BY_CODE, KEY_UNIT, type Finger, type Hand } from './keymap';
 import { contactOccluders } from './contact';
-import { layout } from '../layout';
 
 // Rig conventions reported by scripts/room/build_arms.py.
 const FINGER_BONES: Record<Finger, string> = { 1: 'thumb', 2: 'index', 3: 'middle', 4: 'ring', 5: 'pinky' };
@@ -22,8 +21,8 @@ const LIFT_SECONDS = 0.07;
 const RELAX_RATE = 14;
 const KEY_TRAVEL = 0.0036;
 const HOVER = 0.004;
-// The rig's fingertip point (distal bone tail) sits inside the finger; the
-// pad that touches the key is this far below it.
+// The rig's fingertip point (distal bone tail) sits inside the finger, this
+// far from the skin around it.
 const PAD = 0.0055;
 // The spheres standing in for each hand in the keys' and mouse's contact
 // shadows (contact.ts): a fingertip reaches its pad (thumbs are broader),
@@ -33,6 +32,13 @@ const PAD = 0.0055;
 // the palm's broad shadow darkens them a third.
 const TIP_RADIUS = PAD + 0.001;
 const THUMB_TIP_RADIUS = PAD + 0.002;
+// The fingertip sphere sits in the pad's pulp, not at tipLocal: that is the
+// distal bone's tail, the very end of the finger, and on the mouse's flat
+// grip a sphere there reached past the fingertip and printed a dark dot on
+// the shell ahead of it. Back along the bone (+Y) and toward the palm (+Z,
+// which FLEX_AXIS curls the bone toward); the thumb's tail reaches further.
+const PAD_PULP = new Vector3(0, -0.007, 0.003);
+const THUMB_PAD_PULP = new Vector3(0, -0.011, 0.003);
 const JOINT_RADIUS = 0.0065;
 const PHALANX_RADIUS = 0.008;
 const PALM_RADIUS = 0.015;
@@ -70,7 +76,9 @@ interface FingerState {
   bones: [Bone, Bone, Bone];
   bind: [Quaternion, Quaternion, Quaternion];
   tipLocal: Vector3; // fingertip in the distal bone's space
+  padLocal: Vector3; // pad's pulp in the distal bone's space, for contact shadows
   homeTip: Vector3; // fingertip in world space at bind
+  rest: Vector3; // fingertip from its home key's top at bind
   // IK parameters on top of the bind pose: base flex, middle flex, spread.
   params: [number, number, number];
   key: string | null;
@@ -173,6 +181,24 @@ function readGrip(root: Object3D): GripPose {
   };
 }
 
+// Each fingertip bone's tail at bind (world), by bone name, as build_arms.py
+// records it on the rig.
+function readTips(root: Object3D): Record<string, Vector3> {
+  const rig = root.getObjectByName('ArmsRig');
+  const text: unknown = rig?.userData.typingTips;
+  if (!rig || typeof text !== 'string') throw new Error('arms.glb has no typing tips');
+  const raw: unknown = JSON.parse(text);
+  if (!raw || typeof raw !== 'object') throw new Error('arms.glb has malformed typing tips');
+  return Object.fromEntries(
+    Object.entries(raw).map(([name, p]) => {
+      if (!Array.isArray(p) || p.length !== 3 || !p.every((n) => typeof n === 'number')) {
+        throw new Error('arms.glb has malformed typing tips');
+      }
+      return [name, rig.localToWorld(new Vector3().fromArray(p))];
+    }),
+  );
+}
+
 function setWorldRotation(bone: Bone, world: Quaternion) {
   const parentWorld = bone.parent ? bone.parent.getWorldQuaternion(tmpQ2) : tmpQ2.identity();
   bone.quaternion.copy(parentWorld.invert().multiply(world));
@@ -194,10 +220,19 @@ export function createHands(root: Object3D, keyboard: KeyboardRig, mouse: MouseR
   };
   root.updateMatrixWorld(true);
 
-  const homeKeys: Record<string, number[]> = layout.keyboard.homeKeys;
-  const homeTipFor = (side: Hand, finger: Finger) => {
-    const key = finger === 1 ? `Space${side === 'L' ? 'Left' : 'Right'}Thumb` : HOME_KEYS[side][finger];
-    return new Vector3().fromArray(homeKeys[key]);
+  // Where each fingertip rests at bind (build_arms.py places the tips on
+  // their home keys, the pads just touching the tops) and so where it
+  // lands on any key: the same offset from that key's top.
+  const tips = readTips(root);
+  const homeTipFor = (bones: [Bone, Bone, Bone]) => {
+    const tip = tips[bones[2].name];
+    if (!tip) throw new Error(`arms.glb typing tips are missing ${bones[2].name}`);
+    return tip;
+  };
+  const restFor = (side: Hand, finger: Finger, homeTip: Vector3) => {
+    const top = keyboard.keyTop(HOME_KEYS[side][finger]);
+    if (!top) throw new Error(`keyboard has no key ${HOME_KEYS[side][finger]}`);
+    return homeTip.clone().sub(top);
   };
 
   const hands: Record<Hand, HandState> = { L: null!, R: null! };
@@ -208,7 +243,7 @@ export function createHands(root: Object3D, keyboard: KeyboardRig, mouse: MouseR
     const hand = bone(`hand${suffix}`);
     const fingers: FingerState[] = ([1, 2, 3, 4, 5] as Finger[]).map((finger) => {
       const bones = [1, 2, 3].map((i) => bone(`${FINGER_BONES[finger]}_0${i}${suffix}`)) as [Bone, Bone, Bone];
-      const homeTip = homeTipFor(side, finger);
+      const homeTip = homeTipFor(bones);
       const tipLocal = bones[2].worldToLocal(homeTip.clone());
       return {
         hand: side,
@@ -216,7 +251,9 @@ export function createHands(root: Object3D, keyboard: KeyboardRig, mouse: MouseR
         bones,
         bind: bones.map((b) => b.quaternion.clone()) as [Quaternion, Quaternion, Quaternion],
         tipLocal,
+        padLocal: tipLocal.clone().add(finger === 1 ? THUMB_PAD_PULP : PAD_PULP),
         homeTip,
+        rest: restFor(side, finger, homeTip),
         params: [0, 0, 0],
         key: null,
         down: false,
@@ -257,15 +294,16 @@ export function createHands(root: Object3D, keyboard: KeyboardRig, mouse: MouseR
     return hands[key.hand].fingers[key.finger - 1];
   };
 
-  // Where on a key the fingertip lands: its home tip clamped into the key's
-  // top face, so wide keys (space, shift, enter) are hit near the finger.
+  // Where on a key the fingertip lands: as far from the key's top as it
+  // rests from its home key's, sideways its home tip clamped into the top
+  // face, so wide keys (space, shift, enter) are hit near the finger.
   const strikePoint = (finger: FingerState, code: string) => {
     const key = KEY_BY_CODE[code];
-    const center = keyboard.keyTop(code);
-    if (!key || !center) return null;
+    const top = keyboard.keyTop(code);
+    if (!key || !top) return null;
     const halfW = (key.width * KEY_UNIT) / 2 - 0.006;
-    const x = MathUtils.clamp(finger.homeTip.x, center.x - halfW, center.x + halfW);
-    return new Vector3(x, center.y, center.z);
+    const x = MathUtils.clamp(finger.homeTip.x, top.x - halfW, top.x + halfW);
+    return new Vector3(x, top.y + finger.rest.y, top.z + finger.rest.z);
   };
 
   const applyFinger = (f: FingerState) => {
@@ -433,7 +471,6 @@ export function createHands(root: Object3D, keyboard: KeyboardRig, mouse: MouseR
 
         const breathe = Math.sin(time * Math.PI * 2 * 0.21 + (side === 'L' ? 0 : 0.6)) * 0.0008;
         const wrist = h.wristBind.clone().add(h.offset);
-        wrist.y += PAD;
         wrist.y += breathe - h.dip * 0.0018;
         handWorld.setFromAxisAngle(UP, -h.offset.x * 2.5).multiply(h.handBindWorld);
 
@@ -493,7 +530,7 @@ export function createHands(root: Object3D, keyboard: KeyboardRig, mouse: MouseR
             const strike = MathUtils.clamp((now - f.pressedAt) / STRIKE_SECONDS, 0, 1);
             const depth = f.down ? (1 - Math.pow(1 - strike, 3)) * (KEY_TRAVEL + 0.0008) : -HOVER * Math.sin((sinceRelease / LIFT_SECONDS) * Math.PI);
             f.target.copy(point);
-            f.target.y += PAD - depth;
+            f.target.y -= depth;
             solveFinger(f, f.target);
           } else {
             if (f.key && !f.down) f.key = null;
@@ -529,7 +566,7 @@ export function createHands(root: Object3D, keyboard: KeyboardRig, mouse: MouseR
         let occluder = side === 'L' ? 0 : OCCLUDERS_PER_HAND;
         const wristAt = h.hand.getWorldPosition(tmpC);
         for (const f of h.fingers) {
-          tipWorld(f, tmpA);
+          tmpA.copy(f.padLocal).applyMatrix4(f.bones[2].matrixWorld);
           contactOccluders[occluder++].set(tmpA.x, tmpA.y, tmpA.z, f.finger === 1 ? THUMB_TIP_RADIUS : TIP_RADIUS);
           f.bones[2].getWorldPosition(tmpA);
           contactOccluders[occluder++].set(tmpA.x, tmpA.y, tmpA.z, JOINT_RADIUS);

@@ -153,9 +153,13 @@ def screen_preview_image(h, path):
 
 def setup_lights(h):
     d = LAYOUT["desk"]
-    # The lamp's LED bar: a soft spot just under its diffuser.
-    lamp = add_light("light_lamp", "SPOT", h["lamp_bulb"], h["lamp_axis"], color=kelvin(3500, NIGHT_WB),
-                     spot_size=2 * h["lamp_half_angle"], spot_blend=0.6, shadow_soft_size=0.03)
+    # The monitor light bar: a soft spot just under its diffuser (sized a
+    # little under the bar's length, which the spot's radius stands in for).
+    lamp = add_light("light_lamp", "SPOT", h["lamp_bulb"], h["lamp_axis"], color=kelvin(3700, NIGHT_WB),
+                     spot_size=2 * h["lamp_half_angle"], spot_blend=0.6, shadow_soft_size=0.06)
+    # Its backlight (the Halo) up the wall behind the monitor.
+    halo = add_light("light_halo", "AREA", h["halo"], h["halo_axis"], shape="RECTANGLE", size=0.4, size_y=0.006,
+                     color=kelvin(3500, NIGHT_WB))
     led = add_light("light_led", "AREA", rs.B((0, d["topY"] + 0.01, d["zBack"] + 0.015)), rs.B((0, 0.55, -0.85)).normalized(),
                     shape="RECTANGLE", size=d["xMax"] - d["xMin"] - 0.12, size_y=0.01, color=(0.5, 0.42, 1.0))
     # Bias light behind the monitor, aimed back and up at the wall: the right
@@ -178,24 +182,26 @@ def setup_lights(h):
         light.light_linking.receiver_collection = tiles
     for item in tiles.collection_objects:
         item.light_linking.link_state = "EXCLUDE"
-    # By day, light from the rest of the flat through the open door behind
-    # the chair: the one window alone left the wall right of the monitor
-    # near black beside the sunlit desk. An emitting plane rather than an
-    # area light, so the eye-centred panorama sees it too and the `live_`
-    # props facing the seat get the same fill as the baked walls.
-    # It spans the back wall (a door-sized plane bright enough to light the
-    # room mirrored as a white-hot patch in every screen and gloss surface
-    # facing the seat), bright enough that the desk right of the monitor
-    # sits within about a stop of the left half by the window.
-    zb = LAYOUT["room"]["zBack"] - 0.02
-    fill = rs.quad("proxy_fill", [(-1.2, 0.3, zb), (1.4, 0.3, zb), (1.4, 2.4, zb), (-1.2, 2.4, zb)],
-                   rs.material("proxy_fill", color=(0, 0, 0), roughness=1.0, emission=kelvin(6500, DAY_WB)))
+    # By day, daylight from the rest of the flat, reflected round the room:
+    # the one window alone left the wall right of the monitor near black
+    # beside the sunlit desk. Emitting planes rather than area lights, so the
+    # eye-centred panorama sees them too and the `live_` props get the same
+    # fill as the baked walls. Spread dim over the whole back wall and the
+    # ceiling: a door-sized plane behind the chair, bright enough to light
+    # the room, was the brightest light in the day panorama and lit the
+    # hands from the seat's side (orange knuckles, a grazing halo on the
+    # fingers); from above, the same light reaches the desk's right half.
+    R = LAYOUT["room"]
+    zb, x0, x1, ceil = R["zBack"] - 0.02, R["xMin"] + 0.02, R["xMax"] - 0.02, R["ceilingY"] - 0.02
+    fill_mat = rs.material("proxy_fill", color=(0, 0, 0), roughness=1.0, emission=kelvin(6500, DAY_WB))
+    fill = rs.quad("proxy_fill", [(x0, 0.05, zb), (x1, 0.05, zb), (x1, 2.55, zb), (x0, 2.55, zb)], fill_mat)
+    rs.quad("proxy_fillCeiling", [(x0, ceil, -0.2), (x1, ceil, -0.2), (x1, ceil, zb), (x0, ceil, zb)], fill_mat)
     # Streetlights below the window wash the facade across the street.
     add_light("light_street", "AREA", rs.B((-5, -16, rs.STREET_Z + 6)), rs.B((0, 0.35, -1)).normalized(),
               shape="RECTANGLE", size=60, size_y=2, energy=0.0, color=kelvin(2200, NIGHT_WB))
     sun_dir = rs.B((0.675, -0.562, 0.525)).normalized()  # afternoon sun through the window onto the desk
     sun = add_light("light_sun", "SUN", Vector((0, 0, 5)), sun_dir, color=kelvin(5600, DAY_WB), angle=math.radians(0.6))
-    return {"lamp": lamp, "led": led, "bias": bias, "hex": hex_lights, "fill": fill, "sun": sun, "sun_dir": sun_dir, "street": bpy.data.objects["light_street"]}
+    return {"lamp": lamp, "halo": halo, "led": led, "bias": bias, "hex": hex_lights, "fill": fill, "sun": sun, "sun_dir": sun_dir, "street": bpy.data.objects["light_street"]}
 
 
 def set_state(state, h, world, lights, levels):
@@ -210,7 +216,10 @@ def set_state(state, h, world, lights, levels):
     lights["sun"].data.energy = levels["sun"] if day else 0
     lights["street"].data.energy = levels["street_light"] if night else 0
     rs.emission_input(m["bulb"]).default_value = levels["lamp_led"] if night else 0
-    rs.emission_input(m["lamp_touch"]).default_value = levels["lamp_touch"] if night else 0
+    lights["halo"].data.energy = levels["halo"] if night else 0
+    rs.emission_input(m["halo"]).default_value = levels["halo_led"] if night else 0
+    rs.emission_input(m["clock_glow"]).default_value = levels["clock_glow"] if night else 0
+    rs.emission_input(m["deck_glow"]).default_value = levels["deck_glow"] if night else 0
     rs.emission_input(m["mug_led"]).default_value = levels["mug_led"] if night else (levels["mug_led"] * 0.5 if day else 0)
     rs.emission_input(m["speaker_glow"]).default_value = levels["speaker_glow"] if night else (levels["speaker_glow"] * 0.5 if day else 0)
     # Off by day: even a faint idle read brighter than the sunlit wall.
@@ -237,13 +246,16 @@ def set_state(state, h, world, lights, levels):
 
 
 LEVELS = {
-    "street": 12.0, "street_light": 6000.0, "lamp": 30.0, "lamp_led": 12.0, "lamp_touch": 2.0, "mug_led": 4.0, "speaker_glow": 2.0,
+    "street": 12.0, "street_light": 6000.0, "lamp": 12.0, "lamp_led": 12.0, "halo": 2.5, "halo_led": 4.0, "mug_led": 4.0, "speaker_glow": 2.0,
+    # The clock's and the pad's faces: devices.ts's night levels times their
+    # canvases' average (mostly black, lit dots and icons).
+    "clock_glow": 0.1, "deck_glow": 0.25,
     "hex": 1.2, "hex_glow": 3.0, "led": 6.0, "bias": 6.0, "led_strip": 10.0, "fans": 14.0, "pc_led": 6.0,
     "night_sky": 0.02, "city_yaw": 150, "screen_preview": 1.0,
     # Skylight into the room is held below the facade's (`street_sky`): at
     # the facade's level the desk by the window sat ~5 stops over its right
     # half, and blew out white; the fill lifts the rest of the room.
-    "sun": 28.0, "sky": 12.0, "street_sky": 32.0, "fill": 26.0, "day_view": 2.3, "day_yaw": 150,
+    "sun": 28.0, "sky": 12.0, "street_sky": 32.0, "fill": 3.8, "day_view": 2.3, "day_yaw": 150,
 }
 
 
@@ -441,7 +453,8 @@ def bake(h, world, lights, samples):
         set_state(state, h, world, lights, LEVELS)
         for mat in used:
             bsdf = mat.node_tree.nodes.get("Principled BSDF") if mat.node_tree else None
-            if not bsdf or mat.name == "rt_screen":
+            # `rt_` surfaces are the runtime's to draw (their glow here is for the bake).
+            if not bsdf or mat.name.startswith("rt_"):
                 continue
             strength = bsdf.inputs["Emission Strength"].default_value
             if strength > 0 or mat.name in emitters:

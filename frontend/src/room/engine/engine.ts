@@ -12,6 +12,7 @@ import {
   PCFShadowMap,
   RectAreaLight,
   Scene,
+  SkinnedMesh,
   SpotLight,
   Vector2,
   Vector3,
@@ -40,7 +41,7 @@ import { attachScreenPointer, createTerminalScreen } from './screen';
 import { disposeTree, loadRoom } from './room';
 import { createHands } from './hands';
 import { applySkinShading } from './skin';
-import { fitSunDetail, smoothShadowPenumbrae, SUN_SHADOW_DEPTH } from './shadows';
+import { fitSkyShade, fitSunDetail, SKY_SHADE_LAYER, smoothShadowPenumbrae, SUN_SHADOW_DEPTH } from './shadows';
 import { captureProbes, propSites, type LocalProbes } from './probes';
 import { createRoomAudio } from './audio';
 import { typeText } from './autotype';
@@ -125,6 +126,9 @@ export async function createRoomEngine(options: RoomEngineOptions): Promise<Room
     if (!(object instanceof Mesh)) return;
     object.castShadow = true;
     object.receiveShadow = true;
+    // The arms alone throw the hands' shadow in the room's light (the sky
+    // shade below); the mouse, still among them here, doesn't.
+    if (object instanceof SkinnedMesh) object.layers.enable(SKY_SHADE_LAYER);
     // Skinned bounds follow the bind pose; the IK moves the hands outside it.
     object.frustumCulled = false;
     if (object.name === 'Skin' && object.material instanceof MeshStandardMaterial) {
@@ -168,11 +172,15 @@ export async function createRoomEngine(options: RoomEngineOptions): Promise<Room
   lamp.position.fromArray(lampSpec.position);
   lamp.target.position.copy(lamp.position).add(new Vector3().fromArray(lampSpec.direction));
   lamp.castShadow = true;
+  // The lamp is the light bar on the monitor's top edge, half a metre above
+  // and ahead of the hands, lighting their backs nearly head-on: its texels
+  // are about half a millimetre there, and a small normal offset keeps a
+  // finger's shadow on the next finger (skin looks up 2.5 times further).
   lamp.shadow.mapSize.set(2048, 2048);
   lamp.shadow.bias = -0.0004;
-  lamp.shadow.normalBias = 0.006;
+  lamp.shadow.normalBias = 0.002;
   lamp.shadow.radius = 4;
-  // Starts past the lamp's own head, just behind the light.
+  // Starts past the bar's own housing, just behind the light.
   lamp.shadow.camera.near = 0.06;
   lamp.shadow.camera.far = 3;
   scene.add(lamp, lamp.target);
@@ -214,6 +222,20 @@ export async function createRoomEngine(options: RoomEngineOptions): Promise<Room
   sunDetail.shadow.radius = 2;
   fitSunDetail(sun, sunDetail, new Vector3(0.05, 0.8, -0.08));
   scene.add(sunDetail, sunDetail.target);
+  // The hands' soft shadow in the room's own light (shadows.ts), from the
+  // window's sky above the sun: dark, 7 mm texels over the keyboard and the
+  // mouse, and a tent five texels either side, so it spreads a few
+  // centimetres as a shadow under a whole sky does; a centimetre's offset
+  // on skin (skin.ts's normal bias) keeps the hand's lit back out of it.
+  // Added after the sun's two lights: shadows.ts reads it as the third.
+  const skyShade = new DirectionalLight(0xffffff, 0);
+  skyShade.castShadow = true;
+  skyShade.shadow.mapSize.set(128, 128);
+  skyShade.shadow.bias = -0.003;
+  skyShade.shadow.normalBias = 0.004;
+  skyShade.shadow.radius = 5;
+  fitSkyShade(skyShade, new Vector3(-0.45, 0.8, -0.4), new Vector3(0.07, 0.76, -0.1));
+  scene.add(skyShade, skyShade.target);
 
   let day = resolvedMode() === 'light' ? 1 : 0;
   let dayGoal = day;
@@ -489,6 +511,7 @@ export async function createRoomEngine(options: RoomEngineOptions): Promise<Room
       lamp.shadow.dispose();
       sun.shadow.dispose();
       sunDetail.shadow.dispose();
+      skyShade.shadow.dispose();
       audio.dispose();
       composer.dispose();
       renderer.dispose();

@@ -20,8 +20,9 @@ from mathutils import Vector
 
 FINGERS = ("thumb", "index", "middle", "ring", "pinky")
 SKIN_UV = "SkinUV"
-# Fair skin albedo (linear): sRGB ≈ (201, 168, 151).
-SKIN_TONE = np.array([0.59, 0.39, 0.31], np.float32)
+# Fair skin albedo (linear): sRGB ≈ (199, 169, 154). (A tenth less saturated
+# than it was: under the room's warm lights more read as orange putty.)
+SKIN_TONE = np.array([0.574, 0.394, 0.322], np.float32)
 
 
 # --- anatomy -------------------------------------------------------------
@@ -164,20 +165,45 @@ def anatomy_fields(human, arm):
         attr.data.foreach_set("value", values.astype(np.float32))
 
 
-def raise_nails(human, depth=0.0004, smoothing=2):
+def raise_nails(human, depth=0.0004, smoothing=2, relax=3):
     """Lift the nail plates a fraction of a millimetre off the finger: the
     nail region's mask is blurred over the mesh so the plate rises from its
-    folds without a wall. Stores the blurred mask as `nail`."""
+    folds without a wall. Stores the blurred mask as `nail`.
+
+    First the thumbs' nail grooves are relaxed (`relax` Laplacian passes,
+    weighted by how sharply the surface folds at each vertex): MakeHuman's
+    groove turns the surface ~40° across one ring at the cuticle, and the
+    typing thumbs, rolled nail-out, turn that wall from the light above the
+    monitor into a black line around each thumbnail."""
     mesh = human.data
     bm = bmesh.new()
     bm.from_mesh(mesh)
     region = bm.verts.layers.float["nail_region"]
     nail = bm.verts.layers.float.new("nail")
+    deform = bm.verts.layers.deform.active
+    thumb_groups = [human.vertex_groups[f"thumb_0{part}_{side}"].index for part in (2, 3) for side in ("l", "r")]
     bm.verts.ensure_lookup_table()
     mask = [v[region] for v in bm.verts]
     neighbours = [[e.other_vert(v).index for e in v.link_edges] for v in bm.verts]
     for _ in range(smoothing):
         mask = [0.5 * m + 0.5 * sum(mask[i] for i in ns) / len(ns) if ns else m for m, ns in zip(mask, neighbours)]
+    thumb = [min(sum(v[deform].get(g, 0.0) for g in thumb_groups), 1.0) for v in bm.verts]
+    on_thumb = [i for i, t in enumerate(thumb) if t > 0]
+    for _ in range(relax):
+        bm.normal_update()
+        moves = []
+        for i in on_thumb:
+            v, ns = bm.verts[i], neighbours[i]
+            if not ns:
+                continue
+            fold = max(v.normal.angle(bm.verts[j].normal, 0.0) for j in ns)
+            w = thumb[i] * float(_smoothstep(0.25, 0.6, fold))
+            if w > 0:
+                centre = sum((bm.verts[j].co for j in ns), Vector()) / len(ns)
+                moves.append((v, (centre - v.co) * (0.5 * w)))
+        for v, move in moves:
+            v.co += move
+    bm.normal_update()
     for v, m in zip(bm.verts, mask):
         v[nail] = m
         v.co += v.normal * depth * m
@@ -535,10 +561,11 @@ def bake_skin(human, arm, mh_image, size=2048, cache=None):
     reference = np.median(mh_rgb[handness > 0.5], axis=0)
     albedo = SKIN_TONE * np.power(np.clip(mh_rgb / reference, 0.2, 5.0), 0.45)
     mottle = 0.4 * value_noise(p, 0.012, seed=7) + 0.35 * value_noise(p, 0.006, seed=5) + 0.25 * value_noise(p, 0.0022, seed=6)
-    albedo *= 1 + 0.08 * mottle[:, None] * np.array([1.0, -0.5, -0.7], np.float32)
+    albedo *= 1 + 0.08 * mottle[:, None] * np.array([1.0, -0.6, -0.4], np.float32)
     # Blood shows through thin skin over the joints and at the fingertips: a
     # faint flush with no edge, broken up so it never reads as a painted disc.
-    redden = np.array([1.06, 0.94, 0.92], np.float32)
+    # Pink, not orange: blood takes out green more than blue.
+    redden = np.array([1.05, 0.94, 0.97], np.float32)
     flush = np.clip(0.9 * knuckle + 0.8 * tip, 0, 1) * (0.75 + 0.25 * value_noise(p, 0.005, seed=14))
     albedo *= 1 + (redden - 1) * flush[:, None]
     # The back of the hand a little yellower, the creases over the finger
@@ -561,18 +588,19 @@ def bake_skin(human, arm, mh_image, size=2048, cache=None):
     hair = (hid > 0.35) * np.exp(-(hh / 0.1) ** 2) * hairy
     albedo *= 1 - 0.35 * hair[:, None] * np.array([0.8, 0.85, 0.88], np.float32)
     # Nails: a pink bed, lighter than the skin around it so the plate reads
-    # at arm's length; a small, faintly paler half-moon lunula just inside
-    # the cuticle (reaching furthest along the midline); a whitish free
-    # edge. The raised plate's blurred rim reaches back onto the cuticle
-    # fold, which stays skin, a little redder.
+    # at arm's length; a small half-moon lunula just inside the cuticle,
+    # barely paler than the bed (reaching furthest along the midline); a
+    # whitish free edge. The cuticle fold stays skin, a little redder, and
+    # the plate comes out from under it over a millimetre or two: a hard
+    # line there read as a painted stripe.
     bed = np.array([0.7, 0.42, 0.36], np.float32)
-    lunula = np.array([0.8, 0.57, 0.5], np.float32)
+    lunula = np.array([0.76, 0.5, 0.44], np.float32)
     free_edge = np.array([0.9, 0.85, 0.78], np.float32)
     reach = 0.13 * np.sqrt(nail_mid)
-    nail_color = bed + (lunula - bed) * (_smoothstep(0.0, 0.03, nail_u) * (1 - _smoothstep(reach - 0.05, reach, nail_u)))[:, None]
-    nail_color = nail_color + (free_edge - nail_color) * (0.8 * _smoothstep(0.88, 0.96, nail_u))[:, None]
-    fold = albedo * np.array([1.03, 0.94, 0.94], np.float32)
-    nail_color = fold + (nail_color - fold) * _smoothstep(0.0, 0.04, nail_u)[:, None]
+    nail_color = bed + (lunula - bed) * (_smoothstep(0.02, 0.1, nail_u) * (1 - _smoothstep(reach - 0.06, reach + 0.03, nail_u)))[:, None]
+    nail_color = nail_color + (free_edge - nail_color) * (0.85 * _smoothstep(0.86, 0.95, nail_u))[:, None]
+    fold = albedo * np.array([1.03, 0.94, 0.95], np.float32)
+    nail_color = fold + (nail_color - fold) * _smoothstep(0.0, 0.1, nail_u)[:, None]
     albedo = albedo * skin[:, None] + nail_color * nail[:, None]
     albedo = np.clip(albedo, 0, 1)
 
