@@ -43,7 +43,7 @@ const MAX_INPUT_LENGTH = 1024;
 // Blocks shell metachars: ; | & > < ` $ ( ) { } [ ] * ? ! ~ ^ " ' \
 const SAFE_CMD_RE = /^[A-Za-z0-9 ._/+=:,@-]+$/;
 
-function pathToCommand(pathname: string): string | undefined {
+export function pathToCommand(pathname: string): string | undefined {
   let clean = pathname.replace(/^\/+|\/+$/g, '');
   if (!clean) return 'boot'; // '/' → play the intro, then run welcome
   // /t/<command> prefix forces live terminal (used by static blog pages)
@@ -76,9 +76,16 @@ function pathToCommand(pathname: string): string | undefined {
   return undefined;
 }
 
+export interface ConnectOptions {
+  // Overrides the handshake command derived from the URL. '' tells the
+  // backend not to auto-type anything: the room view types the command
+  // itself so the on-screen hands can be seen entering it.
+  initCommand?: string;
+}
+
 export interface WebSocketManager {
   socket: Socket | null;
-  connect: () => void;
+  connect: (options?: ConnectOptions) => void;
   disconnect: () => void;
   sendInput: (data: string) => void;
   onOutput: (callback: (data: string) => void) => void;
@@ -142,10 +149,11 @@ export function createWebSocketManager(): WebSocketManager {
     return 'http://localhost:3001';
   };
 
-  const connect = () => {
+  const connect = (options?: ConnectOptions) => {
     if (socket?.connected) return;
 
-    const initCommand = typeof window !== 'undefined' ? pathToCommand(window.location.pathname) : undefined;
+    const initCommand = options?.initCommand
+      ?? (typeof window !== 'undefined' ? pathToCommand(window.location.pathname) : undefined);
     const sessionId = getSessionId();
 
     socket = io(getWebSocketUrl(), {

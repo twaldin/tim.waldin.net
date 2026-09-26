@@ -15,6 +15,12 @@ import {
   subscribe,
   type ResolvedThemeMode,
 } from '@/lib/theme-manager';
+import {
+  roomSupported,
+  setViewPreference,
+  subscribeActiveTerminalView,
+  type TerminalView,
+} from '@/lib/view-preference';
 
 const BG = 'var(--color-bg)';
 const BORDER = 'var(--color-border)';
@@ -43,6 +49,9 @@ function hardNav(href: string, beforeNavigate?: () => void) {
 export default function SiteHeader() {
   const menuRef = useRef<HTMLDetailsElement>(null);
   const [currentMode, setCurrentMode] = useState<ResolvedThemeMode>('dark');
+  // The terminal view on screen, when a terminal page is mounted and the
+  // browser can run the room at all.
+  const [terminalView, setTerminalView] = useState<TerminalView | null>(null);
   const linkStyle: CSSProperties = {
     color: LINK,
     textDecoration: 'none',
@@ -53,6 +62,9 @@ export default function SiteHeader() {
     setCurrentMode(resolvedMode());
 
     const unsubscribe = subscribe(() => setCurrentMode(resolvedMode()));
+    const unsubscribeView = subscribeActiveTerminalView((view) =>
+      setTerminalView(view !== null && roomSupported() ? view : null),
+    );
     const closeOnOutsideClick = (event: PointerEvent) => {
       const menu = menuRef.current;
       if (menu && event.target instanceof Node && !menu.contains(event.target)) {
@@ -69,6 +81,7 @@ export default function SiteHeader() {
     document.addEventListener('keydown', closeOnEscape);
     return () => {
       unsubscribe();
+      unsubscribeView();
       document.removeEventListener('pointerdown', closeOnOutsideClick);
       document.removeEventListener('keydown', closeOnEscape);
     };
@@ -79,6 +92,12 @@ export default function SiteHeader() {
     const nextMode = currentMode === 'dark' ? 'light' : 'dark';
     setMode(nextMode);
     setCurrentMode(nextMode);
+  };
+  // A reload rebuilds the page in the other view; the stored session id
+  // reattaches the same shell and the current command repaints.
+  const toggleView = () => {
+    setViewPreference(terminalView === 'room' ? 'classic' : 'room');
+    window.location.reload();
   };
 
   return (
@@ -151,6 +170,24 @@ export default function SiteHeader() {
           </nav>
         </details>
 
+        {terminalView && (
+          <button
+            type="button"
+            aria-label={terminalView === 'room' ? 'Switch to the flat terminal' : 'Switch to the 3D room'}
+            onClick={toggleView}
+            style={{
+              appearance: 'none',
+              border: 0,
+              padding: 0,
+              background: 'transparent',
+              color: LINK,
+              cursor: 'pointer',
+              font: 'inherit',
+            }}
+          >
+            {terminalView === 'room' ? '3d' : '2d'}
+          </button>
+        )}
         <button
           type="button"
           aria-label={`Switch to ${currentMode === 'dark' ? 'light' : 'dark'} mode`}

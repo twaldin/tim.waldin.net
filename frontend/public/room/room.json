@@ -1,0 +1,288 @@
+{
+ "version": 3,
+ "coordinateSystem": "glTF: +Y up, viewer faces -Z, metres",
+ "lightmaps": {
+  "uv": "TEXCOORD_1",
+  "encoding": "log curve: code e in [0, 1] -> scale / range * ((range + 1)^e - 1), linear lighting",
+  "range": 4096.0,
+  "units": "Cycles diffuse lighting: outgoing radiance of an albedo-1 surface",
+  "night": {
+   "file": "lightmap_night.webp",
+   "scale": 6.979211807250977
+  },
+  "day": {
+   "file": "lightmap_day.webp",
+   "scale": 60.731544494628906,
+   "note": "without the sun's direct light, which the runtime's shadowed sun adds"
+  },
+  "screen": {
+   "file": "lightmap_screen.webp",
+   "scale": 0.9894180297851562,
+   "note": "monitor alone emitting white at strength 1; multiply by the live screen radiance"
+  }
+ },
+ "environments": {
+  "night": "room_env_night.hdr",
+  "day": "room_env_day.hdr"
+ },
+ "street": {
+  "corners": [
+   [
+    -32.925,
+    -10.997,
+    -23.95
+   ],
+   [
+    -4.687,
+    -10.997,
+    -23.95
+   ],
+   [
+    -4.687,
+    24.847,
+    -23.95
+   ],
+   [
+    -32.925,
+    24.847,
+    -23.95
+   ]
+  ],
+  "night": {
+   "file": "street_night.webp",
+   "scale": 1.930001139640808
+  },
+  "day": {
+   "file": "street_day.webp",
+   "scale": 89.59452819824219
+  }
+ },
+ "emitters": {
+  "emit_hexPanel3": {
+   "color": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "night": 1.2,
+   "day": 0.0
+  },
+  "emit_hexPanel0": {
+   "color": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "night": 1.2,
+   "day": 0.0
+  },
+  "emit_biasLight": {
+   "color": [
+    0.5,
+    0.42,
+    1.0
+   ],
+   "night": 10.0,
+   "day": 0.0
+  },
+  "emit_ledStrip": {
+   "color": [
+    0.46,
+    0.4,
+    1.0
+   ],
+   "night": 10.0,
+   "day": 0.0
+  },
+  "emit_pcFans": {
+   "color": [
+    0.5,
+    0.42,
+    1.0
+   ],
+   "night": 14.0,
+   "day": 4.2
+  },
+  "emit_speakerGlow": {
+   "color": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "night": 2.0,
+   "day": 1.0
+  },
+  "emit_hexPanel1": {
+   "color": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "night": 1.2,
+   "day": 0.0
+  },
+  "emit_lightbarHalo": {
+   "color": [
+    1.0,
+    0.84,
+    0.7
+   ],
+   "night": 4.0,
+   "day": 0.0
+  },
+  "emit_lampLed": {
+   "color": [
+    1.0,
+    0.88,
+    0.77
+   ],
+   "night": 12.0,
+   "day": 0.0
+  },
+  "emit_pcLedWhite": {
+   "color": [
+    0.93,
+    0.92,
+    1.0
+   ],
+   "night": 6.0,
+   "day": 1.8
+  },
+  "emit_hexPanel2": {
+   "color": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "night": 1.2,
+   "day": 0.0
+  },
+  "emit_mugLed": {
+   "color": [
+    0.85,
+    0.95,
+    1.0
+   ],
+   "night": 4.0,
+   "day": 2.0
+  },
+  "emit_lightbarEdge": {
+   "color": [
+    1.0,
+    0.88,
+    0.77
+   ],
+   "night": 0.4,
+   "day": 0.0
+  }
+ },
+ "lights": {
+  "lamp": {
+   "position": [
+    0.0,
+    1.174,
+    -0.3692
+   ],
+   "direction": [
+    0.0,
+    -0.8321,
+    0.5546
+   ],
+   "angle": 0.8377580642700195,
+   "penumbra": 0.6000000238418579,
+   "color": [
+    1.0,
+    0.9526280164718628,
+    0.8930302262306213
+   ],
+   "intensity": 0.954929658551372
+  },
+  "sun": {
+   "direction": [
+    0.6596,
+    -0.5492,
+    0.5131
+   ],
+   "color": [
+    1.0,
+    0.7794352769851685,
+    0.6220960021018982
+   ],
+   "intensity": 28.0
+  },
+  "glow": [
+   {
+    "position": [
+     0.619,
+     0.853,
+     -0.832
+    ],
+    "direction": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "color": [
+     0.30000001192092896,
+     0.800000011920929,
+     1.0
+    ],
+    "intensity": 0.238732414637843
+   },
+   {
+    "position": [
+     0.7442,
+     0.853,
+     -0.832
+    ],
+    "direction": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "color": [
+     0.5,
+     0.5400000214576721,
+     1.0
+    ],
+    "intensity": 0.238732414637843
+   },
+   {
+    "position": [
+     0.6816,
+     0.9615,
+     -0.832
+    ],
+    "direction": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "color": [
+     0.7799999713897705,
+     0.4399999976158142,
+     0.9800000190734863
+    ],
+    "intensity": 0.238732414637843
+   },
+   {
+    "position": [
+     0.619,
+     1.07,
+     -0.832
+    ],
+    "direction": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "color": [
+     1.0,
+     0.46000000834465027,
+     0.7200000286102295
+    ],
+    "intensity": 0.238732414637843
+   }
+  ]
+ }
+}

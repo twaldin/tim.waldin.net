@@ -7,7 +7,9 @@ const contentSecurityPolicy = [
   "img-src 'self' data: blob:",
   "font-src 'self'",
   // Safari < 16 does not match same-origin wss: against 'self'; name both hosts.
-  "connect-src 'self' wss://tim.waldin.net wss://twald.in",
+  // blob: lets the 3D room's GLTFLoader fetch the textures embedded in its
+  // .glb files (it turns each into a blob: URL and loads it with fetch()).
+  "connect-src 'self' blob: wss://tim.waldin.net wss://twald.in",
   "frame-ancestors 'self'",
   "object-src 'none'",
   "base-uri 'self'",
