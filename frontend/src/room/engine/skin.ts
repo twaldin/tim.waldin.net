@@ -88,7 +88,7 @@ const SKIN_AMBIENT = /* glsl */ `{
 // Skin reflects about 2.8% of light head-on (index of refraction 1.4) where
 // three's standard material assumes 4%, which on a sunlit hand reads as a
 // milky film; nail keratin (1.55) keeps about 4%, and the bake gives the
-// plates roughness ~0.34 against skin's ~0.5, which is how the patch finds
+// plates roughness ~0.37 against skin's ~0.5, which is how the patch finds
 // them. The room's reflection, like its light, is under the hands' sky
 // shade and shows the visitor's body where the body stands in it. Near a
 // silhouette half a rough reflection's lobe points into the hand itself,

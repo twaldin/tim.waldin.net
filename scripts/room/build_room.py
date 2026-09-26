@@ -5,7 +5,7 @@
       view through the window, reflection panoramas, then frontend/public/room/:
       room.glb, room.json, lightmap_*.webp, street_*.webp, room_env_*.hdr.
   blender -b -P scripts/room/build_room.py -- preview --state night|day|screen
-      [--view pov,wide,window,top,lamp,hands,handside,finger,mug,phone,clock,desk_left] [--samples 96]
+      [--view pov,wide,window,top,lamp,hands,handside,finger,mug,phone,clock,desk_left,arm,armback,speaker] [--samples 96]
       [--scale 0.5] [--tag _x] [--hands] [--debug-light] [--device gpu|cpu]
       [--screen-image terminal.png]
       Look-development renders to /tmp/term-room/lookdev_<view>_<state><tag>.png;
@@ -193,7 +193,10 @@ def setup_lights(h):
     # fingers); from above, the same light reaches the desk's right half.
     R = LAYOUT["room"]
     zb, x0, x1, ceil = R["zBack"] - 0.02, R["xMin"] + 0.02, R["xMax"] - 0.02, R["ceilingY"] - 0.02
-    fill_mat = rs.material("proxy_fill", color=(0, 0, 0), roughness=1.0, emission=kelvin(6500, DAY_WB))
+    # Neutral under the day white balance, as skylight bounced off white
+    # walls is: a 6500 K fill, amber at 7500 K, turned the shaded walnut and
+    # walls right of the monitor olive-brown beside the sunlit desk.
+    fill_mat = rs.material("proxy_fill", color=(0, 0, 0), roughness=1.0, emission=kelvin(DAY_WB, DAY_WB))
     fill = rs.quad("proxy_fill", [(x0, 0.05, zb), (x1, 0.05, zb), (x1, 2.55, zb), (x0, 2.55, zb)], fill_mat)
     rs.quad("proxy_fillCeiling", [(x0, ceil, -0.2), (x1, ceil, -0.2), (x1, ceil, zb), (x0, ceil, zb)], fill_mat)
     # Streetlights below the window wash the facade across the street.
@@ -218,6 +221,7 @@ def set_state(state, h, world, lights, levels):
     rs.emission_input(m["bulb"]).default_value = levels["lamp_led"] if night else 0
     lights["halo"].data.energy = levels["halo"] if night else 0
     rs.emission_input(m["halo"]).default_value = levels["halo_led"] if night else 0
+    rs.emission_input(m["bar_edge"]).default_value = levels["lamp_edge"] if night else 0
     rs.emission_input(m["clock_glow"]).default_value = levels["clock_glow"] if night else 0
     rs.emission_input(m["deck_glow"]).default_value = levels["deck_glow"] if night else 0
     rs.emission_input(m["mug_led"]).default_value = levels["mug_led"] if night else (levels["mug_led"] * 0.5 if day else 0)
@@ -246,10 +250,10 @@ def set_state(state, h, world, lights, levels):
 
 
 LEVELS = {
-    "street": 12.0, "street_light": 6000.0, "lamp": 12.0, "lamp_led": 12.0, "halo": 2.5, "halo_led": 4.0, "mug_led": 4.0, "speaker_glow": 2.0,
+    "street": 12.0, "street_light": 6000.0, "lamp": 12.0, "lamp_led": 12.0, "lamp_edge": 0.4, "halo": 2.5, "halo_led": 4.0, "mug_led": 4.0, "speaker_glow": 2.0,
     # The clock's and the pad's faces: devices.ts's night levels times their
     # canvases' average (mostly black, lit dots and icons).
-    "clock_glow": 0.1, "deck_glow": 0.25,
+    "clock_glow": 0.05, "deck_glow": 0.11,
     "hex": 1.2, "hex_glow": 3.0, "led": 6.0, "bias": 6.0, "led_strip": 10.0, "fans": 14.0, "pc_led": 6.0,
     "night_sky": 0.02, "city_yaw": 150, "screen_preview": 1.0,
     # Skylight into the room is held below the facade's (`street_sky`): at
@@ -312,6 +316,9 @@ VIEWS = {
     "phone": ((-0.2, 0.95, 0.05), (-0.42, 0.82, -0.28), 30),
     "clock": ((-0.25, 0.95, -0.1), (-0.5, 0.79, -0.58), 30),
     "desk_left": ((0.05, 1.15, 0.15), (-0.5, 0.85, -0.5), 50),
+    "arm": ((0.3, 1.1, 0.0), (0.44, 1.0, -0.55), 45),
+    "armback": ((0.8, 1.25, -0.25), (0.2, 0.93, -0.55), 42),
+    "speaker": ((0.38, 0.98, -0.3), (0.53, 0.82, -0.56), 35),
 }
 
 
@@ -497,6 +504,9 @@ def lights_manifest(h, lights):
         "lamp": {"position": to_gltf(lamp_pos), "direction": to_gltf(h["lamp_axis"]), "angle": lamp.spot_size / 2,
                  "penumbra": lamp.spot_blend, "color": list(lamp.color), "intensity": LEVELS["lamp"] / (4 * math.pi)},
         "sun": {"direction": to_gltf(lights["sun_dir"]), "color": list(lights["sun"].data.color), "intensity": LEVELS["sun"]},
+        # The hex tiles' glow lights face the room (+Z).
+        "glow": [{"position": to_gltf(light.location), "direction": [0.0, 0.0, 1.0], "color": list(light.data.color),
+                  "intensity": LEVELS["hex_glow"] / (4 * math.pi)} for light in lights["hex"]],
     }
 
 

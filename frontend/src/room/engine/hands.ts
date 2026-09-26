@@ -25,20 +25,14 @@ const HOVER = 0.004;
 // far from the skin around it.
 const PAD = 0.0055;
 // The spheres standing in for each hand in the keys' and mouse's contact
-// shadows (contact.ts): a fingertip reaches its pad (thumbs are broader),
+// shadows (contact.ts): a fingertip's sits in its pad, where build_arms.py
+// measured it on the skin (thumbs are broader),
 // the last finger joint and the middle of the first phalanx are about as
 // thick as the finger, and four spheres halfway between the wrist and each
 // knuckle fill the palm's width, so under a hand hovering over the keys
 // the palm's broad shadow darkens them a third.
 const TIP_RADIUS = PAD + 0.001;
 const THUMB_TIP_RADIUS = PAD + 0.002;
-// The fingertip sphere sits in the pad's pulp, not at tipLocal: that is the
-// distal bone's tail, the very end of the finger, and on the mouse's flat
-// grip a sphere there reached past the fingertip and printed a dark dot on
-// the shell ahead of it. Back along the bone (+Y) and toward the palm (+Z,
-// which FLEX_AXIS curls the bone toward); the thumb's tail reaches further.
-const PAD_PULP = new Vector3(0, -0.007, 0.003);
-const THUMB_PAD_PULP = new Vector3(0, -0.011, 0.003);
 const JOINT_RADIUS = 0.0065;
 const PHALANX_RADIUS = 0.008;
 const PALM_RADIUS = 0.015;
@@ -156,9 +150,9 @@ function gripShare(along: number, flight: number, lift: number, land: number): n
   );
 }
 
-function numbers(value: unknown, length: number): number[] {
+function numbers(value: unknown, length: number, what: string): number[] {
   if (!Array.isArray(value) || value.length !== length || !value.every((n) => typeof n === 'number')) {
-    throw new Error('arms.glb has a malformed mouse grip');
+    throw new Error(`arms.glb has a malformed ${what}`);
   }
   return value;
 }
@@ -173,30 +167,22 @@ function readGrip(root: Object3D): GripPose {
   const { bones } = raw;
   if (!bones || typeof bones !== 'object') throw new Error('arms.glb has a malformed mouse grip');
   return {
-    wrist: new Vector3().fromArray(numbers(raw.wrist, 3)),
-    hand: new Quaternion().fromArray(numbers(raw.hand, 4)),
+    wrist: new Vector3().fromArray(numbers(raw.wrist, 3, 'mouse grip')),
+    hand: new Quaternion().fromArray(numbers(raw.hand, 4, 'mouse grip')),
     bones: Object.fromEntries(
-      Object.entries(bones).map(([name, q]) => [name, new Quaternion().fromArray(numbers(q, 4))]),
+      Object.entries(bones).map(([name, q]) => [name, new Quaternion().fromArray(numbers(q, 4, 'mouse grip'))]),
     ),
   };
 }
 
-// Each fingertip bone's tail at bind (world), by bone name, as build_arms.py
-// records it on the rig.
-function readTips(root: Object3D): Record<string, Vector3> {
-  const rig = root.getObjectByName('ArmsRig');
-  const text: unknown = rig?.userData.typingTips;
-  if (!rig || typeof text !== 'string') throw new Error('arms.glb has no typing tips');
+// A per-bone table build_arms.py records on the rig as JSON (rig space,
+// glTF axes): `length` numbers per bone name.
+function readRigTable(rig: Object3D, key: string, length: number): Record<string, number[]> {
+  const text: unknown = rig.userData[key];
+  if (typeof text !== 'string') throw new Error(`arms.glb has no ${key}`);
   const raw: unknown = JSON.parse(text);
-  if (!raw || typeof raw !== 'object') throw new Error('arms.glb has malformed typing tips');
-  return Object.fromEntries(
-    Object.entries(raw).map(([name, p]) => {
-      if (!Array.isArray(p) || p.length !== 3 || !p.every((n) => typeof n === 'number')) {
-        throw new Error('arms.glb has malformed typing tips');
-      }
-      return [name, rig.localToWorld(new Vector3().fromArray(p))];
-    }),
-  );
+  if (!raw || typeof raw !== 'object') throw new Error(`arms.glb has a malformed ${key}`);
+  return Object.fromEntries(Object.entries(raw).map(([name, row]) => [name, numbers(row, length, key)]));
 }
 
 function setWorldRotation(bone: Bone, world: Quaternion) {
@@ -222,12 +208,16 @@ export function createHands(root: Object3D, keyboard: KeyboardRig, mouse: MouseR
 
   // Where each fingertip rests at bind (build_arms.py places the tips on
   // their home keys, the pads just touching the tops) and so where it
-  // lands on any key: the same offset from that key's top.
-  const tips = readTips(root);
-  const homeTipFor = (bones: [Bone, Bone, Bone]) => {
-    const tip = tips[bones[2].name];
-    if (!tip) throw new Error(`arms.glb typing tips are missing ${bones[2].name}`);
-    return tip;
+  // lands on any key: the same offset from that key's top. And where its
+  // pad touches at bind, with the pad's outward normal.
+  const rig = root.getObjectByName('ArmsRig');
+  if (!rig) throw new Error('arms.glb has no ArmsRig');
+  const tips = readRigTable(rig, 'typingTips', 3);
+  const pads = readRigTable(rig, 'fingerPads', 6);
+  const row = (table: Record<string, number[]>, bones: [Bone, Bone, Bone]) => {
+    const found = table[bones[2].name];
+    if (!found) throw new Error(`arms.glb rig tables are missing ${bones[2].name}`);
+    return found;
   };
   const restFor = (side: Hand, finger: Finger, homeTip: Vector3) => {
     const top = keyboard.keyTop(HOME_KEYS[side][finger]);
@@ -243,15 +233,21 @@ export function createHands(root: Object3D, keyboard: KeyboardRig, mouse: MouseR
     const hand = bone(`hand${suffix}`);
     const fingers: FingerState[] = ([1, 2, 3, 4, 5] as Finger[]).map((finger) => {
       const bones = [1, 2, 3].map((i) => bone(`${FINGER_BONES[finger]}_0${i}${suffix}`)) as [Bone, Bone, Bone];
-      const homeTip = homeTipFor(bones);
+      const homeTip = rig.localToWorld(new Vector3().fromArray(row(tips, bones)));
       const tipLocal = bones[2].worldToLocal(homeTip.clone());
+      // The contact sphere's centre: its radius in from the pad's skin, so it
+      // just touches whatever the pad rests on.
+      const pad = row(pads, bones);
+      const padNormal = new Vector3(pad[3], pad[4], pad[5]).transformDirection(rig.matrixWorld);
+      const padWorld = rig.localToWorld(new Vector3(pad[0], pad[1], pad[2]));
+      padWorld.addScaledVector(padNormal, -(finger === 1 ? THUMB_TIP_RADIUS : TIP_RADIUS));
       return {
         hand: side,
         finger,
         bones,
         bind: bones.map((b) => b.quaternion.clone()) as [Quaternion, Quaternion, Quaternion],
         tipLocal,
-        padLocal: tipLocal.clone().add(finger === 1 ? THUMB_PAD_PULP : PAD_PULP),
+        padLocal: bones[2].worldToLocal(padWorld),
         homeTip,
         rest: restFor(side, finger, homeTip),
         params: [0, 0, 0],

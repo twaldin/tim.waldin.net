@@ -42,13 +42,13 @@
       "KeyK": [0.0438, 0.7801, -0.1181],
       "KeyL": [0.0629, 0.7801, -0.1181],
       "Semicolon": [0.0819, 0.7801, -0.1181],
-      "SpaceLeftThumb": [-0.026, 0.779, -0.077],
-      "SpaceRightThumb": [0.02, 0.779, -0.077]
+      "SpaceLeftThumb": [-0.026, 0.7805, -0.077],
+      "SpaceRightThumb": [0.02, 0.7805, -0.077]
     }
   },
   "mouse": {
     "restCenter": [0.27, 0.74, -0.14],
-    "footprint": [0.084, 0.125]
+    "footprint": [0.0924, 0.1375]
   },
   "deskMat": {
     "center": [0.07, 0.74, -0.19],
@@ -70,8 +70,9 @@
     "window": { "wall": "front", "xMin": -1.55, "xMax": -0.62, "yMin": 0.9, "yMax": 2.2 },
     "shelf": { "wall": "front", "y": 1.52, "xMin": 0.3, "xMax": 1.3, "depth": 0.22 },
     "mug": [0.38, 0.74, -0.3],
-    "phoneStand": [-0.48, 0.743, -0.58],
-    "deskClock": [-0.67, 0.74, -0.69],
+    "phoneStand": [-0.415, 0.743, -0.455],
+    "deskClock": [-0.715, 0.74, -0.72],
+    "duck": [-0.68, 0.88, -0.84],
     "laptopDock": [-0.8, 0.74, -0.4],
     "smartSpeaker": [0.62, 0.74, -0.6],
     "streamDeck": [-0.22, 0.743, -0.115]

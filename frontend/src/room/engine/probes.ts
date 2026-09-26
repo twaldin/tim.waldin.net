@@ -50,15 +50,22 @@ export interface LocalProbes {
 
 // The room's props lit by the realtime lights (`live_*` meshes), grouped
 // into the objects they make up (a mug is five meshes that touch), each
-// with the small emitters on it (the mug's LED, the speaker's glow).
+// with the small emitters on it (the mug's LED, the speaker's glow) and
+// the baked meshes inside it. A probe sits at its object's centre, and
+// what the object holds sits right over that: the mug's coffee, three
+// centimetres above the probe and seven across, hid half the sky from it,
+// and the mug took the coffee's dark instead of the lilac wall and the
+// light bar's glow (a twentieth of the light the desk beside it gets).
 export function propSites(room: Object3D): ProbeSite[] {
   const sites: (ProbeSite & { box: Box3 })[] = [];
-  const emitters: { mesh: Mesh; box: Box3 }[] = [];
+  const others: { mesh: Mesh; box: Box3 }[] = [];
   room.traverse((object) => {
     if (!(object instanceof Mesh)) return;
     const box = new Box3().setFromObject(object).expandByScalar(0.005);
-    if (object.name.startsWith('emit_')) emitters.push({ mesh: object, box });
-    if (!object.name.startsWith('live_')) return;
+    if (!object.name.startsWith('live_')) {
+      others.push({ mesh: object, box });
+      return;
+    }
     const site = sites.find((candidate) => candidate.box.intersectsBox(box));
     if (site) {
       site.objects.push(object);
@@ -69,7 +76,11 @@ export function propSites(room: Object3D): ProbeSite[] {
   });
   for (const site of sites) {
     site.box.getCenter(site.at);
-    site.alsoHidden = emitters.filter(({ box }) => site.box.intersectsBox(box)).map(({ mesh }) => mesh);
+    site.alsoHidden = others
+      .filter(({ mesh, box }) =>
+        mesh.name.startsWith('emit_') ? site.box.intersectsBox(box) : site.box.containsBox(box),
+      )
+      .map(({ mesh }) => mesh);
   }
   return sites;
 }

@@ -304,20 +304,23 @@ ARM_POLE = (0.4, -0.68)
 
 
 def _mats():
-    wall = prepared_set("wall", "white_plaster_02", tint=(0.86, 0.80, 0.72), saturation=0.7, rough=(0.8, 0.95))
+    # Warm-white drywall, a fine low-relief finish: the beige, coarser
+    # plaster read olive-brown by day, a stucco basement in the shade.
+    wall = prepared_set("wall_fine", "white_plaster_02", tint=(0.9, 0.88, 0.85), saturation=0.35, rough=(0.82, 0.95))
     return {
-        "wall": material("wall_plaster", textures=wall, normal_strength=0.6),
+        "wall": material("wall_plaster", textures=wall, normal_strength=0.18),
         "ceiling": material("ceiling_plaster", textures=prepared_set("ceiling", "white_plaster_02", tint=(0.92, 0.9, 0.86), rough=(0.85, 0.95)), normal_strength=0.4),
         "floor": material("floor_oak", textures=prepared_set("floor", "wood_floor", tint=(0.75, 0.68, 0.6), rough=(0.35, 0.6))),
         # Satin-oiled American walnut: glossier, it mirrored the window by day
         # as a milky blue wash over the left of the desk. (The paler black
         # walnut veneer read as light oak.)
         "desk": material("desk_walnut", textures=prepared_set("desk_walnut", "american_walnut_veneer", tint=(0.95, 0.88, 0.82), saturation=0.85, rough=(0.58, 0.78)), normal_strength=0.5),
-        # Neutral charcoal felt, ~0.035 linear albedo like the real thing: dark
-        # and fine-grained (a coarser, paler weave read as plaster), but at
-        # coal black (~0.009) the lamp-lit hands looked self-lit against it.
+        # Dark grey felt, ~0.08 linear albedo: charcoal at ~0.035 kept the
+        # light bar's pool on the mat below the purple-lit walnut round it,
+        # and at coal black (~0.009) the lamp-lit hands looked self-lit
+        # against it; a coarser, paler weave read as plaster.
         # (The tint scales the source's sRGB values, so albedo goes ~tint^2.2.)
-        "mat": material("desk_mat_felt", textures=prepared_set("deskmat6", "caban", tint=(0.46, 0.46, 0.47), saturation=0.0, rough=(0.85, 1.0)), normal_strength=0.45),
+        "mat": material("desk_mat_felt", textures=prepared_set("deskmat8", "caban", tint=(0.66, 0.66, 0.67), saturation=0.0, rough=(0.85, 1.0)), normal_strength=0.45),
         "steel": material("steel_black", color=(0.018, 0.018, 0.02), roughness=0.42),
         "paint": material("paint_white", color=(0.78, 0.77, 0.74), roughness=0.4),
         "blind": material("blind_slat", color=(0.7, 0.7, 0.69), roughness=0.35, metallic=0.2),
@@ -342,6 +345,8 @@ def _mats():
         # by day; white, it read as switched on in the sun).
         "led": material("emit_ledStrip", color=(0.38, 0.38, 0.38), roughness=0.5, emission=(0.46, 0.4, 1.0), emission_strength=0.0),
         "bulb": material("emit_lampLed", color=(0.9, 0.9, 0.88), roughness=0.4, emission=(1.0, 0.88, 0.77), emission_strength=0.0),
+        # The light bar's lens edge, seen from the seat: a faint line.
+        "bar_edge": material("emit_lightbarEdge", color=(0.05, 0.05, 0.055), roughness=0.4, emission=(1.0, 0.88, 0.77), emission_strength=0.0),
         # Bias light on the monitor's back, washing the wall behind it.
         "bias": material("emit_biasLight", color=(0.1, 0.1, 0.1), roughness=0.5, emission=(0.5, 0.42, 1.0), emission_strength=0.0),
         # The light bar's backlight (the Halo), a touch warmer than its front.
@@ -389,10 +394,11 @@ def _mats():
         **{f"sticker_{name}": material(f"sticker_{name}", color=c, roughness=0.7) for name, c in (
             ("teal", (0.05, 0.45, 0.45)), ("orange", (0.8, 0.25, 0.05)), ("white", (0.55, 0.55, 0.53)),
             ("purple", (0.3, 0.12, 0.55)), ("black", (0.02, 0.02, 0.022)), ("green", (0.25, 0.7, 0.2)))},
-        # White acoustic mesh: a fine wool weave for its normal map (a smooth
-        # fabric with sheen read as a glossy ball in three.js; space grey
-        # read as a black hole beside the arm pole at night).
-        "speaker_mesh": material("speaker_fabric", textures=prepared_set("speakerfab_white", "caban", tint=(0.9, 0.9, 0.88), saturation=0.05, rough=(0.85, 0.95)), normal_strength=1.3),
+        # White acoustic fabric, a fine knit (see acoustic_mesh): a smooth
+        # fabric with sheen read as a glossy ball in three.js, a wool weave
+        # too fine to show as a smooth one; space grey read as a black hole
+        # beside the arm pole at night.
+        "speaker_mesh": material("speaker_fabric", textures=acoustic_mesh("speaker_knit"), normal_strength=1.0),
         # White emission times a radial gradient (see _speaker): a soft glow, not a hard disc.
         "speaker_glow": material("emit_speakerGlow", color=(0.02, 0.02, 0.02), roughness=0.1, emission=(1.0, 1.0, 1.0), emission_strength=0.0),
         "braided": material("cable_braided", color=(0.03, 0.03, 0.032), roughness=0.6),
@@ -446,16 +452,16 @@ def _shell(L, m):
     w = WINDOW
     box("floor", (x1 - x0, 0.02, zb - zf), ((x0 + x1) / 2, -0.01, (zf + zb) / 2), m["floor"], tile=1.2)
     box("ceiling", (x1 - x0, 0.02, zb - zf), ((x0 + x1) / 2, h + 0.01, (zf + zb) / 2), m["ceiling"], tile=2.0)
-    box("wall_left", (t, h, zb - zf), (x0 - t / 2, h / 2, (zf + zb) / 2), m["wall"], tile=1.6)
-    box("wall_right", (t, h, zb - zf), (x1 + t / 2, h / 2, (zf + zb) / 2), m["wall"], tile=1.6)
-    box("wall_back", (x1 - x0, h, t), ((x0 + x1) / 2, h / 2, zb + t / 2), m["wall"], tile=1.6)
+    box("wall_left", (t, h, zb - zf), (x0 - t / 2, h / 2, (zf + zb) / 2), m["wall"], tile=0.9)
+    box("wall_right", (t, h, zb - zf), (x1 + t / 2, h / 2, (zf + zb) / 2), m["wall"], tile=0.9)
+    box("wall_back", (x1 - x0, h, t), ((x0 + x1) / 2, h / 2, zb + t / 2), m["wall"], tile=0.9)
     # Front wall (behind the desk) with the window opening, as four pieces.
     d = w["depth"]
     zc = zf - d / 2
-    box("wall_front_l", (w["x0"] - x0, h, d), ((x0 + w["x0"]) / 2, h / 2, zc), m["wall"], tile=1.6)
-    box("wall_front_r", (x1 - w["x1"], h, d), ((w["x1"] + x1) / 2, h / 2, zc), m["wall"], tile=1.6)
-    box("wall_front_b", (w["x1"] - w["x0"], w["y0"], d), ((w["x0"] + w["x1"]) / 2, w["y0"] / 2, zc), m["wall"], tile=1.6)
-    box("wall_front_t", (w["x1"] - w["x0"], h - w["y1"], d), ((w["x0"] + w["x1"]) / 2, (h + w["y1"]) / 2, zc), m["wall"], tile=1.6)
+    box("wall_front_l", (w["x0"] - x0, h, d), ((x0 + w["x0"]) / 2, h / 2, zc), m["wall"], tile=0.9)
+    box("wall_front_r", (x1 - w["x1"], h, d), ((w["x1"] + x1) / 2, h / 2, zc), m["wall"], tile=0.9)
+    box("wall_front_b", (w["x1"] - w["x0"], w["y0"], d), ((w["x0"] + w["x1"]) / 2, w["y0"] / 2, zc), m["wall"], tile=0.9)
+    box("wall_front_t", (w["x1"] - w["x0"], h - w["y1"], d), ((w["x0"] + w["x1"]) / 2, (h + w["y1"]) / 2, zc), m["wall"], tile=0.9)
     # Skirting boards.
     for name, size, center in [
         ("skirting_front", (x1 - x0, 0.08, 0.012), ((x0 + x1) / 2, 0.04, zf + 0.006)),
@@ -558,34 +564,68 @@ def _monitor(L, m):
     # night instead of sinking into black.
     bias = at(0, H / 2 - 0.012, -0.0215)
     box("emit_biasLight", (ow - 0.06, 0.008, 0.003), tuple(bias), m["bias"], rotation=rot.to_euler())
-    # Arm: a space-grey pole through a desk grommet hidden behind the
-    # screen, ending flush in its collar (a cap above the joint read as a
-    # desk microphone), a link forward to an elbow and a forearm back to a
-    # tilt head on the VESA plate at the screen's centre, all hidden behind
-    # the screen from the seat (an elbow beside its right edge read as a
-    # shelf bracket, and hid the hex panels).
+    # Arm: a space-grey pole on a grommet mount, ending flush in its collar
+    # (a cap above the joint read as a desk microphone), an upper arm
+    # forward to an elbow just right of the screen's edge and a thicker
+    # gas-spring forearm back to a tilt head on the VESA plate at the
+    # screen's centre, all hidden behind the screen from the seat (an elbow
+    # beside its right edge read as a shelf bracket, and hid the hex
+    # panels). The monitor's lead runs clipped under both links and down
+    # the pole's back into the mount.
     d = L["desk"]
     px, pz = ARM_POLE
-    cylinder("monitor_grommet", 0.024, 0.003, (px, d["topY"] + 0.0015, pz), m["arm_black"], bevel=0.001)
+    top = d["topY"]
+    cylinder("monitor_mount", 0.034, 0.006, (px, top + 0.003, pz), m["arm_black"], bevel=0.0015)
+    cylinder("monitor_mount_collar", 0.021, 0.02, (px, top + 0.016, pz), m["arm_grey"], bevel=0.002)
     # Links at 0.95 m: lower, their shadow cut across the speaker's top as a
     # hard band.
-    hub = Vector((px, 0.955, pz))
+    hub = Vector((px, 0.95, pz))
     pole_top = hub.y + 0.012
-    cylinder("monitor_pole", 0.0165, pole_top - d["topY"], (px, (pole_top + d["topY"]) / 2, pz), m["arm_grey"], bevel=0.002)
+    cylinder("monitor_pole", 0.0165, pole_top - top, (px, (pole_top + top) / 2, pz), m["arm_grey"], bevel=0.002)
+    cylinder("monitor_arm_collar", 0.02, 0.026, tuple(hub), m["arm_grey"], bevel=0.002)
     plate = at(0, -0.02, -0.07)
-    elbow = Vector((0.28, 0.95, -0.5))
-    for i, (a, b) in enumerate(((hub, elbow), (elbow, plate))):
+    elbow = Vector((0.345, 0.95, -0.54))
+    head = plate - normal * 0.012
+    y = Vector((0, 1, 0))
+    links = []
+    # (from, to, width, height, rise): a slim upper arm under a deeper forearm.
+    for i, (a, b, w, h, rise) in enumerate(((hub, elbow, 0.026, 0.016, -0.007), (elbow, head, 0.03, 0.022, 0.011))):
+        a, b = a + y * rise, b + y * (rise if i == 0 else 0.0)
         run = b - a
         axis = run.normalized()
-        side = Vector((0, 1, 0)).cross(axis).normalized()
-        # Slim 28 × 16 mm links (40 × 20 read as chunky).
-        prism(f"monitor_arm_{i}", rounded_rect(run.length + 0.03, 0.028, 0.0139), 0.016,
-              frame_matrix((a + b) / 2, axis, side, axis.cross(side)), [m["arm_grey"]], edge=0.002)
-    cylinder("monitor_arm_elbow", 0.016, 0.022, tuple(elbow), m["arm_grey"], bevel=0.002)
-    cylinder("monitor_arm_collar", 0.019, 0.022, tuple(hub), m["arm_grey"], bevel=0.002)
-    # Tilt head: a knuckle on the forearm's end, bolted to a 10 × 10 cm VESA plate.
+        lift = (y - axis * y.dot(axis)).normalized()
+        side = axis.cross(lift)
+        prism(f"monitor_arm_{i}", rounded_rect(run.length + w, h, h / 2 - 0.0005), w,
+              frame_matrix((a + b) / 2, axis, lift, side), [m["arm_grey"]], edge=0.002)
+        # The cable channel's cover along the underside.
+        prism(f"monitor_arm_{i}_channel", rounded_rect(run.length - 0.02, 0.004, 0.0019), w * 0.55,
+              frame_matrix((a + b) / 2 - lift * (h / 2), axis, lift, side), [m["arm_black"]], edge=0.0006)
+        links.append((a, b, lift, side, w, h))
+    cylinder("monitor_arm_elbow", 0.019, 0.042, tuple(elbow + y * 0.002), m["arm_grey"], bevel=0.002)
+    cylinder("monitor_arm_elbowCap", 0.014, 0.003, tuple(elbow + y * 0.0235), m["arm_black"], bevel=0.001)
+    # Tilt head: a knuckle across the forearm's end, bolted to a 10 × 10 cm
+    # VESA plate.
+    cylinder("monitor_tilt_knuckle", 0.013, 0.05, tuple(head), m["arm_black"], axis="X", bevel=0.0015)
     box("monitor_vesa", (0.1, 0.1, 0.008), tuple(at(0, -0.02, -0.054)), m["arm_black"], bevel=0.002, rotation=rot.to_euler())
     box("monitor_tilt_head", (0.05, 0.045, 0.016), tuple(at(0, -0.02, -0.064)), m["arm_black"], bevel=0.004, rotation=rot.to_euler())
+    # The lead: from the port low on the monitor's back, under the forearm
+    # and upper arm (clipped), round the pole's back and down it into the mount.
+    r = 0.003
+    (a0, b0, lift0, _, _, h0), (a1, b1, lift1, _, _, h1) = links
+    under0, under1 = -lift0 * (h0 / 2 + r + 0.0005), -lift1 * (h1 / 2 + r + 0.0005)
+    port = at(0.045, -0.13, -0.045)
+    behind = Vector((0, 0, -1))
+    path = [port, port - y * 0.02 - normal * 0.03, b1 + under1 - y * 0.012, b1 + (a1 - b1) * 0.12 + under1,
+            a1 + (b1 - a1) * 0.15 + under1, b0 + (a0 - b0) * 0.12 + under0, a0 + (b0 - a0) * 0.12 + under0,
+            hub + behind * 0.024 - y * 0.03, Vector((px, top + 0.06, pz)) + behind * 0.02, Vector((px, top + 0.008, pz)) + behind * 0.019]
+    tube("cable_monitor", [tuple(p) for p in path], r, m["rubber"])
+    for i, (a, b, lift, side, w, h) in enumerate((links[1], links[0])):
+        for j, t in enumerate((0.3, 0.7)):
+            prism(f"monitor_arm_clip_{i}_{j}", rounded_rect(w + 0.003, h + 2 * r + 0.004, 0.003), 0.012,
+                  frame_matrix(a + (b - a) * t - lift * (r + 0.001), -side, lift, (b - a).normalized()), [m["arm_black"]],
+                  edge=0.0008)
+    for j, cy in enumerate((0.8, 0.88)):
+        box(f"monitor_pole_clip_{j}", (0.016, 0.01, 0.012), (px, cy, pz - 0.018), m["arm_black"], bevel=0.002)
     return screen, normal, bias, -normal
 
 
@@ -736,13 +776,16 @@ def prism(name, outline, thickness, matrix, mats, edge=0.0, edge_segments=3):
 def _light_bar(L, m, target=(0.0, 0.74, -0.08)):
     """A ScreenBar-Halo-style monitor light bar, the room's key light: a slim
     graphite bar resting on the monitor's top edge, held by a counterweight
-    clamp down the back. Its diffuser runs along the bar's underside, in
-    front of the screen, and throws its light forward and down onto the
-    keyboard (aimed at `target`), never back at the seat; a softer strip on
-    the bar's back (the Halo's backlight) washes the wall behind the
-    monitor. (A desk lamp at the back left read as a stray pole from the
-    seat: its head was always out of frame.) Returns the light's position,
-    axis and half-angle, and the halo's position and axis."""
+    clamp down the back. Its diffuser faces straight down from the bar's
+    front half, behind a lip along the front edge (the real bar's
+    asymmetric optics), so from the seat, which is above the bar, the
+    emitter shows only as a dim edge while its light goes forward and down
+    onto the desk (aimed at `target`), never back at the seat; a softer
+    strip on the bar's back (the Halo's backlight) washes the wall behind
+    the monitor. (Rolled toward the keyboard, the diffuser faced the seat
+    as a hard white line. A desk lamp at the back left read as a stray
+    pole from the seat: its head was always out of frame.) Returns the
+    light's position, axis and half-angle, and the halo's position and axis."""
     mon = L["monitor"]
     tilt = math.radians(mon["tiltBackDeg"])
     up = Vector((0, math.cos(tilt), -math.sin(tilt)))
@@ -765,31 +808,45 @@ def _light_bar(L, m, target=(0.0, 0.74, -0.08)):
     saddle = (edge + body_back) / 2 + up * 0.004
     box("lightbar_saddle", (0.07, 0.006, 0.034), tuple(saddle), m["graphite"], bevel=0.0015,
         rotation=Matrix.Rotation(-tilt, 4, "X").to_euler())
-    box("lightbar_weight", (0.05, 0.05, 0.014), tuple(body_back - up * 0.022 - normal * 0.006), m["graphite"], bevel=0.003,
+    weight = body_back - up * 0.022 - normal * 0.006
+    box("lightbar_weight", (0.05, 0.05, 0.014), tuple(weight), m["graphite"], bevel=0.003,
         rotation=Matrix.Rotation(-tilt, 4, "X").to_euler())
-    # The diffuser: the bar's underside, rolled toward the keyboard.
-    down = target - c
-    down.x = 0
-    down.normalize()
-    face = c + down * (height / 2 + 0.0004)
-    across = down.cross(x).normalized()
-    diffuser = prism("emit_lampLed", rounded_rect(length - 0.03, 0.009, 0.004), 0.0012,
-                     frame_matrix(face, x, across, down), [m["bulb"]], edge=0.0004, edge_segments=2)
+
+    def behind_screen(u, v, w):
+        return Vector(mon["screenCenter"]) + x * u + up * v + normal * w
+
+    # Its USB lead: down the monitor's back, clear of the VESA head, to the
+    # monitor's own lead at the port (see _monitor).
+    tube("cable_lightbar", [tuple(p) for p in (weight - up * 0.024 + x * 0.012, behind_screen(0.03, 0.09, -0.03),
+                                               behind_screen(0.07, 0.075, -0.056), behind_screen(0.07, -0.1, -0.056),
+                                               behind_screen(0.047, -0.128, -0.046))], 0.0018, m["braided"])
+    # The diffuser: a flat strip under the bar's front half, facing down.
+    bottom = c - yv * (height / 2)
+    face = bottom + fwd * 0.003 - yv * 0.0004
+    diffuser = prism("emit_lampLed", rounded_rect(length - 0.03, 0.01, 0.004), 0.0012,
+                     frame_matrix(face, x, fwd, -yv), [m["bulb"]], edge=0.0004, edge_segments=2)
+    # The lip: the bar's front edge carried 4 mm below the diffuser (up into
+    # the rounded body), so the seat never sees it; the lip's lower edge
+    # glows faintly, the dim line a real bar shows from the chair.
+    lip_at = bottom + fwd * (depth / 2 - 0.0012) + yv * 0.0008
+    lip = box("lightbar_lip", (length - 0.004, 0.0104, 0.0024), tuple(lip_at), m["graphite"], bevel=0.0006, segments=2)
+    edge_glow = box("emit_lightbarEdge", (length - 0.03, 0.0008, 0.0026), tuple(lip_at - yv * 0.0048), m["bar_edge"])
     # The Halo's backlight: a strip on the bar's back, aimed up the wall.
     back = Vector((0, 0.45, -1)).normalized()
     halo_at = c - fwd * (depth / 2 + 0.0004) + yv * 0.002
     halo = prism("emit_lightbarHalo", rounded_rect(length - 0.04, 0.006, 0.003), 0.0012,
                  frame_matrix(halo_at, x, back.cross(x).normalized(), back), [m["halo"]], edge=0.0003)
     # The bar sits inside its own light: none of it casts a shadow.
-    for part in (bar, diffuser, halo):
+    for part in (bar, diffuser, lip, edge_glow, halo):
         part.visible_shadow = False
-    bulb = face + down * 0.004
+    bulb = face - yv * 0.004
     return B(bulb), B((target - bulb).normalized()), math.radians(48), B(halo_at + back * 0.004), B(back)
 
 
 def _phone(L, m, eye):
-    """A 2-in-1 charging stand at the back left beside the clock (at the
-    front left it was the tallest, brightest thing at the frame's edge): a slim tapered post
+    """A 2-in-1 charging stand at the back left, a hand's width right of the
+    clock and clear of the screen's edge (at the front left it was the
+    tallest, brightest thing at the frame's edge): a slim tapered post
     rising from the back of a pill-shaped base to a 56 mm MagSafe-style puck
     behind the phone at 40% of its height, the phone's bottom edge floating
     1.5 cm over the base (a neck under its bottom edge read as a lollipop
@@ -798,9 +855,9 @@ def _phone(L, m, eye):
     `rt_phoneScreen`."""
     p = Vector(L["decorZones"]["phoneStand"])
     y = Vector((0, 1, 0))
-    # Turned 12° off the seat, toward the desk's front: square to the chair
-    # it lined up with the clock and pad behind it as one column.
-    aim = Matrix.Rotation(math.radians(-12), 3, "Z") @ B(Vector(eye) - p)
+    # Turned 5° off the seat, toward the desk's front (square to the chair
+    # it lined up with the clock and pad behind it as one column).
+    aim = Matrix.Rotation(math.radians(-5), 3, "Z") @ B(Vector(eye) - p)
     right, up, normal = facing(p, p + Vector((aim.x, 0, -aim.y)), 16)
     fr, fu, fn = lying(-normal)
     base_t = 0.008
@@ -878,7 +935,7 @@ def _earbuds(m, p, right, heading, up):
 def _clock(L, m, eye):
     """A pixel-matrix display (a 32 × 16 LED grid) at the desk's back left,
     facing the seat. The runtime draws the visitor's local time and a
-    contribution graph on `rt_clockFace`; the rubber duck keeps watch on top."""
+    commit graph on `rt_clockFace`."""
     p = Vector(L["decorZones"]["deskClock"])
     right, up, normal = facing(p, eye)
     w, h, d = 0.12, 0.066, 0.034
@@ -892,16 +949,23 @@ def _clock(L, m, eye):
     quad("rt_clockFace", [f - right * fw / 2 - up * fh / 2 + normal * 0.0003, f + right * fw / 2 - up * fh / 2 + normal * 0.0003,
                           f + right * fw / 2 + up * fh / 2 + normal * 0.0003, f - right * fw / 2 + up * fh / 2 + normal * 0.0003],
          m["clock_glow"])
+    return p - normal * (d / 2)
+
+
+def _duck(L, eye):
+    """The rubber duck, in profile on the window sill above the clock,
+    looking out over the street (perched on the clock it merged the clock,
+    the phone and itself into one clump at the screen's left edge)."""
+    p = Vector(L["decorZones"]["duck"])
+    _, _, normal = facing(p, eye)
     duck = import_model("rubber_duck_toy")
-    yaw = math.degrees(math.atan2(normal.x, normal.z))
-    place(duck, tuple(p + up * h + right * 0.03), yaw - 35, scale=0.17)
+    place(duck, tuple(p), math.degrees(math.atan2(normal.x, normal.z)) - 60, scale=0.17)
     for slot in (s for o in duck for s in o.material_slots):
         bsdf = slot.material.node_tree.nodes["Principled BSDF"]
         bsdf.inputs["Emission Strength"].default_value = 0.0
         # The asset's 1.58 specular tint exports as a 1.58x specular colour,
         # which three.js turns into a bright Fresnel halo round the duck by day.
         bsdf.inputs["Specular Tint"].default_value = (1.0, 1.0, 1.0, 1.0)
-    return p - normal * (d / 2)
 
 
 def _stream_deck(L, m, eye):
@@ -1014,20 +1078,44 @@ def _mug(L, m, eye):
     return zone - to_eye * 0.052 + y * 0.0035
 
 
+def acoustic_mesh(name, cells=8, size=512, base=(0.62, 0.62, 0.61)):
+    """A HomePod-style 3D-knit acoustic fabric, `cells` diamond loops across
+    the tile: {"albedo", "orm", "normal"} like prepared_set. The loops'
+    grooves are a little darker and occluded, so the weave still reads as a
+    matte texture once mipmapping has flattened its relief."""
+    t = np.linspace(0, cells * 2 * np.pi, size, endpoint=False)
+    u, v = np.meshgrid(t, t)
+    # Two crossing ridge sets make diamonds; a third, finer one, the yarn.
+    loops = np.abs(np.sin((u + v) / 2)) * np.abs(np.sin((u - v) / 2))
+    height = loops ** 0.6 + 0.12 * np.abs(np.sin(3 * u)) * loops
+    gy, gx = np.gradient(height)
+    strength = size / cells * 0.06
+    n = np.stack([-gx * strength, -gy * strength, np.ones_like(height)], -1)
+    n /= np.linalg.norm(n, axis=-1, keepdims=True)
+    ones = np.ones_like(height)[..., None]
+    shade = (0.8 + 0.2 * height)[..., None]
+    paths = {
+        "albedo": _save(f"{name}_albedo", np.concatenate([np.array(base) * shade, ones], -1), False),
+        "orm": _save(f"{name}_orm", np.stack([0.75 + 0.25 * height, np.full_like(height, 0.9), np.zeros_like(height), ones[..., 0]], -1), True),
+        "normal": _save(f"{name}_normal", np.concatenate([n * 0.5 + 0.5, ones], -1), True),
+    }
+    return paths
+
+
 def _speaker(L, m):
     """A HomePod-mini-style speaker right of the monitor (97.9 mm across,
-    84.3 mm tall): a fabric-covered body with a flat base and a wide flat top
-    under dark glass, where a soft gradient glows while it plays. Curved like
-    the mug, so the body is `live_`."""
+    84.3 mm tall): a body covered in knit acoustic fabric on a flat, inset
+    rubber foot, and a wide flat top under dark glass, where a soft gradient
+    glows while it plays. Curved like the mug, so the body is `live_`."""
     p = Vector(L["decorZones"]["smartSpeaker"])
-    radius, height = 0.049, 0.0843
+    radius, height, foot = 0.049, 0.0843, 0.0025
     # A spheroid a little taller than the sphere, cut top and bottom: a wider
     # top than a cut sphere (which read as a ball), with its shoulders (a
     # taller one's steep sides read taller than wide from the seat). Cut
-    # lower than it is high, for a 72 mm foot: on a small one it read as a
-    # ball resting on a point.
-    semi, below = 0.0566, 0.0384
-    above = height - below
+    # low, for a 76 mm base on its foot: on a small one it read as a ball
+    # resting on a point.
+    semi, below = 0.0566, 0.0384 - foot
+    above = height - foot - below
     bm = bmesh.new()
     bmesh.ops.create_uvsphere(bm, u_segments=64, v_segments=40, radius=radius)
     bmesh.ops.scale(bm, vec=(1, 1, semi / radius), verts=bm.verts)
@@ -1040,15 +1128,13 @@ def _speaker(L, m):
                     affect="EDGES", profile=0.5, clamp_overlap=True)
     smooth_by_angle(bm, 30)
     body = mesh_from_bmesh("live_speaker", bm, m["speaker_mesh"])
-    # White fabric: the weave only in the normal map. (Its warm, dark albedo
-    # read olive or taupe.)
-    fabric = m["speaker_mesh"].node_tree
-    bsdf = fabric.nodes["Principled BSDF"]
-    fabric.links.remove(bsdf.inputs["Base Color"].links[0])
-    bsdf.inputs["Base Color"].default_value = (0.62, 0.62, 0.61, 1)
-    body.location = B(p + Vector((0, below, 0)))
+    body.location = B(p + Vector((0, foot + below, 0)))
     bpy.context.view_layer.update()
-    project_uv(body, 0.05)
+    # ~1 mm knit loops (8 to the 8 mm tile).
+    project_uv(body, 0.008)
+    base_r = radius * math.sqrt(1 - (below / semi) ** 2)
+    # The foot: dark rubber, inset 3 mm under the fabric's lower edge.
+    cylinder("speaker_foot", base_r - 0.003, foot, (p.x, p.y + foot / 2, p.z), m["soft_touch"], vertices=64, bevel=0.0006)
     top_r = radius * math.sqrt(1 - (above / semi) ** 2) - 0.004
     flat = frame_matrix(p + Vector((0, height + 0.0004, 0)), (1, 0, 0), (0, 0, -1), (0, 1, 0))
     prism("speaker_top", circle(top_r, 64), 0.0008, flat, [m["glass_black"]], edge=0.0003)
@@ -1072,7 +1158,7 @@ def _speaker(L, m):
     tex.image = _load(path)
     nt.links.new(tex.outputs["Color"], nt.nodes["Principled BSDF"].inputs["Emission Color"])
     # The cable leaves from under the foot's rear edge.
-    return p - Vector((0, 0, radius * math.sqrt(1 - (below / semi) ** 2) - 0.006))
+    return p - Vector((0, 0, base_r - 0.006))
 
 
 def _laptop(L, m):
@@ -1130,7 +1216,7 @@ def _hex_panels(m, radius=0.07, gap=0.004):
     round it at night (its baked `hex_lights`); by day they are off, milky
     grey. The diffuser wraps the tile's edges too (grey frames drew black
     outlines at night and caught the sun as bright rims by day). A
-    controller on the lowest-left tile's edge, hidden behind the screen,
+    controller on the lowest-left tile's edge, just clear of the screen,
     has its lead straight down the wall there. The tiles are baked like the
     wall under them: unbaked, the eye-centred panorama lit them (facing the
     day fill behind the seat) several times brighter than the wall. Returns
@@ -1140,7 +1226,9 @@ def _hex_panels(m, radius=0.07, gap=0.004):
     dy = 1.5 * radius + gap * 0.87
     # Two abreast above the speaker, one above between them and one more
     # above that at the left: (from tile, step) per tile after the first.
-    c = Vector((0.584, 0.853, zw))
+    # Clear of the screen's right edge from the seat (3.5 cm further left,
+    # the lowest-left tile was cut by the bezel).
+    c = Vector((0.619, 0.853, zw))
     up_right, up_left, right = Vector((dx / 2, dy, 0)), Vector((-dx / 2, dy, 0)), Vector((dx, 0, 0))
     centres = [c]
     for base, step in ((0, right), (0, up_right), (2, up_left)):
@@ -1167,7 +1255,7 @@ def _hex_panels(m, radius=0.07, gap=0.004):
         # The glow behind a tile lights the wall round it; the tile must not block it.
         tile.visible_shadow = False
         tiles.append((centre, colour))
-    # Controller on the lowest-left tile's left edge, behind the screen from the seat.
+    # Controller on the lowest-left tile's left edge, just clear of the screen from the seat.
     edge = c + Vector((-radius * math.sqrt(3) / 2 - 0.007, -radius * 0.25, 0.008))
     # Matte dark grey: a white one lit by the panels read as a glowing block.
     box("hex_controller", (0.014, 0.036, 0.016), tuple(edge), m["soft_touch"], bevel=0.003)
@@ -1183,24 +1271,27 @@ def _props(L, m):
     eye = L["camera"]["eye"]
     # Plant on the window sill, silhouetted against the city.
     place(import_model("potted_plant_04"), (-1.08, WINDOW["y0"], -0.93), 25)
+    _duck(L, eye)
     m["hex_tiles"] = _hex_panels(m)
     return {"deck": _stream_deck(L, m, eye), "phone": _phone(L, m, eye), "clock": _clock(L, m, eye), "laptop": _laptop(L, m), "speaker": _speaker(L, m),
             "mug": _mug(L, m, eye)}
 
 
 def _cables(L, m, ends):
-    """The monitor's lead, and USB-C cables from the devices, none loose
-    across open desk from the seat: the clock's and laptop dock's into a
-    slim raceway along the desk's back edge that ends in the grommet behind
-    the monitor's left side; the macro pad's straight back from its port,
-    under the monitor, to the same grommet; the phone stand's, the mug
-    coaster's and the speaker's each straight back into a small grommet
-    the device itself hides from the seat. The keyboard is wireless."""
+    """USB-C cables from the devices (the monitor's runs along its arm, see
+    _monitor), each one short, deliberate run with a gentle bend, none
+    across open desk from the seat: the clock's, the laptop dock's and the
+    phone stand's straight back into a slim raceway along the desk's back
+    edge that ends in the grommet behind the monitor's left side; the macro
+    pad's straight back from its port, under the monitor, to the same
+    grommet; the mug coaster's straight back into the monitor arm's mount;
+    the speaker's (white) straight back over the desk's back edge. (Dropped
+    into small grommets each device hid from the seat, they vanished from
+    close up too, and the devices read as unpowered props.) The keyboard is
+    wireless."""
     top = L["desk"]["topY"]
     back = L["desk"]["zBack"]
-    tube("cable_monitor", [(0.0, 0.93, -0.43), (0.02, 0.86, -0.62), (0.01, 0.8, -0.74), (0.02, top + 0.005, -0.79)], 0.003, m["rubber"])
     r = 0.0019
-    eye = Vector(L["camera"]["eye"])
     grommet = Vector((-0.24, top, back + 0.06))
     prism("cable_grommet", circle(0.03, 48), 0.003, frame_matrix(grommet + Vector((0, 0.0015, 0)), (1, 0, 0), (0, 0, -1), (0, 1, 0)),
           [m["arm_black"]], edge=0.001)
@@ -1209,31 +1300,20 @@ def _cables(L, m, ends):
     race_z, race_h = back + 0.035, 0.009
     x0, x1 = L["desk"]["xMin"] + 0.01, grommet.x - 0.028
     box("cable_raceway", (x1 - x0, race_h, 0.018), ((x0 + x1) / 2, top + race_h / 2, race_z), m["graphite"], bevel=0.002)
-    for name in ("clock", "laptop"):
+    for name in ("clock", "laptop", "phone"):
         start = ends[name]
-        tube(f"cable_{name}", [tuple(start), (start.x, top + r, start.z - 0.012), (start.x, top + r, race_z + 0.016),
+        tube(f"cable_{name}", [tuple(start), (start.x, top + r, start.z - 0.014), (start.x, top + r, race_z + 0.016),
                                (start.x, top + race_h - 0.001, race_z)], r, m["braided"])
-
-    def drop_into(name, start, hole, mat):
-        """From a device's port along the desk into a small grommet at `hole`, and down."""
-        cylinder(f"{name}_grommet", 0.009, 0.002, (hole.x, top + 0.001, hole.z), m["arm_black"], bevel=0.0006)
-        lead = (hole - start)
-        lead.y = 0
-        lead.normalize()
-        tube(f"cable_{name}", [tuple(start), tuple(Vector((start.x, top + r, start.z)) + lead * 0.012),
-                               tuple(Vector((hole.x, top + r + 0.001, hole.z)) - lead * 0.012), (hole.x, top - 0.004, hole.z),
-                               (hole.x, top - 0.15, hole.z)], r, mat)
-
-    def away(point, distance):
-        """`distance` further along the line from the seat: behind the device that stands at `point`."""
-        run = point - eye
-        run.y = 0
-        return Vector((point.x, top, point.z)) + run.normalized() * distance
-
-    rear = Vector((0, 0, -1))
-    drop_into("phone", ends["phone"], ends["phone"] + rear * 0.03, m["braided"])
-    drop_into("mug", ends["mug"], away(ends["mug"], 0.085), m["braided"])
-    drop_into("speaker", ends["speaker"], away(ends["speaker"], 0.045), m["cable_white"])
+    # The mug's, into the arm's mount (the monitor's lead drops through it).
+    start = ends["mug"]
+    px, pz = ARM_POLE
+    tube("cable_mug", [tuple(start), (start.x, top + r, start.z - 0.014), (start.x + (px - start.x) * 0.6, top + r, pz + 0.07),
+                       (px, top + 0.0045, pz + 0.036), (px, top + 0.004, pz + 0.02)], r, m["braided"])
+    # The speaker's, over the LED channel and the desk's back edge, and down.
+    start = ends["speaker"]
+    tube("cable_speaker", [tuple(start), (start.x, top + r, start.z - 0.014), (start.x, top + r, back + 0.03),
+                           (start.x, top + 0.0065, back + 0.01), (start.x, top - 0.006, back - 0.012), (start.x, top - 0.2, back - 0.02)],
+         r, m["cable_white"])
     # The macro pad's: a deliberate lead straight back from its port across
     # the mat and under the monitor to the grommet.
     start = ends["deck"]

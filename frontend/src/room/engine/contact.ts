@@ -8,8 +8,10 @@
 // surface's horizon: a fingertip resting on a key sits right on that
 // horizon, and counting only its centre's side of it left the key lit up to
 // the pad), but at most CONTACT_DARKENING of it: some light always
-// scatters in under a soft fingertip. The room's light, from everywhere,
-// they take out of a wider sphere (CONTACT_REACH_SQ). A point light's
+// scatters in under a soft fingertip. Each sphere counts only as it nears
+// the surface (its clearance above the surface's plane), so a finger
+// hovering over the mouse casts no contact shadow. The room's light, from
+// everywhere, they take out of a wider sphere (CONTACT_REACH_SQ). A point light's
 // reflection comes from one direction: the lamp's highlight on the mouse's
 // lacquer sits under a finger only if the finger doesn't cover it, so each
 // specular layer (the lacquer's own, rougher or smoother) takes out what the
@@ -66,6 +68,15 @@ const CONTACT_FRAGMENT = /* glsl */ `{
     // area, which closes the gaps along a finger and reaches the few
     // millimetres of keycap beside the fingertip that the camera sees.
     const float CONTACT_REACH_SQ = 2.0;
+    // A sphere's shadow fades out as it lifts off the surface, gone once
+    // its clearance above the surface's plane is CONTACT_LIFT plus
+    // CONTACT_LIFT_SHARE of its radius (4.6 mm for a fingertip, 8 mm for
+    // the palm; a pad resting on the mouse sits 1.5 mm clear, hovering ones
+    // 4-6 mm): the shadow the hand casts from further up is the shadow
+    // maps' and the sky shade's. Without it a fingertip hovering over the
+    // mouse printed the same dark spot as one resting on it.
+    const float CONTACT_LIFT = 0.002;
+    const float CONTACT_LIFT_SHARE = 0.4;
     vec3 contactNormal = transformNormalByInverseViewMatrix( geometryNormal, viewMatrix );
     vec3 contactMirror = reflect( normalize( vContactPosition - cameraPosition ), contactNormal );
     // The half-angle a GGX lobe spreads a reflection over.
@@ -80,27 +91,45 @@ const CONTACT_FRAGMENT = /* glsl */ `{
       float contactCoatReflection = 1.0;
     #endif
     for ( int i = 0; i < ${MAX_CONTACT_OCCLUDERS}; i ++ ) {
-      float radiusSq = contactOccluders[ i ].w * contactOccluders[ i ].w;
-      if ( radiusSq <= 0.0 ) continue;
+      float radius = contactOccluders[ i ].w;
+      if ( radius <= 0.0 ) continue;
       vec3 toOccluder = contactOccluders[ i ].xyz - vContactPosition;
+      float clearance = dot( toOccluder, contactNormal ) - radius;
+      float touch = 1.0 - smoothstep( 0.0, CONTACT_LIFT + CONTACT_LIFT_SHARE * radius, clearance );
+      if ( touch <= 0.0 ) continue;
+      // A pad pressed into the surface (the spheres are rounder than a
+      // pad, which flattens) shades as one resting on it: counted inside
+      // it, the surface went to full dark over the whole disc the sphere
+      // cut, a hard-edged spot under every fingertip.
+      toOccluder -= contactNormal * min( clearance, 0.0 );
+      float radiusSq = radius * radius;
       float distanceSq = max( dot( toOccluder, toOccluder ), 1e-8 );
       vec3 toward = toOccluder * inversesqrt( distanceSq );
       float facing = dot( contactNormal, toward );
+      // Squared: still full at the contact point, but a pad's width away a
+      // third of the sphere's own occlusion, which spread each fingertip's
+      // shadow into a disc twice the pad it stands for.
       float blocked = contactBlocked( facing, distanceSq / radiusSq );
+      blocked *= blocked * touch;
       float blockedRoom = contactBlocked( facing, distanceSq / ( CONTACT_REACH_SQ * radiusSq ) );
+      blockedRoom *= blockedRoom * touch;
       contactLight *= 1.0 - CONTACT_DARKENING * blocked;
       contactAmbient *= 1.0 - CONTACT_DARKENING * blockedRoom;
       float angularRadius = asin( sqrt( min( radiusSq / distanceSq, 1.0 ) ) );
-      float cover = contactCover( contactMirror, toward, angularRadius, specularCone );
+      float cover = contactCover( contactMirror, toward, angularRadius, specularCone ) * touch;
       contactSpecular *= 1.0 - CONTACT_DARKENING * cover;
       // A rough reflection of the room gathers from most of the sky, so a
       // finger beside it takes out about what it takes of the ambient
       // light (the keycaps are nearly black: what shows on them is this).
-      contactReflection *= 1.0 - CONTACT_DARKENING * max( cover, blockedRoom * material.roughness );
+      // Right at the contact the finger is all of the sky, however smooth
+      // the surface: keeping a smooth reflection there left the sky's blue
+      // in every contact shadow on the mouse.
+      float roomCover = blockedRoom * mix( material.roughness, 1.0, blockedRoom );
+      contactReflection *= 1.0 - CONTACT_DARKENING * max( cover, roomCover );
       #ifdef USE_CLEARCOAT
-        float coatCover = contactCover( contactMirror, toward, angularRadius, coatCone );
+        float coatCover = contactCover( contactMirror, toward, angularRadius, coatCone ) * touch;
         contactCoat *= 1.0 - CONTACT_DARKENING * coatCover;
-        contactCoatReflection *= 1.0 - CONTACT_DARKENING * max( coatCover, blockedRoom * material.clearcoatRoughness );
+        contactCoatReflection *= 1.0 - CONTACT_DARKENING * max( coatCover, blockedRoom * mix( material.clearcoatRoughness, 1.0, blockedRoom ) );
       #endif
     }
     // The room's light: less the body's share (it is the panorama's, so

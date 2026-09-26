@@ -23,6 +23,17 @@ SKIN_UV = "SkinUV"
 # Fair skin albedo (linear): sRGB ≈ (199, 169, 154). (A tenth less saturated
 # than it was: under the room's warm lights more read as orange putty.)
 SKIN_TONE = np.array([0.574, 0.394, 0.322], np.float32)
+# Nail plates, in each fingertip's own frame (`_nail_frame`): as long as
+# NAIL_LENGTH of the distal phalanx, ending NAIL_TIP_GAP short of its tip,
+# and NAIL_WIDTH of the fingertip's width. Rounds 18 and 19 measured the
+# plate as an angle round the bone, which runs near the finger's back, not
+# its middle, and in its roll rather than the nail's: on the thin ring and
+# little fingertips the angle opened up at the cuticle and closed at the
+# tip, a keyhole, and the plate leaned off the nail.
+NAIL_LENGTH = {"thumb": 0.55}
+NAIL_LENGTH_DEFAULT = 0.5
+NAIL_TIP_GAP = 0.0012
+NAIL_WIDTH = 0.78
 
 
 # --- anatomy -------------------------------------------------------------
@@ -39,6 +50,55 @@ def _dorsal(bone):
 
 def _vec(v):
     return np.array(v, np.float32)
+
+
+def nail_plate(u, c, up):
+    """The nail plate (0-1) from `_nail_frame`'s fields: straight sides, the
+    cuticle a shallow arc bowing toward the knuckle and the free edge one
+    bowing toward the tip, clipped where the fingertip turns under."""
+    arc = 0.1 * c ** 2
+    return (_smoothstep(arc - 0.02, arc + 0.02, u) * (1 - _smoothstep(0.98 - arc, 1.01 - arc, u))
+            * (1 - _smoothstep(0.9, 1.0, np.abs(c))) * _smoothstep(0.1, 0.3, up))
+
+
+def _nail_frame(p, nrm, head, axis, dors, length_share):
+    """Fields for the nail plate over one distal phalanx's vertices `p`
+    (normals `nrm`), the bone from `head` along unit `axis`, `dors` its back:
+    `nail_u` along the plate (0 at the cuticle's middle, 1 at the free
+    edge), `nail_c` across it (±1 at its sides), and `nail_up` how far the
+    surface faces the nail's way (the gate that keeps it off the pad).
+
+    Measured on the fingertip's own shape: the nail faces the way the back
+    of the fingertip does (its normals' mean, not the bone's roll), across
+    it is measured from the middle of each millimetre slab of the fingertip
+    (the bone runs nearer its back), its width is the fingertip's, and it
+    ends at the tip the mesh actually has."""
+    s = (p - head) @ axis
+    s_tip = s.max()
+    flat = nrm - np.outer(nrm @ axis, axis)
+    flat /= np.linalg.norm(flat, axis=1, keepdims=True) + 1e-9
+    back = flat[(s > 0.35 * s_tip) & (flat @ dors > 0.5)]
+    if len(back):
+        dors = back.mean(0)
+        dors = dors - axis * (dors @ axis)
+        dors /= np.linalg.norm(dors)
+    across_axis = np.cross(axis, dors)
+    across, up = (p - head) @ across_axis, (p - head) @ dors
+    slab = np.clip((s / 0.001).astype(np.int32), 0, None)
+    centres, mid_across, mid_up, half = [], [], [], []
+    for b in np.unique(slab):
+        inside = slab == b
+        centres.append((b + 0.5) * 0.001)
+        mid_across.append((across[inside].max() + across[inside].min()) / 2)
+        mid_up.append((up[inside].max() + up[inside].min()) / 2)
+        half.append((across[inside].max() - across[inside].min()) / 2)
+    across = across - np.interp(s, centres, mid_across)
+    up = up - np.interp(s, centres, mid_up)
+    s_end = s_tip - NAIL_TIP_GAP
+    s_cut = s_end - length_share * s_tip
+    width = NAIL_WIDTH * np.interp((s_cut + s_end) / 2, centres, half)
+    return (s - s_cut) / (s_end - s_cut), across / width, up / (np.hypot(across, up) + 1e-9)
+
 
 
 def anatomy_fields(human, arm):
@@ -58,7 +118,10 @@ def anatomy_fields(human, arm):
             weight[names[g.group]][v.index] = g.weight
     zero = np.zeros(n, np.float32)
     out = {k: zero.copy() for k in ("wr_d", "wr_lat", "wr_mask", "knuckle", "tip", "dorsal", "hand_u", "hand_v",
-                                    "handness", "arm_u", "arm_v", "hairy", "nail_region", "nail_u", "nail_c")}
+                                    "handness", "arm_u", "arm_v", "hairy", "nail_region", "nail_u", "nail_c", "nail_up")}
+    # Off the fingertips: before the cuticle, and facing away.
+    out["nail_u"][:] = -1.0
+    out["nail_up"][:] = -1.0
     bones = arm.data.bones
     for side in ("l", "r"):
         on_side = (co[:, 0] < 0) if side == "l" else (co[:, 0] >= 0)
@@ -154,12 +217,18 @@ def anatomy_fields(human, arm):
             out["knuckle"][idx] = np.maximum(out["knuckle"][idx], knuckle if finger != "thumb" else 0.6 * knuckle)
             out["tip"][idx] = np.maximum(out["tip"][idx], np.exp(-(np.linalg.norm(p - joints[3], axis=1) / 0.011) ** 2))
             out["dorsal"][idx] = up_frac
-            # Nail: back of the distal phalanx, from the cuticle to the tip.
-            t_distal = (s - starts[2]) / lengths[2]
-            region = (seg == 2) & (t_distal > 0.4) & (t_distal < 0.98) & (up_frac > 0.66) & (w_chain[idx] > 0.5)
-            out["nail_region"][idx] = np.where(region, 1.0, out["nail_region"][idx])
-            out["nail_u"][idx] = np.where(seg == 2, np.clip((t_distal - 0.4) / 0.58, 0, 1), out["nail_u"][idx])
-            out["nail_c"][idx] = np.where(seg == 2, up_frac, out["nail_c"][idx])
+            # Nail: its plate's own frame on the distal phalanx (bake_skin
+            # draws it per texel); the region is the same plate, lifted.
+            distal = np.nonzero(seg == 2)[0]
+            if len(distal):
+                head, axis = joints[2], (joints[3] - joints[2]) / lengths[2]
+                nail_u, nail_c, nail_up = _nail_frame(p[distal], normal[idx[distal]], head, axis, _vec(_dorsal(chain[2])),
+                                                      NAIL_LENGTH.get(finger, NAIL_LENGTH_DEFAULT))
+                at = idx[distal]
+                out["nail_u"][at] = np.clip(nail_u, -1.0, 2.0)
+                out["nail_c"][at] = np.clip(nail_c, -3.0, 3.0)
+                out["nail_up"][at] = nail_up
+                out["nail_region"][at] = (nail_plate(nail_u, nail_c, nail_up) > 0.5).astype(np.float32)
     for name, values in out.items():
         attr = mesh.attributes.get(name) or mesh.attributes.new(name, "FLOAT", "POINT")
         attr.data.foreach_set("value", values.astype(np.float32))
@@ -490,7 +559,7 @@ def bake_skin(human, arm, mh_image, size=2048, cache=None):
         (field("knuckle"), field("tip"), field("dorsal", 0.5, 0.5)),
         (field("hand_u", 5, 0.5), field("hand_v", 5, 0.5), field("handness")),
         (field("arm_u", 3), field("arm_v", 5, 0.5), field("hairy")),
-        (field("nail"), field("nail_u"), field("nail_c", 0.5, 0.5)),
+        (field("nail_up", 0.5, 0.5), field("nail_u", 0.25, 0.5), field("nail_c", 0.125, 0.5)),
     ], size)
 
     occlusion = _bake_occlusion(human, size).ravel()
@@ -500,9 +569,21 @@ def bake_skin(human, arm, mh_image, size=2048, cache=None):
     knuckle, tip, dorsal = marks[..., 0].ravel(), marks[..., 1].ravel(), marks[..., 2].ravel() * 2 - 1
     hand_u, hand_v, handness = (handf[..., 0].ravel() - 0.5) / 5, (handf[..., 1].ravel() - 0.5) / 5, handf[..., 2].ravel()
     arm_u, arm_v, hairy = armf[..., 0].ravel() / 3, (armf[..., 1].ravel() - 0.5) / 5, armf[..., 2].ravel()
-    nail, nail_u = np.clip(nailf[..., 0].ravel(), 0, 1), nailf[..., 1].ravel()
+    # The nail plate, per texel from its fingertip's frame (`_nail_frame`):
+    # the frame's fields are linear in position, so the plate's edges stay
+    # straight however few vertices cross the fingertip.
+    nail_up, nail_u, nail_c = nailf[..., 0].ravel() * 2 - 1, (nailf[..., 1].ravel() - 0.5) * 4, (nailf[..., 2].ravel() - 0.5) * 8
+    nail = nail_plate(nail_u, nail_c, nail_up)
+    cuticle = 0.1 * nail_c ** 2
     # How near the nail's midline (1) from its sides (0).
-    nail_mid = np.clip((nailf[..., 2].ravel() - 0.5) / 0.5 - 0.55, 0, 0.45) / 0.45
+    nail_mid = np.clip(1 - np.abs(nail_c), 0, 1)
+    # The skin folds the plate's sides and root tuck under: a faint groove
+    # along each lateral edge (not past the free edge) and across the root.
+    # (A deeper, darker one doubled the mesh's own groove into a ghost.)
+    nail_folds = ((np.exp(-((np.abs(nail_c) - 1.02) / 0.06) ** 2) * _smoothstep(cuticle - 0.05, cuticle + 0.05, nail_u)
+                   * (1 - _smoothstep(0.75, 0.9, nail_u))
+                   + np.exp(-((nail_u - cuticle + 0.01) / 0.03) ** 2) * (1 - _smoothstep(0.9, 1.05, np.abs(nail_c))))
+                  * _smoothstep(0.0, 0.3, nail_up))
     skin = 1.0 - nail
     print(f"SKIN hand occlusion percentiles 1/10/50: {np.percentile(occlusion[handness > 0.5], [1, 10, 50]).round(2)}")
 
@@ -554,7 +635,8 @@ def bake_skin(human, arm, mh_image, size=2048, cache=None):
     ridges = np.sin(wr_lat * (2 * np.pi / 0.0006) + 2 * value_noise(p, 0.002, seed=4)) * nail
     # Amplitudes large enough to survive 8-bit lossy texture compression: a
     # few tens of microns of relief per texel is only a code value or two.
-    height = skin * (130e-6 * tendons + 190e-6 * veins - 170e-6 * wrinkle - 28e-6 * groove - 24e-6 * pore) + 6e-6 * ridges
+    height = (skin * (130e-6 * tendons + 190e-6 * veins - 170e-6 * wrinkle - 28e-6 * groove - 24e-6 * pore) + 6e-6 * ridges
+              - 25e-6 * nail_folds)
 
     # Albedo: MakeHuman's colour variation at half strength around SKIN_TONE.
     mh_rgb = flat(mh)
@@ -587,20 +669,29 @@ def bake_skin(human, arm, mh_image, size=2048, cache=None):
     hh, _, hid = voronoi(hair_q, 1.0, seed=9)
     hair = (hid > 0.35) * np.exp(-(hh / 0.1) ** 2) * hairy
     albedo *= 1 - 0.35 * hair[:, None] * np.array([0.8, 0.85, 0.88], np.float32)
+    # The folds round the plate are a little darker and redder than the
+    # skin beside them (the groove's shadow is the normal map's).
+    albedo *= 1 - np.clip(nail_folds, 0, 1)[:, None] * np.array([0.03, 0.08, 0.07], np.float32)
     # Nails: a pink bed, lighter than the skin around it so the plate reads
     # at arm's length; a small half-moon lunula just inside the cuticle,
-    # barely paler than the bed (reaching furthest along the midline); a
-    # whitish free edge. The cuticle fold stays skin, a little redder, and
-    # the plate comes out from under it over a millimetre or two: a hard
-    # line there read as a painted stripe.
+    # barely paler than the bed (reaching furthest along the midline); the
+    # free edge, its last millimetre, an off-white that fades in over half a
+    # millimetre behind a faint pinker line where the plate leaves the bed.
+    # (A paper-white edge behind a hard red line read as a French
+    # manicure, and the line as a seam across the plate.) The plate comes
+    # out from under the cuticle fold over a millimetre: a hard line there
+    # read as a painted stripe.
     bed = np.array([0.7, 0.42, 0.36], np.float32)
     lunula = np.array([0.76, 0.5, 0.44], np.float32)
-    free_edge = np.array([0.9, 0.85, 0.78], np.float32)
+    free_edge = np.array([0.82, 0.72, 0.64], np.float32)
+    from_cuticle = nail_u - cuticle
     reach = 0.13 * np.sqrt(nail_mid)
-    nail_color = bed + (lunula - bed) * (_smoothstep(0.02, 0.1, nail_u) * (1 - _smoothstep(reach - 0.06, reach + 0.03, nail_u)))[:, None]
-    nail_color = nail_color + (free_edge - nail_color) * (0.85 * _smoothstep(0.86, 0.95, nail_u))[:, None]
+    nail_color = bed + (lunula - bed) * (_smoothstep(0.0, 0.06, from_cuticle) * (1 - _smoothstep(reach - 0.06, reach + 0.03, from_cuticle)))[:, None]
+    band = np.exp(-((nail_u - 0.88) / 0.03) ** 2)
+    nail_color *= 1 - band[:, None] * np.array([0.02, 0.06, 0.05], np.float32)
+    nail_color = nail_color + (free_edge - nail_color) * (0.8 * _smoothstep(0.88, 0.94, nail_u))[:, None]
     fold = albedo * np.array([1.03, 0.94, 0.95], np.float32)
-    nail_color = fold + (nail_color - fold) * _smoothstep(0.0, 0.1, nail_u)[:, None]
+    nail_color = fold + (nail_color - fold) * _smoothstep(0.0, 0.07, from_cuticle)[:, None]
     albedo = albedo * skin[:, None] + nail_color * nail[:, None]
     albedo = np.clip(albedo, 0, 1)
 
@@ -609,7 +700,7 @@ def bake_skin(human, arm, mh_image, size=2048, cache=None):
     # (glossier, the lamp drew a clipped streak down each). (Shinier
     # knuckles drew a highlight disc on each under the sky.)
     roughness = (0.5 + 0.06 * pore + 0.08 * groove + 0.08 * wrinkle + 0.05 * value_noise(p, 0.0025, seed=13)
-                 + 0.08 * domes) * skin + (0.32 + 0.04 * np.abs(ridges)) * nail
+                 + 0.08 * domes) * skin + (0.36 + 0.03 * np.abs(ridges)) * nail
     roughness = np.clip(roughness, 0.1, 0.8)
 
     shape = (size, size)
@@ -680,7 +771,7 @@ def bake_skin(human, arm, mh_image, size=2048, cache=None):
     human.data.uv_layers.active = human.data.uv_layers[SKIN_UV]
     human.data.uv_layers[SKIN_UV].active_render = True
     for name in ("wr_d", "wr_lat", "wr_mask", "knuckle", "tip", "dorsal", "hand_u", "hand_v", "handness",
-                 "arm_u", "arm_v", "hairy", "nail_region", "nail_u", "nail_c", "nail"):
+                 "arm_u", "arm_v", "hairy", "nail_region", "nail_u", "nail_c", "nail_up", "nail"):
         human.data.attributes.remove(human.data.attributes[name])
     return material
 

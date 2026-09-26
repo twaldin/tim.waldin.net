@@ -24,12 +24,12 @@ export interface DeskDevices {
 const GLASS_REFLECTANCE = 0.35;
 
 // Emissive strength. LEDs and LCDs hold their level by day and night (the
-// room around them changes); the phone's always-on display dims right down
-// in the dark, or the tallest screen at the frame's edge pulls the eye from
-// the monitor.
+// room around them changes); the phone's always-on display dims in the
+// dark, but stays a readable lock screen well under the monitor (at 0.055
+// it read as switched off).
 const BRIGHTNESS: Record<'clock' | 'phone' | 'deck', { night: number; day: number }> = {
   clock: { night: 0.75, day: 1.8 },
-  phone: { night: 0.055, day: 0.9 },
+  phone: { night: 0.11, day: 0.9 },
   deck: { night: 1.5, day: 1.1 },
 };
 
@@ -39,16 +39,19 @@ const CLOCK_SIZE = [512, 256] as const;
 const PHONE_SIZE = [256, 544] as const;
 const DECK_SIZE = [500, 300] as const;
 
-// The display's 32 × 16 LED grid: the time (one LED per font pixel) and the
-// graph share it (the time drawn 2 × 2 on a finer grid read as doubled rows
-// beside the graph's single dots).
+// The display's 32 × 16 LED grid, one pitch for everything it shows: the
+// time (one LED per font pixel) and the graph (the time drawn 2 × 2 on a
+// finer grid read as doubled rows beside the graph's single dots).
 const LED_COLUMNS = 32;
 const LED_ROWS = 16;
 const LED_OFF = '#0d0d0f';
-const LED_TIME = '#f1e9dc';
-// A contribution graph under the time: 32 weeks × 7 days, one LED per day.
-const GRAPH_LEVELS = ['#15171b', '#0b3a22', '#0d6b33', '#2fae4b', '#6ee787'];
-const GRAPH_WEEKS = 32;
+// A warm white a little under full: brighter, the time's dots bloomed
+// fatter than the graph's and read as a coarser grid.
+const LED_TIME = '#d9cfbf';
+// A commit graph under the time: the last 32 days as bars up to 7 LEDs
+// tall, darker green at the foot (a per-day contribution grid read as noise).
+const BAR_GREENS = ['#0b3a22', '#0d6b33', '#1a8c3e', '#2fae4b', '#4cc964', '#6ee787', '#9cf3ae'];
+const GRAPH_DAYS = 32;
 
 // 5 × 7 pixel font for the time (rows top to bottom, 1 = lit).
 const GLYPHS: Record<string, string[]> = {
@@ -65,25 +68,26 @@ const GLYPHS: Record<string, string[]> = {
   ':': ['0', '1', '1', '0', '1', '1', '0'],
 };
 
-// Macro-pad keys (5 × 3): a Nerd Font icon on a lit LCD tile, every key its
-// own muted colour (dark grey tiles read as unpowered keys at night), none
-// bright enough to outshine the monitor.
-const DECK_KEYS: [string, string][] = [
-  ['\uf120', '#3b4453'],
-  ['\uf126', '#2a4f96'],
-  ['\uf04b', '#15803d'],
-  ['\uf131', '#b8323a'],
-  ['\uf135', '#a4513f'],
-  ['\uf188', '#6b4f1d'],
-  ['\uf058', '#1f6f5c'],
-  ['\uf121', '#46407a'],
-  ['\uf0f4', '#6a4a36'],
-  ['\uf186', '#3730a3'],
-  ['\uf023', '#4b5563'],
-  ['\uf028', '#1e5b7a'],
-  ['\uf073', '#7a2e4d'],
-  ['\uf0eb', '#7a6a1f'],
-  ['\uf013', '#3f4a5a'],
+// Macro-pad keys (5 × 3), as a Stream Deck's: black LCDs under clear caps,
+// each a full-face Nerd Font icon in one of the room's few accents over a
+// faint glow of it, with a small label (solid colour tiles read as a toy
+// and outshone everything under the monitor).
+const DECK_KEYS: [string, string, string][] = [
+  ['\uf120', 'term', '#a3d955'],
+  ['\uf126', 'git', '#a78bfa'],
+  ['\uf04b', 'run', '#a3d955'],
+  ['\uf131', 'mute', '#f0797a'],
+  ['\uf135', 'ship', '#5cc8e0'],
+  ['\uf188', 'debug', '#f0b35a'],
+  ['\uf058', 'tests', '#a3d955'],
+  ['\uf121', 'code', '#a78bfa'],
+  ['\uf0f4', 'break', '#e5e2dc'],
+  ['\uf186', 'focus', '#a78bfa'],
+  ['\uf023', 'lock', '#e5e2dc'],
+  ['\uf028', 'vol', '#5cc8e0'],
+  ['\uf073', 'cal', '#5cc8e0'],
+  ['\uf0eb', 'idea', '#f0b35a'],
+  ['\uf013', 'prefs', '#e5e2dc'],
 ];
 // The lock screen's now-playing card: track, progress, and previous / pause /
 // next in Nerd Font glyphs.
@@ -128,25 +132,22 @@ function surface(mesh: Mesh, size: readonly [number, number]) {
   return { context, texture, material };
 }
 
-// A deterministic contribution history: busier on weekdays, in streaks.
-function contributionLevels() {
-  let seed = 0x2f6b1d;
-  const random = () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32;
-  };
-  const levels: number[] = [];
-  let streak = 0.5;
-  for (let i = 0; i < GRAPH_WEEKS * 7; i++) {
-    streak = Math.min(1, Math.max(0, streak + (random() - 0.5) * 0.5));
-    const weekday = i % 7 !== 0 && i % 7 !== 6;
-    const activity = streak * (weekday ? 1 : 0.4) + random() * 0.35;
-    levels.push(activity < 0.3 ? 0 : Math.min(4, Math.floor(activity * 4)));
-  }
-  return levels;
+// A deterministic 0–1 hash of an integer (a day number).
+function hash(n: number) {
+  let x = Math.imul(n ^ 0x2f6b1d, 0x9e3779b1);
+  x = Math.imul(x ^ (x >>> 15), 0x85ebca6b);
+  return ((x ^ (x >>> 13)) >>> 0) / 2 ** 32;
 }
 
-function drawClock(context: CanvasRenderingContext2D, date: Date, graph: number[]) {
+// Commits on a day (days since the epoch): busier on weekdays, in streaks
+// of about a week, 0–7 LEDs tall; the chart scrolls a column a day.
+function commitBar(day: number) {
+  const weekday = (day + 4) % 7 !== 0 && (day + 4) % 7 !== 6; // 1 Jan 1970 was a Thursday
+  const activity = (0.55 * hash(day) + 0.45 * hash(Math.floor(day / 7) + 7919)) * (weekday ? 1 : 0.45);
+  return Math.min(7, Math.round(activity * 8.5));
+}
+
+function drawClock(context: CanvasRenderingContext2D, date: Date) {
   const [width, height] = CLOCK_SIZE;
   const pitch = width / LED_COLUMNS;
   const leds: string[] = new Array<string>(LED_COLUMNS * LED_ROWS).fill(LED_OFF);
@@ -160,14 +161,11 @@ function drawClock(context: CanvasRenderingContext2D, date: Date, graph: number[
     });
     column += widths[i] + 1;
   }
-  // The graph in rows 9–15, a week per column.
-  const today = date.getDay();
-  for (let week = 0; week < GRAPH_WEEKS; week++) {
-    for (let day = 0; day < 7; day++) {
-      const future = week === GRAPH_WEEKS - 1 && day > today;
-      if (future) continue;
-      leds[(9 + day) * LED_COLUMNS + week] = GRAPH_LEVELS[graph[week * 7 + day]];
-    }
+  // The graph in rows 9–15, today at the right.
+  const today = Math.floor((date.getTime() - date.getTimezoneOffset() * 60000) / 86400000);
+  for (let col = 0; col < GRAPH_DAYS; col++) {
+    const bar = commitBar(today - (GRAPH_DAYS - 1 - col));
+    for (let k = 0; k < bar; k++) leds[(15 - k) * LED_COLUMNS + col] = BAR_GREENS[k];
   }
   context.fillStyle = '#000000';
   context.fillRect(0, 0, width, height);
@@ -320,23 +318,26 @@ function drawDeck(context: CanvasRenderingContext2D) {
   context.fillRect(0, 0, width, height);
   context.textAlign = 'center';
   context.textBaseline = 'middle';
-  context.font = `${Math.round(tile * 0.38)}px ${DECK_FONT}`;
-  for (const [i, [icon, color]] of DECK_KEYS.entries()) {
+  for (const [i, [icon, label, color]] of DECK_KEYS.entries()) {
     const x = (i % 5) * cell + (cell - tile) / 2;
     const y = Math.floor(i / 5) * cell + (cell - tile) / 2;
-    context.fillStyle = color;
+    const cx = x + tile / 2;
+    // Near-black LCD with a faint glow of the key's accent behind the icon.
+    const glow = context.createRadialGradient(cx, y + tile * 0.42, 0, cx, y + tile * 0.42, tile * 0.62);
+    glow.addColorStop(0, `${color}38`);
+    glow.addColorStop(1, '#00000000');
+    context.fillStyle = '#050506';
     roundedRect(context, x, y, tile, tile, tile * 0.14);
     context.fill();
-    // Lit from within: brighter at the top, as a backlit LCD.
-    const shade = context.createLinearGradient(0, y, 0, y + tile);
-    shade.addColorStop(0, 'rgba(255, 255, 255, 0.16)');
-    shade.addColorStop(1, 'rgba(0, 0, 0, 0.25)');
-    context.fillStyle = shade;
+    context.fillStyle = glow;
     context.fill();
-    // Full-white icons clear the night bloom threshold, so the keys glow like
-    // small LCDs rather than painted caps.
-    context.fillStyle = '#ffffff';
-    context.fillText(icon, x + tile / 2, y + tile / 2 + 1);
+    // The icon fills the face; bright enough to glow like an LCD at night.
+    context.fillStyle = color;
+    context.font = `${Math.round(tile * 0.56)}px ${DECK_FONT}`;
+    context.fillText(icon, cx, y + tile * 0.43);
+    context.fillStyle = '#9a9ea6';
+    context.font = `${Math.round(tile * 0.15)}px ${DECK_FONT}`;
+    context.fillText(label, cx, y + tile * 0.86);
   }
 }
 
@@ -354,7 +355,6 @@ export function createDeskDevices(roomScene: Object3D): DeskDevices {
   const deck = surface(deckMesh, DECK_SIZE);
   if (placeholder instanceof MeshStandardMaterial) placeholder.dispose();
   drawDeck(deck.context);
-  const graph = contributionLevels();
   const screens = [
     [clock, BRIGHTNESS.clock],
     [phone, BRIGHTNESS.phone],
@@ -368,7 +368,7 @@ export function createDeskDevices(roomScene: Object3D): DeskDevices {
       if (minute !== shownMinute) {
         shownMinute = minute;
         const date = new Date(nowMs);
-        drawClock(clock.context, date, graph);
+        drawClock(clock.context, date);
         clock.texture.needsUpdate = true;
         drawPhone(phone.context, date);
         phone.texture.needsUpdate = true;

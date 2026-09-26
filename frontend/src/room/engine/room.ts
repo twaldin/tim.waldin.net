@@ -61,6 +61,9 @@ export interface RoomManifest {
   lights: {
     lamp: { position: number[]; direction: number[]; angle: number; penumbra: number; color: number[]; intensity: number };
     sun: { direction: number[]; color: number[]; intensity: number };
+    // The hex panels' wall glow (bake-only point lights), one per tile, so
+    // realtime-lit props near them get the light the baked desk does.
+    glow: { position: number[]; direction: number[]; color: number[]; intensity: number }[];
   };
 }
 

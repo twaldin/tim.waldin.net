@@ -10,6 +10,7 @@ import {
   Mesh,
   MeshStandardMaterial,
   PCFShadowMap,
+  PerspectiveCamera,
   RectAreaLight,
   Scene,
   SkinnedMesh,
@@ -17,6 +18,7 @@ import {
   Vector2,
   Vector3,
   WebGLRenderer,
+  WebGLRenderTarget,
 } from 'three';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -88,6 +90,11 @@ const BLOOM_THRESHOLD = { night: 0.82, day: 2.2 };
 const PERF_SKIP_FRAMES = 120;
 const PERF_SAMPLE_FRAMES = 120;
 const SLOW_FRAME_MS = 22;
+// The hex panels' glow light (below): half-angle of its cone, radians.
+const GLOW_CONE = 1.3;
+// The static room and keyboard, the only things the glow's one-off shadow
+// map draws (the sky shade's layer is 1).
+const STATIC_LAYER = 2;
 
 // Seconds for the room to go from night to day (or back) on a mode switch.
 const DAY_TRANSITION_SECONDS = 2.4;
@@ -236,6 +243,48 @@ export async function createRoomEngine(options: RoomEngineOptions): Promise<Room
   skyShade.shadow.radius = 5;
   fitSkyShade(skyShade, new Vector3(-0.45, 0.8, -0.4), new Vector3(0.07, 0.76, -0.1));
   scene.add(skyShade, skyShade.target);
+  // The hex panels' glow. In the bake a point light just in front of each
+  // tile (room.json `lights.glow`) lights the desk round the mug and the
+  // speaker; the probes see only the tiles' own dim faces, and no realtime
+  // light stood in for it, so at night the mug beside the panels took a
+  // fifteenth of the light the baked desk around it gets and read as a
+  // black hole. One spot stands in for the four (they span 20 cm, the
+  // nearest realtime prop is 25 cm off): at their centroid, in their summed
+  // colour, aimed into the room across a cone wide enough for every
+  // realtime object, which also keeps it off the wall and the tiles right
+  // behind it (a light 12 mm from a surface puts a hotspot on it). Its
+  // shadow is the static room's, drawn once: the monitor hides the typing
+  // hands from most of it, the arms and the mouse (not on STATIC_LAYER)
+  // move and cast none (renderGlowShadow, below).
+  const glowSpecs = room.manifest.lights.glow ?? [];
+  const glowPower = glowSpecs.reduce((sum, spec) => sum + spec.intensity, 0);
+  const glow = new SpotLight(0xffffff, 0, 0, GLOW_CONE, 0.3, 2);
+  const glowAim = new Vector3();
+  // A light starts a metre up; the centroid is summed from the origin.
+  glow.position.set(0, 0, 0);
+  glow.color.setScalar(0);
+  for (const spec of glowSpecs) {
+    const share = spec.intensity / glowPower;
+    glow.position.addScaledVector(new Vector3().fromArray(spec.position), share);
+    glowAim.addScaledVector(new Vector3().fromArray(spec.direction), share);
+    glow.color.add(new Color().fromArray(spec.color).multiplyScalar(spec.intensity));
+  }
+  // Brightest channel 1, as the lamp's colour is; the power goes to intensity.
+  const glowIntensity = Math.max(glow.color.r, glow.color.g, glow.color.b);
+  if (glowIntensity > 0) glow.color.multiplyScalar(1 / glowIntensity);
+  glow.target.position.copy(glow.position).add(glowAim);
+  glow.castShadow = glowSpecs.length > 0;
+  glow.shadow.mapSize.set(512, 512);
+  glow.shadow.bias = -0.0005;
+  glow.shadow.normalBias = 0.004;
+  glow.shadow.radius = 3;
+  glow.shadow.camera.near = 0.05;
+  glow.shadow.camera.far = 2;
+  glow.shadow.autoUpdate = false;
+  room.scene.traverse((object) => object.layers.enable(STATIC_LAYER));
+  keyboard.group.traverse((object) => object.layers.enable(STATIC_LAYER));
+  // After the lamp: skin.ts reads the first spot light as the lamp.
+  scene.add(glow, glow.target);
 
   let day = resolvedMode() === 'light' ? 1 : 0;
   let dayGoal = day;
@@ -246,6 +295,7 @@ export async function createRoomEngine(options: RoomEngineOptions): Promise<Room
   const lighting = (blend: number) => {
     const exposure = EXPOSURE * MathUtils.lerp(1, DAY_EXPOSURE, blend);
     lamp.intensity = lampSpec.intensity * exposure * (1 - blend);
+    glow.intensity = glowIntensity * exposure * (1 - blend);
     sun.intensity = sunSpec.intensity * exposure * blend;
     // A light that is off keeps its last shadow map instead of re-rendering it.
     lamp.shadow.autoUpdate = blend < 1;
@@ -298,8 +348,27 @@ export async function createRoomEngine(options: RoomEngineOptions): Promise<Room
     sun.shadow.needsUpdate = true;
     sunDetail.shadow.needsUpdate = true;
   };
+  // three draws each shadow map with what the camera being rendered sees
+  // (its layers), not the shadow camera: the glow's map, set to the static
+  // layer alone, drew the arms as they were at load, and that frozen arm
+  // shaded the mouse hand. So its one pass renders through a camera that
+  // sees only STATIC_LAYER, into a throwaway pixel. Every other map is drawn
+  // in the same pass (none may be missing at the probes' renders), and
+  // again with the arms by the next render.
+  const renderGlowShadow = () => {
+    const staticView = new PerspectiveCamera();
+    staticView.layers.set(STATIC_LAYER);
+    const pixel = new WebGLRenderTarget(1, 1);
+    glow.shadow.needsUpdate = true;
+    renderShadowsOnce();
+    renderer.setRenderTarget(pixel);
+    renderer.render(scene, staticView);
+    renderer.setRenderTarget(null);
+    pixel.dispose();
+    renderShadowsOnce();
+  };
   lighting(0);
-  renderShadowsOnce();
+  renderGlowShadow();
   devices.update(Date.now(), 0);
   const keyboardBox = new Box3().setFromObject(keyboard.group);
   const lampLed = room.scene.getObjectByName('emit_lampLed');
@@ -512,6 +581,7 @@ export async function createRoomEngine(options: RoomEngineOptions): Promise<Room
       sun.shadow.dispose();
       sunDetail.shadow.dispose();
       skyShade.shadow.dispose();
+      glow.shadow.dispose();
       audio.dispose();
       composer.dispose();
       renderer.dispose();
