@@ -11,8 +11,8 @@ echo ""
 # One entry per project: command|display name|description|stack.
 # Copy stays grid-cell short (≤ ~60 cols) so the wide layout never wraps.
 ENTRIES=(
-  'harness|harness|one python+ts interface to 13 coding-agent CLIs|Python, TypeScript, per-CLI adapters'
-  'hone|hone|GEPA prompt optimizer — 6/9 to 8/9 on unseen bugs|Python, GEPA/dspy, harness'
+  'harness|harness|one python+ts interface to 26 coding-agent CLIs|Python, TypeScript, per-CLI adapters'
+  'hone|hone|GEPA prompt optimizer — 0.65 to 0.85 on unseen bugs|Python, GEPA/dspy, harness'
   'flt|flt|spawn + orchestrate fleets of coding agents in tmux|TypeScript, Bun, raw ANSI TUI'
   'agentelo|agentelo|Bradley-Terry leaderboard for coding agents (148-agent baseline)|TypeScript, Next.js, SQLite, Bun'
   'term-site|term site|this site — every visitor gets their own docker container|next.js, node.js, socket.IO, docker'

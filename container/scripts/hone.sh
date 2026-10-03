@@ -11,7 +11,7 @@ echo ""
 create_box "Description" "GEPA-based prompt optimizer for AI coding CLIs. Evolves a system
 prompt through pareto-style mutation + selection, scoring each variant
 against real github bug-fix challenges via the agentelo grader. Lifted
-claude haiku 4.5 from 6/9 to 8/9 solved on a held-out github bug set." "${PURPLE}"
+claude haiku 4.5 from 0.65 to 0.85 mean score on 9 held-out github bugs." "${PURPLE}"
 
 echo ""
 
@@ -26,7 +26,7 @@ echo ""
 
 typewriter "${BLUE}Key Results:${RESET}"
 animated_separator "~" 10 "${PURPLE}"
-typewriter "   ${PURPLE}•${RESET} 6/9 to 8/9 holdout lift on claude haiku (see blog)"
+typewriter "   ${PURPLE}•${RESET} 0.65 to 0.85 holdout lift on claude haiku (see blog)"
 typewriter "   ${PURPLE}•${RESET} Narrow goldilocks band — weak models can't execute the"
 typewriter "     methodology, strong models already saturate"
 typewriter "   ${PURPLE}•${RESET} Uses existing CLI subscription as the mutator (no API keys)"
