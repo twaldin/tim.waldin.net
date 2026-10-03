@@ -18,6 +18,8 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
+      # easl.sh static site (nginx.conf; published by canvas-site scripts/publish.sh)
+      - /var/www/easl.sh:/usr/share/nginx/easl.sh:ro
     depends_on:
       - frontend
       - backend
