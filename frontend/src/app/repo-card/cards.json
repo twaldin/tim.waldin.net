@@ -266,5 +266,22 @@
   "bar": "twaldin/gepa-ts — zsh",
   "url": "github.com/twaldin/gepa-ts",
   "accent": "primary"
+ },
+ "easl": {
+  "lines": [
+   "                            ████ ",
+   "                           ░░███ ",
+   "  ██████   ██████    █████  ░███ ",
+   " ███░░███ ░░░░░███  ███░░   ░███ ",
+   "░███████   ███████ ░░█████  ░███ ",
+   "░███░░░   ███░░███  ░░░░███ ░███ ",
+   "░░██████ ░░████████ ██████  █████",
+   " ░░░░░░   ░░░░░░░░ ░░░░░░  ░░░░░ "
+  ],
+  "tagline": "❯ the board your agents build on · native mac app · free, mit",
+  "fontSize": 24,
+  "bar": "twaldin/easl — zsh",
+  "url": "github.com/twaldin/easl",
+  "accent": "primary"
  }
 }
