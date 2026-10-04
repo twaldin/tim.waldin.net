@@ -77,6 +77,14 @@ export const markdownComponents: Components = {
     );
   },
   pre: ({ children }) => <pre style={{ marginBottom: '1rem' }}>{children}</pre>,
+  img: ({ src, alt }) => (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={typeof src === 'string' ? src : undefined}
+      alt={alt ?? ''}
+      style={{ display: 'block', maxWidth: '100%', maxHeight: '70vh', height: 'auto', margin: '0 auto 1rem' }}
+    />
+  ),
   blockquote: ({ children }) => (
     <blockquote
       style={{
