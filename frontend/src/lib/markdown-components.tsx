@@ -14,6 +14,9 @@ export const CODE_BG       = 'var(--color-black)';
 export const CODE_BORDER   = 'var(--color-border)';
 export const LINK          = 'var(--color-green)';
 
+// `[![alt](poster.jpg)](clip.mp4)` in a post: the image is the poster, the link the clip.
+const VIDEO_HREF = /\.(mp4|m4v|webm|mov)$/i;
+
 export const markdownComponents: Components = {
   h1: ({ children }) => (
     <h1 style={{ color: BRAND, fontWeight: 'bold', fontSize: '1.5rem', lineHeight: 1.25, marginTop: '1.5rem', marginBottom: '0.75rem' }}>{children}</h1>
@@ -27,16 +30,37 @@ export const markdownComponents: Components = {
   p: ({ children }) => (
     <p style={{ color: FG, marginBottom: '1rem', lineHeight: 1.55 }}>{children}</p>
   ),
-  a: ({ href, children }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      style={{ color: BRIGHT_CYAN, textDecoration: 'underline', textUnderlineOffset: 2 }}
-    >
-      {children}
-    </a>
-  ),
+  a: ({ href, children, node }) => {
+    const only = node?.children.length === 1 ? node.children[0] : undefined;
+    if (href && VIDEO_HREF.test(href) && only?.type === 'element' && only.tagName === 'img') {
+      const { src, alt } = only.properties;
+      // Muted + playsInline is what lets iOS and every desktop browser autoplay in the page;
+      // browsers pause muted autoplay that is scrolled out of view on their own.
+      return (
+        <video
+          src={href}
+          poster={typeof src === 'string' ? src : undefined}
+          aria-label={typeof alt === 'string' ? alt : undefined}
+          autoPlay
+          muted
+          loop
+          playsInline
+          controls
+          style={{ display: 'block', width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '70vh', margin: '0 auto 1rem' }}
+        />
+      );
+    }
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ color: BRIGHT_CYAN, textDecoration: 'underline', textUnderlineOffset: 2 }}
+      >
+        {children}
+      </a>
+    );
+  },
   code: ({ children, className }) => {
     const content = String(children ?? '');
     const isBlock = className?.startsWith('language-') || content.includes('\n');
