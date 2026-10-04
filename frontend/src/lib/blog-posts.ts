@@ -37,12 +37,13 @@ export function getPost(slug: string): BlogPost | null {
   return { slug, meta, body };
 }
 
-// First paragraph, markdown links flattened to their text, clipped for OG
-// descriptions and card excerpts.
+// First text paragraph (a leading image or video poster is skipped), markdown
+// links flattened to their text, clipped for OG descriptions and card excerpts.
 export function postExcerpt(body: string, maxLength = 200): string {
-  const firstParagraph = body
+  const firstParagraph = (body
     .trim()
-    .split(/\r?\n\r?\n/)[0]
+    .split(/\r?\n\r?\n/)
+    .find((p) => !/^\[?!\[/.test(p.trim())) ?? '')
     .replace(/\r?\n/g, ' ')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
   return firstParagraph.length > maxLength
