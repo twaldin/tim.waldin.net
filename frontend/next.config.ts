@@ -16,11 +16,12 @@ const contentSecurityPolicy = [
 
 const permissionsPolicy = [
   "accelerometer=()",
-  "autoplay=()",
+  // Same-origin only: blog videos autoplay muted in the page and keep their fullscreen button.
+  "autoplay=(self)",
   "camera=()",
   "display-capture=()",
   "encrypted-media=()",
-  "fullscreen=()",
+  "fullscreen=(self)",
   "geolocation=()",
   "gyroscope=()",
   "magnetometer=()",
