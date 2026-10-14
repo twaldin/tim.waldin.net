@@ -53,7 +53,7 @@
 # without reported shares split 30% evenly. Think times/lifetimes are bounded
 # lognormals; the lifetime mean is calibrated to ~64 s, not a fitted log trace.
 # Four echo probes count in N; two persistent hostile sessions are extra.
-# The memory hog holds ~488 MiB of its 512 MiB limit, leaving PTY/shell overhead.
+# The memory hog fills its container's memory limit to within 32 MiB and holds it.
 # The CPU abuser forks up to PidsLimit and holds busy children at its 0.5-CPU
 # quota. Their cgroup use is printed, and missing hostile work invalidates a run.
 # Headroom is memory.current minus inactive_file, not raw total; active cache
