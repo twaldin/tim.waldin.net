@@ -1,0 +1,9 @@
+{
+  "name": "capacity-loadgen",
+  "private": true,
+  "description": "Closed-loop visitor load for bench/capacity/run.sh",
+  "main": "loadgen.js",
+  "dependencies": {
+    "socket.io-client": "4.8.3"
+  }
+}
