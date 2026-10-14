@@ -33,7 +33,7 @@ function envCount(name, fallback, min) {
 
 // Production sets neither; bench/capacity raises the cap so it never binds.
 const POOL_SIZE = envCount('POOL_SIZE', 5, 0);
-const MAX_SESSIONS = envCount('MAX_SESSIONS', 40, 1);
+const MAX_SESSIONS = envCount('MAX_SESSIONS', 100, 1);
 
 const DENIED_REASONS = { full: 'capacity', 'ip-cap': 'ip-cap' };
 
