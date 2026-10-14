@@ -437,7 +437,6 @@ function sample() {
     file: stat.file,
     kernel: stat.kernel,
     inactiveFile: stat.inactive_file,
-    oomKill: keyed(readCgroup('memory.events')).oom_kill,
     hostile,
     cpuUsec: cpu.usage_usec,
     throttledUsec: cpu.throttled_usec,
@@ -480,7 +479,8 @@ function dockerEvents(start, end) {
     });
 }
 
-async function evaluate(n, start, mStart, end) {
+async function evaluate(n, start, mStart, end, oomKillStart) {
+  const oomKillEnd = keyed(readCgroup('memory.events')).oom_kill;
   const inWindow = (t) => t >= mStart && t < end;
   // A session joins the latency sample once its verdict is settled whatever
   // happens next: started in the window and old enough to have met or missed
@@ -513,11 +513,9 @@ async function evaluate(n, start, mStart, end) {
 
   const stepSamples = samples.filter((x) => x.t >= start && x.t < end);
   const measured = stepSamples.filter((x) => inWindow(x.t));
-  const first = stepSamples[0];
-  const last = stepSamples[stepSamples.length - 1];
   const oomEvents = events.filter((e) => e.Action === 'oom');
   const hostileOoms = oomEvents.filter((e) => hostileIds.has(e.Actor.ID)).length;
-  const oom = Math.max(oomEvents.length - hostileOoms, last.oomKill - first.oomKill - hostileOoms);
+  const oom = Math.max(oomEvents.length - hostileOoms, oomKillEnd - oomKillStart - hostileOoms);
   const workingSets = measured.map((x) => x.current - x.inactiveFile);
   const headroom = Math.min(...measured.map((x) => 1 - (x.current - x.inactiveFile) / x.max));
   const m0 = measured[0];
@@ -558,6 +556,8 @@ async function evaluate(n, start, mStart, end) {
     sessionErrors: stepErrors.length,
     errorKinds,
     oomKills: oom,
+    oomKillStart,
+    oomKillEnd,
     minHeadroom: Number(headroom.toFixed(3)),
     maxWorkingSetMiB: Math.round(Math.max(...workingSets) / MiB),
     maxSwapMiB: Math.round(Math.max(...measured.map((x) => x.swap)) / MiB),
@@ -583,6 +583,7 @@ async function evaluate(n, start, mStart, end) {
 const sleep = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs));
 
 async function runStep(n) {
+  const oomKillStart = keyed(readCgroup('memory.events')).oom_kill;
   const start = now();
   const target = n - WORKLOAD.probes;
   while (admitted < target) {
@@ -595,7 +596,7 @@ async function runStep(n) {
   const mStart = now();
   if (opts.mark) fs.writeFileSync(opts.mark, '');
   await sleep(opts.measureS * 1000);
-  const result = await evaluate(n, start, mStart, now());
+  const result = await evaluate(n, start, mStart, now(), oomKillStart);
   fs.appendFileSync(opts.out, `${JSON.stringify(result)}\n`);
   log(`N=${n} ${result.pass ? 'PASS' : `FAIL ${result.failed.join(',')}`}${result.valid ? '' : ' INVALID'}`
     + ` first=${result.firstOutputP95Ms} added=${result.promptAddedP95Ms} echo=${result.echoP95Ms}`
