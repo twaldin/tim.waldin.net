@@ -50,10 +50,11 @@ Timers in `SessionManager` (`backend/session.js`), rate limit in `Admission` (`b
 - Every session container is built from `SANDBOX_POLICY` by `buildContainerSpec` (`backend/sandbox-policy.js`), the only place the spec exists: non-root `portfolio` user, `CapDrop: ALL` with only `SETUID`/`SETGID` re-added for the sudo demo, `NetworkMode: 'none'`, `PidsLimit: 100`, 512 MB RAM and no swap, 0.5 CPU (`CpuQuota: 50000`), `tmpfs /tmp` (rw, noexec, nosuid, 100 MB), log driver `none`, label `app=terminal-portfolio` so orphan reclaim never touches other tenants' containers. Because the daemon has no writable-layer quota, the backend inspects active and zombie containers every 2 s and destroys sessions over 1 GiB, and the seccomp profile (Docker's default minus `fallocate`) stops instant block reservation, which the watchdog could not catch. Visitors can run `sudo rm -rf /` or fork-bombs and affect only their own container; isolation from the host rests on the dropped capabilities plus the per-container seccomp profile and the daemon's AppArmor profile (daemon-level hardening still open — userns-remap, storage quota — is listed in `sandbox-policy.js`).
 - `tecnativa/docker-socket-proxy` v0.5.0 is pinned by digest and exposes the Docker API to the backend over `tcp://socket-proxy:2375` with a strict allowlist (`socket-proxy` service in `docker-compose.yml`): `CONTAINERS`, `POST`, `INFO`, `PING` enabled; `IMAGES`, `NETWORKS`, `VOLUMES`, `SERVICES`, `TASKS`, `NODES`, `SWARM`, `BUILD`, `EXEC` disabled. The backend never gets a raw `/var/run/docker.sock`; `DockerodeAdapter` forces plain HTTP.
 - `backend/proxy-validator/` is a body-validating Docker proxy that checks requests against the same `SANDBOX_POLICY`. It is built and unit-tested but deliberately **not in the data path**: its HTTP forwarder cannot relay the raw two-way socket that Docker's `attach` endpoint "hijacks" from the HTTP connection (see the comment above `socket-proxy` in `docker-compose.yml`).
+- **Cells** (`CELL_SOCKET_DIR` set, as `docker-compose.yml` does): sessions are not Docker containers. Two `cell-*` services run the session image with `cellsh` as pid 1 (`container/cell/cellsh.c`); the backend's `CellAdapter` (`backend/cell-adapter.js`) turns the same `buildContainerSpec` output into a spawn policy over a unix socket on the `cell_sockets` volume, and each connection is one namespaced, cgroup-limited sandbox with that policy's seccomp profile and capabilities. A cell itself is privileged: root with `SYS_ADMIN`, `NET_ADMIN`, `SYS_CHROOT`, `MKNOD` and `SETPCAP` to build sandboxes, plus `DAC_OVERRIDE`, `FOWNER`, `FSETID`, `CHOWN` and `SETFCAP` for its overlay mounts; no network, `apparmor=unconfined`. A compromised cell exposes every sandbox it runs.
 
 ## Deployment shape
 
-`docker-compose.yml` brings up four services on three internal Docker networks plus one external bridge:
+`docker-compose.yml` brings up six services (two of them cells) on three internal Docker networks plus one external bridge:
 
 | Service        | Image / build                          | Network                     |
 |----------------|----------------------------------------|-----------------------------|
@@ -61,8 +62,9 @@ Timers in `SessionManager` (`backend/session.js`), rate limit in `Admission` (`b
 | `frontend`     | `frontend/Dockerfile.production`        | frontend (internal)         |
 | `backend`      | `backend/Dockerfile`                    | backend + docker (internal) |
 | `socket-proxy` | `tecnativa/docker-socket-proxy:v0.5.0` pinned by digest | docker (internal)           |
+| `cell-1`, `cell-2` | the session image, `cellsh` as pid 1 | none                        |
 
-Session containers are not declared in compose: the backend creates them through the proxy with `NetworkMode: 'none'`, so they are attached to no Docker network at all.
+Sessions are not declared in compose: with cells, each is a sandbox inside a cell; without `CELL_SOCKET_DIR`, the backend creates one container per session through the proxy with `NetworkMode: 'none'`, attached to no Docker network at all.
 
 Nginx (`nginx.conf`) terminates TLS via Let's Encrypt (`/etc/letsencrypt` mounted read-only) over HTTP/2 with a shared TLS session cache, rate-limits dynamic/backend requests to 10 r/s per IP (burst 20), and gives `/_next/static/` and `/fonts/` a separate 100 r/s budget (burst 200) so cold-load assets cannot exhaust the backend budget. Concurrent requests are capped at 128 per IP (`limit_conn addr`; HTTP/2 counts each in-flight stream, so a cold load's ~24 asset streams need the headroom), and `/socket.io/` has its own cap of 10 per IP (`limit_conn sockets`). It also blocks the Next.js CVE-2025-29927 middleware-bypass header. Routes:
 
