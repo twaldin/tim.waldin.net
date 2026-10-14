@@ -53,7 +53,7 @@ term-site/
 │   ├── blog/posts/            # Markdown posts
 │   └── fonts/                 # figlet font pool for the banner
 ├── e2e/                       # Playwright suite (run by .github/workflows/e2e.yml)
-├── scripts/                   # Ops scripts: deploy, VPS, blog, repo cards, fonts, themes
+├── scripts/                   # Ops scripts: deploy, VPS, blog, repo cards, fonts, themes, the /x tour recorder
 ├── docker-compose.yml         # nginx, frontend, backend, socket-proxy
 ├── nginx.conf                 # Reverse proxy, SSL, rate limiting
 └── deploy.sh                  # Build images, then swap the stack

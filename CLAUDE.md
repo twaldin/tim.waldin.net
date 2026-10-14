@@ -23,6 +23,7 @@ Paths relative to `frontend/`.
 - `src/app/page.tsx` mounts the terminal for `/`; `src/app/[...slug]/page.tsx` renders the same page for every command URL that passes `isValidPath` (`src/lib/routes.ts`) and 404s the rest.
 - On connect, `pathToCommand` (`src/lib/websocket.ts`) turns the current path into the `initCommand` sent in the Socket.IO handshake `auth`: `/` → `boot` (intro animation, then `welcome`), `/about` → `about`, `/projects/<alias>` → `<alias>`, `/t/<cmd>` → `<cmd>` (so `/t/blog/<slug>` becomes `blog <slug>`). The backend re-validates the string (`SessionManager._autoType`) and falls back to `boot`.
 - `/blog` and `/blog/<slug>` are static routes (`src/app/blog/`) that win over the catch-all: Markdown rendered for crawlers and cold loads, handing over to the live terminal through `/t/…` links and an embedded prompt that navigates to `/t/<cmd>`. `/gui` is the no-terminal page.
+- `/x` (`src/app/x/`) is the X Player Card: a post linking `https://tim.waldin.net/x` plays the terminal inside the post (an iframe on desktop web, X's in-app browser on phones). It loops a recorded tour (`public/x/tour.json`, from `scripts/record-tour.mjs`) and opens no socket until a tap or keypress, then connects as `auth.kind: 'embed'` with no `initCommand`. No site header, no URL/navigation OSC. See `frontend/CLAUDE.md` → `/x` embed.
 - The reverse direction uses OSC (operating-system-command) escape sequences: the container's zsh `preexec` hook and portfolio scripts emit OSC 9999 (`emit_url` in `container/scripts/shared-functions.sh`); `src/components/Terminal.tsx` handles 9999 (`history.pushState`), 9998 (scroll to top), 9997 (`location.assign`, same-origin only), 9996/9995 (ephemeral / persisted theme), and OSC 8 hyperlinks via `linkHandler`.
 - The Socket.IO client targets `NEXT_PUBLIC_API_URL` when that was inlined at build time, otherwise the page's own origin — in production, nginx's `/socket.io/` route.
 
@@ -71,6 +72,7 @@ Nginx (`nginx.conf`) terminates TLS via Let's Encrypt (`/etc/letsencrypt` mounte
 - `/admin` → backend, Basic-auth panel over the audit log (`ADMIN_PASSWORD` from the environment).
 - `/health`, `/stats` → backend, private networks only.
 - `/_next/static/` → frontend, preserving Next.js cache headers; `/fonts/` → frontend with immutable cache headers.
+- `= /x` → frontend like `/`, but without `X-Frame-Options: SAMEORIGIN` so x.com can frame it (Next's `/x` CSP `frame-ancestors` names the X and Twitter hosts); exact match only, every other path keeps SAMEORIGIN.
 - `/agentelo*` → a separate compose stack on the shared `term-site_external-net`.
 - A 444 blocklist for common exploit probes; `/resume.html` → `/resume.pdf`; every other path → frontend.
 
