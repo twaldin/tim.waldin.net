@@ -264,7 +264,8 @@ static int add_seccomp_rule(struct policy *p, char *line, char *err, size_t errl
     char op[16];
     unsigned idx;
     unsigned long long v1, v2;
-    if (nargs == 6 || sscanf(a, "%u,%15[A-Z_],%llu,%llu", &idx, op, &v1, &v2) != 4 || idx > 5) {
+    int used = 0;
+    if (nargs == 6 || sscanf(a, "%u,%15[A-Z_],%llu,%llu%n", &idx, op, &v1, &v2, &used) != 4 || a[used] || idx > 5) {
       snprintf(err, errlen, "bad seccomp argument for %s", name);
       return -1;
     }
@@ -305,7 +306,8 @@ static int parse_tmpfs(struct tmpfs_mount *m, const char *spec) {
   m->data[0] = 0;
   if (!colon) return 0;
   char opts[256];
-  snprintf(opts, sizeof opts, "%s", colon + 1);
+  if (strlen(colon + 1) >= sizeof opts) return -1;
+  strcpy(opts, colon + 1);
   char *save = NULL;
   for (char *o = strtok_r(opts, ",", &save); o; o = strtok_r(NULL, ",", &save)) {
     if (!strcmp(o, "rw")) m->flags &= ~MS_RDONLY;
@@ -337,6 +339,13 @@ static void env_set(struct policy *p, const char *kv) {
   if (!p->env) die("realloc");
   p->env[p->nenv++] = strdup(kv);
   p->env[p->nenv] = NULL;
+}
+
+// Copies a policy string, refusing (never truncating) one that does not fit.
+static int set_text(char *dst, size_t size, const char *val) {
+  if (strlen(val) >= size) return 1;
+  strcpy(dst, val);
+  return 0;
 }
 
 static long long parse_ll(const char *text, int *bad) {
@@ -378,15 +387,15 @@ static struct policy *parse_policy(const char *payload, size_t len, char *err, s
     }
     *eq = 0;
     const char *key = field, *val = eq + 1;
-    if (!strcmp(key, "hostname")) snprintf(p->hostname, sizeof p->hostname, "%s", val);
-    else if (!strcmp(key, "user")) snprintf(p->user, sizeof p->user, "%s", val);
-    else if (!strcmp(key, "cwd")) snprintf(p->cwd, sizeof p->cwd, "%s", val);
+    if (!strcmp(key, "hostname")) bad = set_text(p->hostname, sizeof p->hostname, val);
+    else if (!strcmp(key, "user")) bad = set_text(p->user, sizeof p->user, val);
+    else if (!strcmp(key, "cwd")) bad = set_text(p->cwd, sizeof p->cwd, val);
     else if (!strcmp(key, "env")) env_set(p, val);
     else if (!strcmp(key, "memory")) p->memory = parse_ll(val, &bad);
     else if (!strcmp(key, "swap")) p->swap = parse_ll(val, &bad);
     else if (!strcmp(key, "pids")) p->pids = parse_ll(val, &bad);
     else if (!strcmp(key, "rootfs")) p->rootfs = parse_ll(val, &bad);
-    else if (!strcmp(key, "cpu")) snprintf(p->cpu, sizeof p->cpu, "%s", val);
+    else if (!strcmp(key, "cpu")) bad = set_text(p->cpu, sizeof p->cpu, val);
     else if (!strcmp(key, "cap")) {
       int c = cap_number(val);
       if (c < 0) {
@@ -421,8 +430,13 @@ static struct policy *parse_policy(const char *payload, size_t len, char *err, s
         bad = 1;
       } else {
         char line[512];
-        snprintf(line, sizeof line, "%s", val);
-        if (add_seccomp_rule(p, line, err, errlen)) bad = 1;
+        if (strlen(val) >= sizeof line) {
+          snprintf(err, errlen, "seccomp rule too long");
+          bad = 1;
+        } else {
+          strcpy(line, val);
+          if (add_seccomp_rule(p, line, err, errlen)) bad = 1;
+        }
       }
     } else {
       snprintf(err, errlen, "unknown policy field %s", key);
@@ -928,6 +942,15 @@ static void on_setup(struct sess *s) {
     maybe_free(s);
     return;
   }
+  if (s->reaped) {
+    // The child handed over its console and then died before exec; reap()
+    // left the connection to this handler.
+    close(fds[0]);
+    close(fds[1]);
+    fail_session(s, "sandbox exited during setup");
+    maybe_free(s);
+    return;
+  }
   s->master = fds[0];
   s->root = fds[1];
   fcntl(s->master, F_SETFL, O_NONBLOCK);
@@ -936,6 +959,7 @@ static void on_setup(struct sess *s) {
   apply_size(s);
   if (s->conn < 0) {
     kill_leaf(s);
+    maybe_free(s);
     return;
   }
   send_text(s, 'K', s->leaf);

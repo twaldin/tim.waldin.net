@@ -20,6 +20,7 @@ const SPAWN_TIMEOUT_MS = 10_000;
 const USAGE_TIMEOUT_MS = 5_000;
 const CPU_PERIOD_US = 100_000;
 const HEADER_BYTES = 5;
+const MAX_FRAME_BYTES = 1 << 20;
 
 const GO_ARCH = { x64: 'amd64', arm64: 'arm64' };
 const NATIVE_SCMP_ARCH = { amd64: 'SCMP_ARCH_X86_64', arm64: 'SCMP_ARCH_AARCH64' };
@@ -219,6 +220,11 @@ class CellSession {
     let buf = this.pending.length ? Buffer.concat([this.pending, chunk]) : chunk;
     while (buf.length >= HEADER_BYTES) {
       const len = buf.readUInt32BE(1);
+      // cellsh never sends a frame over 64 KiB; anything larger is a broken peer.
+      if (len > MAX_FRAME_BYTES) {
+        this.socket.destroy();
+        return;
+      }
       if (buf.length < HEADER_BYTES + len) break;
       this._onFrame(String.fromCharCode(buf[0]), buf.subarray(HEADER_BYTES, HEADER_BYTES + len));
       buf = buf.subarray(HEADER_BYTES + len);

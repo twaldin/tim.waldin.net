@@ -155,6 +155,21 @@ test('the shell exiting closes the lease stream', async () => {
   }
 });
 
+test('a frame longer than any cellsh sends closes the lease', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cell-'));
+  const { server, seen } = await fakeCell(path.join(dir, 'cell-a.sock'));
+  try {
+    const lifecycle = new SessionLifecycle({ docker: new CellAdapter({ socketDir: dir }), poolSize: 0 });
+    let closed = 0;
+    await lifecycle.lease('socket-1', { onOutput() {}, onClose: () => { closed++; } });
+    seen.sockets[0].write(Buffer.from([0x4f, 0xff, 0xff, 0xff, 0xff]));
+    await waitFor(() => closed === 1, 'an oversized frame ends the session');
+  } finally {
+    server.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('no reachable cell fails the lease', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cell-'));
   try {
