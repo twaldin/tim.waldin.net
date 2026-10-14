@@ -476,3 +476,83 @@ test('a site zombie restore evicts the site lease its IP took meanwhile and leav
   assert.deepEqual(superseded, ['browser-b']);
   assert.deepEqual(lifecycle.destroyCalls, [otherBrowser.lease.handleId]);
 });
+
+test('an embed reconnecting while its first container is still pending takes that lease over instead of reserving a second slot', async () => {
+  const lifecycle = new FakeLifecycle({ delay: 20 });
+  const admission = new Admission({ lifecycle, maxSessions: 40, clock: makeFakeClock() });
+  const superseded = [];
+  const ip = '203.0.113.1';
+
+  const first = admission.tryAcquire(ip, {
+    kind: 'embed', persistentId: 'iframe-1', onSuperseded: () => superseded.push('first socket'),
+  });
+  const reconnect = admission.tryAcquire(ip, { kind: 'embed', persistentId: 'iframe-1' });
+  const [firstResult, reconnectResult] = await Promise.all([first, reconnect]);
+
+  assert.equal(firstResult.mode, 'cold');
+  assert.equal(reconnectResult.mode, 'resume');
+  assert.equal(reconnectResult.lease.leaseId, firstResult.lease.leaseId);
+  assert.deepEqual(superseded, ['first socket']);
+  assert.equal(lifecycle.leaseCalls.length, 1);
+  assert.deepEqual(lifecycle.rebindCalls.map(({ handleId }) => handleId), ['handle-1']);
+
+  // The iframe holds one of the IP's four embed slots, not two.
+  const others = await Promise.all(['iframe-2', 'iframe-3', 'iframe-4', 'iframe-5'].map((persistentId) =>
+    admission.tryAcquire(ip, { kind: 'embed', persistentId })));
+  assert.deepEqual(others.map(({ mode, reason }) => reason ?? mode), ['cold', 'cold', 'cold', 'ip-cap']);
+});
+
+test('after a reconnect during a pending acquisition, a later restore returns the shell the reconnect was using', async () => {
+  const lifecycle = new FakeLifecycle({ delay: 20 });
+  const admission = new Admission({ lifecycle, maxSessions: 40, clock: makeFakeClock() });
+  const ip = '203.0.113.1';
+  let firstSuperseded = false;
+
+  const first = admission.tryAcquire(ip, {
+    kind: 'embed', persistentId: 'iframe-1', onSuperseded: () => { firstSuperseded = true; },
+  });
+  const reconnect = admission.tryAcquire(ip, { kind: 'embed', persistentId: 'iframe-1' });
+  const [firstResult, reconnectResult] = await Promise.all([first, reconnect]);
+  // As SessionManager does for a socket that left during the acquire: the
+  // lease is zombified unless a later connection already took it over.
+  if (!firstSuperseded) admission.zombify(firstResult.lease.leaseId);
+  admission.zombify(reconnectResult.lease.leaseId);
+
+  const restored = await admission.tryAcquire(ip, { kind: 'embed', persistentId: 'iframe-1' });
+  assert.equal(restored.mode, 'resume');
+  assert.equal(restored.lease.leaseId, reconnectResult.lease.leaseId);
+  assert.equal(restored.lease.handleId, reconnectResult.lease.handleId);
+  assert.equal(admission.leasesForMaintenance().length, 1);
+});
+
+test('a site reconnect during a held acquisition never evicts the newer connection that replaced it', async () => {
+  for (const bLeaves of [false, true]) {
+    const lifecycle = new FakeLifecycle();
+    const lease = lifecycle.lease.bind(lifecycle);
+    let releaseA;
+    const heldA = new Promise((resolve) => { releaseA = resolve; });
+    let leaseCalls = 0;
+    lifecycle.lease = async (...args) => {
+      if (leaseCalls++ === 0) await heldA;
+      return lease(...args);
+    };
+    const admission = new Admission({ lifecycle, maxSessions: 40, clock: makeFakeClock() });
+    const ip = '203.0.113.1';
+
+    const a = admission.tryAcquire(ip, { persistentId: 'a' });
+    const b = admission.tryAcquire(ip, { persistentId: 'a' });
+    const c = admission.tryAcquire(ip, { persistentId: 'c' });
+    releaseA();
+    const [, bResult, cResult] = await Promise.all([a, b, c]);
+    // As SessionManager does when a socket left during its acquire.
+    if (bLeaves && bResult.mode === 'cold') admission.zombify(bResult.lease.leaseId);
+
+    assert.equal(cResult.mode, 'cold', `bLeaves=${bLeaves}`);
+    assert.equal(cResult.lease.state, 'active', `bLeaves=${bLeaves}`);
+    assert.deepEqual(
+      admission.leasesForMaintenance().map(({ leaseId }) => leaseId),
+      [cResult.lease.leaseId],
+      `bLeaves=${bLeaves}`,
+    );
+  }
+});

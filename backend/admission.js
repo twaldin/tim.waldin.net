@@ -100,6 +100,22 @@ class Admission {
         }
         return this._restore(persistentLease, { onOutput, onClose, onSuperseded });
       }
+      // Share-mode kinds keep one lease per (kind, persistent id, IP): a
+      // reconnect while the first container is still coming up waits for that
+      // acquisition, then restores the lease like any reconnect (superseding
+      // the first connection) instead of reserving a second slot. Share mode
+      // never evicts, so the waiter cannot displace anyone when it wakes. A
+      // replace-mode reconnect must not wait: the replace path below already
+      // takes the IP's one lease over, and a waiter resuming after a newer
+      // same-IP connection evicted the awaited lease would evict that owner.
+      const pendingLease = this.kinds[kind].ip.mode === 'share'
+        ? this._findPendingLease(persistentId, kind)
+        : null;
+      if (pendingLease) {
+        if (pendingLease.ip !== ip) return { mode: 'denied', reason: 'ip-mismatch' };
+        await pendingLease.settled;
+        return this.tryAcquire(ip, { kind, persistentId, initCommand, onOutput, onClose, onSuperseded });
+      }
     }
 
     const ipPolicy = this.kinds[kind].ip;
@@ -124,6 +140,7 @@ class Admission {
 
     const now = this.clock();
     const leaseId = `lease-${now}-${this.nextLeaseId++}`;
+    let settle;
     /** @type {Lease} */
     const lease = {
       leaseId,
@@ -137,31 +154,37 @@ class Admission {
       state: 'pending',
       acquiredAt: now,
       lastActivity: now,
+      // Resolves once this acquisition has an outcome; same-id reconnects wait on it.
+      settled: new Promise((resolve) => { settle = resolve; }),
     };
 
     this.pendingLeases.set(leaseId, lease);
     if (ipPolicy.mode === 'replace') this.ipLeases.set(ipKey(kind, ip), leaseId);
 
-    if (eviction) {
-      try {
-        await eviction;
-      } catch {
-        this._endPendingLease(lease);
-        return { mode: 'denied', reason: 'eviction-failed' };
-      }
-      // A later same-IP connection may have evicted this lease during the
-      // teardown; leasing a container for it would only create one to destroy.
-      if (lease.state !== 'pending') return { mode: 'denied', reason: 'cancelled' };
-    }
-
-    const operation = this._fulfillLease(lease);
-    this.pendingOperations.set(leaseId, operation);
     try {
-      return await operation;
-    } finally {
-      if (this.pendingOperations.get(leaseId) === operation) {
-        this.pendingOperations.delete(leaseId);
+      if (eviction) {
+        try {
+          await eviction;
+        } catch {
+          this._endPendingLease(lease);
+          return { mode: 'denied', reason: 'eviction-failed' };
+        }
+        // A later same-IP connection may have evicted this lease during the
+        // teardown; leasing a container for it would only create one to destroy.
+        if (lease.state !== 'pending') return { mode: 'denied', reason: 'cancelled' };
       }
+
+      const operation = this._fulfillLease(lease);
+      this.pendingOperations.set(leaseId, operation);
+      try {
+        return await operation;
+      } finally {
+        if (this.pendingOperations.get(leaseId) === operation) {
+          this.pendingOperations.delete(leaseId);
+        }
+      }
+    } finally {
+      settle();
     }
   }
 
@@ -305,6 +328,13 @@ class Admission {
   _releaseIp(lease) {
     const key = ipKey(lease.kind, lease.ip);
     if (this.ipLeases.get(key) === lease.leaseId) this.ipLeases.delete(key);
+  }
+
+  _findPendingLease(persistentId, kind) {
+    for (const lease of this.pendingLeases.values()) {
+      if (lease.persistentId === persistentId && lease.kind === kind) return lease;
+    }
+    return null;
   }
 
   // A lease of another kind never matches: that connection takes the cold path.
