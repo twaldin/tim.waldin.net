@@ -58,10 +58,10 @@ const ECHO_TIMEOUT_MS = 5000;
 // visitors (250 / 64 s), so no ramp is a burst a real day would not see.
 const MAX_SPAWN_PER_S = 4;
 const MAX_LOADGEN_LAG_MS = 50;
-// Median of five baseline-host runs per command, measured before any normal
-// visitors or hostiles on deckbox, 2026-10-14. Frozen across experiments.
+// Median of five unloaded runs per command with the production-matched Docker
+// 29.3.0/containerd 2.2.2 and pool5 on deckbox, 2026-10-14. Frozen across experiments.
 const idleMs = Object.freeze({
-  boot: 7685, welcome: 8200, blog: 77, about: 93, resume: 308, projects: 405, contact: 412,
+  boot: 8054, welcome: 7626, blog: 52, about: 59, resume: 220, projects: 306, contact: 40,
 });
 const MAX_LOGGED_FAILURES = 20;
 
@@ -80,7 +80,7 @@ const CPU_FORK_ABUSER = "zsh -fc 'for i in {1..100}; do (while :; do :; done) & 
 function parseArgs(argv) {
   const opts = {
     url: null, steps: [], warmS: 30, measureS: 50, bisect: 0,
-    seed: 1, cgroup: null, out: null, mark: null,
+    seed: 1, cgroup: null, out: null, mark: null, calibrate: 0,
   };
   for (let i = 2; i < argv.length; i += 2) {
     const [key, value] = [argv[i], argv[i + 1]];
@@ -95,6 +95,7 @@ function parseArgs(argv) {
       case '--out': opts.out = value; break;
       case '--mark': opts.mark = value; break;
       case '--events': opts.events = value; break;
+      case '--calibrate': opts.calibrate = Number(value); break;
       default: throw new Error(`unknown option ${key}`);
     }
   }
@@ -606,6 +607,26 @@ async function runStep(n) {
 
 async function main() {
   fs.writeFileSync(opts.out, '');
+  if (opts.calibrate) {
+    const measured = {};
+    for (const init of Object.keys(idleMs)) {
+      const values = [];
+      for (let i = 0; i < opts.calibrate; i++) {
+        const s = new Session('calibration', init);
+        await reachPrompt(s);
+        values.push(Math.round(s.tPrompt - s.t0));
+        s.leave();
+        await sleep(500);
+      }
+      values.sort((a, b) => a - b);
+      measured[init] = { samplesMs: values, medianMs: values[Math.floor(values.length / 2)] };
+    }
+    fs.appendFileSync(opts.out, `${JSON.stringify({ type: 'idleCalibration', frozen: false, measured })}\n`);
+    stopping = true;
+    for (const s of sessions) s.leave();
+    await sleep(500);
+    process.exit(0);
+  }
   setInterval(sample, 1000).unref();
   let expected = now() + 100;
   setInterval(() => {

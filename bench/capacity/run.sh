@@ -14,10 +14,10 @@
 #
 # deckbox is a Ryzen 9 7900: 12 cores, two threads each (cpu N and N+12 share a
 # core), cores 0-5 and 6-11 on separate L3 caches. A lane is three whole cores
-# on one L3 with their sibling threads left idle; the load generators of all
-# lanes share cores 4 and 5, and core 0 is left to the OS. Three lanes can
-# measure at once. Each run reports how busy the lane's cores were with work
-# that was not its own.
+# on one L3 with their sibling threads left idle; the generator uses cores 4
+# and 5, and core 0 is left to the OS. Lanes run serially because privileged
+# dind and the host share uid 0's inotify quota in the initial user namespace.
+# Each run reports foreign work on the lane's cores. No sysctls are changed.
 #
 #   --lane L          0: cpus 1-3, 1: cpus 6-8, 2: cpus 9-11 (default 0)
 #   --repeat K        K runs, each on a fresh backend stack; prints the median N* (default 1)
@@ -32,6 +32,7 @@
 #   --seed S          seed of the first run's visitor stream (default 1)
 #   --profile         after each run, hold its N* and record a CPU/memory profile
 #   --profile-n N     profile an already-measured N rather than this run's highest pass
+#   --calibrate K     print K unloaded init samples per command; never overwrites frozen values
 #
 # Results land in bench/capacity/results/<run id>/ (one JSON line per step and
 # a summary per run). Host-daemon resources use the capbench-<run id>-* prefix.
@@ -57,13 +58,13 @@
 # quota. Their cgroup use is printed, and missing hostile work invalidates a run.
 # Headroom is memory.current minus inactive_file, not raw total; active cache
 # and kernel/slab still count. Raw memory/swap/pressure and Docker events are
-# kept so cache subtraction cannot hide OOMs. The Docker 29.9 dind build embeds
-# containerd in dockerd; CPU speed/kernel/storage and shared host swap differ
-# from the VPS. These are experiment comparisons, not a promise of prod N*.
+# kept so cache subtraction cannot hide OOMs. Docker 29.3.0 and containerd 2.2.2
+# match production; CPU speed/kernel/storage, host inotify consumers and shared
+# host swap differ. These are comparisons, not a promise of production N*.
 set -euo pipefail
 
 LANE=0 REPEAT=1 STEPS=120,145,175,210,250,300,360,430,520 WARM=30 MEASURE=50 BISECT=0
-CPUS=3 MEMORY=3.8g SWAP=2g POOL_SIZE=5 SEED=1 PROFILE=0 PROFILE_N=
+CPUS=3 MEMORY=3.8g SWAP=2g POOL_SIZE=5 SEED=1 PROFILE=0 PROFILE_N= CALIBRATE=0
 while (($#)); do
   case "$1" in
     --lane) LANE=$2; shift 2 ;;
@@ -79,6 +80,7 @@ while (($#)); do
     --seed) SEED=$2; shift 2 ;;
     --profile) PROFILE=1; shift ;;
     --profile-n) PROFILE=1; PROFILE_N=$2; shift 2 ;;
+    --calibrate) CALIBRATE=$2; shift 2 ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
@@ -92,7 +94,6 @@ esac
 SIBLING_CPUS=$(tr , '\n' <<<"$HOST_CPUS" | awk '{ printf "%s%d", (NR > 1 ? "," : ""), $1 + 12 }')
 LOADGEN_CPUS=4,5,16,17
 
-DIND_IMAGE=docker:29-dind@sha256:0b6d18a4a222e71c88be6034926b4f6cde2fc33c2218643d03ccfddc65995470
 NODE_IMAGE=node:24-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20
 PROXY_IMAGE=tecnativa/docker-socket-proxy:v0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459
 COMPOSE_PROJECT=capbench
@@ -104,6 +105,7 @@ P=capbench-$ID
 RESULTS=$HERE/results/$ID
 DIND=$P-dind
 
+DIND_IMAGE=$P-daemon
 to_mib() {
   awk -v v="$1" 'BEGIN { n = v + 0; u = tolower(substr(v, length(v)));
     if (u == "g") n *= 1024; else if (u == "k") n /= 1024; else if (u != "m") n /= 1048576;
@@ -113,9 +115,10 @@ MEMORY_SWAP=$(( $(to_mib "$MEMORY") + $(to_mib "$SWAP") ))m
 
 log() { printf '[run %s] %s\n' "$(date +%H:%M:%S)" "$*" >&2; }
 
-LOCK=/tmp/capbench-lane-$LANE.lock
-exec 9>"$LOCK"
-flock -n 9 || { echo "lane $LANE is busy (another run.sh holds $LOCK)" >&2; exit 1; }
+# The existing directory inode stays stable across runs and needs no cleanup.
+LOCK=/tmp
+exec 9<"$LOCK"
+flock -n 9 || { echo "another capacity run holds the shared host inotify lock" >&2; exit 1; }
 SCRATCH=$(mktemp -d "/tmp/$P.XXXXXX")
 
 cleanup() {
@@ -125,8 +128,8 @@ cleanup() {
   docker rm -fv "$P-loadgen" "$P-npm" "$P-summary" "$DIND" >/dev/null 2>&1 || true
   docker volume rm "$P-var" >/dev/null 2>&1 || true
   docker network rm "$P-net" >/dev/null 2>&1 || true
-  docker rmi "$P-session" "$P-backend" >/dev/null 2>&1 || true
-  rm -rf "$SCRATCH" "$LOCK"
+  docker rmi "$P-session" "$P-backend" "$DIND_IMAGE" >/dev/null 2>&1 || true
+  rm -rf "$SCRATCH"
   exit "$status"
 }
 trap cleanup EXIT
@@ -163,8 +166,9 @@ echo "lane threads busy before start: ${busy}%" | tee -a "$RESULTS/config.txt" >
 
 log "building session and backend images from $ROOT"
 docker build -q -t "$P-session" "$ROOT/container" >/dev/null
+docker build -q -f "$HERE/Dockerfile.dind" -t "$DIND_IMAGE" "$HERE" >/dev/null
 docker build -q -f "$ROOT/backend/Dockerfile" -t "$P-backend" "$ROOT" >/dev/null
-for image in "$DIND_IMAGE" "$NODE_IMAGE" "$PROXY_IMAGE"; do
+for image in "$NODE_IMAGE" "$PROXY_IMAGE"; do
   docker image inspect "$image" >/dev/null 2>&1 || docker pull -q "$image" >/dev/null
 done
 
@@ -184,6 +188,7 @@ docker run -d --privileged --name "$DIND" --hostname "$DIND" --network "$P-net" 
   dockerd --host=unix:///var/run/docker.sock >/dev/null
 for _ in $(seq 60); do docker exec "$DIND" docker info >/dev/null 2>&1 && break; sleep 1; done
 docker exec "$DIND" docker info >/dev/null
+docker exec "$DIND" sh -c 'dockerd --version; containerd --version; runc --version; readlink /proc/self/ns/user; cat /proc/self/uid_map; cat /proc/sys/fs/inotify/max_user_instances; cat /proc/sys/fs/inotify/max_user_watches' >"$RESULTS/daemon-version.txt"
 DIND_CGROUP=/sys/fs/cgroup/system.slice/docker-$(docker inspect -f '{{.Id}}' "$DIND").scope
 [[ -r $DIND_CGROUP/memory.current ]] || { echo "cannot read $DIND_CGROUP (need cgroup v2 + systemd driver)" >&2; exit 1; }
 docker exec "$DIND" docker events --format '{{json .}}' >"$RESULTS/docker-events.jsonl" &
@@ -241,6 +246,14 @@ interference() {
     printf "lane cpus: %.1f%% busy, %.1f percentage points unattributed to the emulated host; sibling threads %.1f%% busy\n",
       100 * b / t, 100 * (b / 100 - u / 1e6) / (t / 100), 100 * s / st }'
 }
+
+if ((CALIBRATE)); then
+  start_stack
+  loadgen --steps 5 --calibrate "$CALIBRATE" --out /out/idle-calibration.jsonl
+  stop_stack "$RESULTS/idle-calibration.backend.log"
+  log "unloaded calibration in $RESULTS"
+  exit 0
+fi
 
 for run in $(seq "$REPEAT"); do
   log "run $run/$REPEAT: ladder $STEPS"
