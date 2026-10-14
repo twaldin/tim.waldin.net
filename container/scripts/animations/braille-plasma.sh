@@ -2,9 +2,9 @@
 # braille-plasma.sh — full-screen braille plasma intro.
 # Sum-of-sines plasma evaluated per braille sub-pixel (2x4 per cell) using
 # separable 1-D sine fields (FX/FY/diag) + a per-cell radial ripple, so each
-# sub-pixel costs only a few array lookups. Rendered by a mawk coprocess that
-# streams \001-delimited frames; bash paces playback and polls for keypresses
-# (any key skips). After ~0.85s the plasma parts around a green "twaldin" banner
+# sub-pixel costs only a few array lookups. Rendered by a mawk process that
+# streams \001-delimited frames; the buffered player paces playback and polls
+# for keypresses (any key skips). After ~0.85s the plasma parts around a green banner
 # that materializes cell-by-cell, then the plasma fully fades out leaving the
 # banner alone. ~3.1s total incl. a >=1.3s static hold on the final banner.
 #
@@ -78,7 +78,7 @@ for ((r = 1; r <= lines; r++)); do
 done
 
 finish() {
-  [[ -n ${AWKC_PID:-} ]] && kill "$AWKC_PID" 2>/dev/null
+  [[ -n ${AWKPID:-} ]] && kill "$AWKPID" 2>/dev/null
   printf '%s' "$final"                    # draw the COMPLETE banner-only frame
   printf '%s[%d;1H' "$E" "$below_row"     # park cursor one row below the banner
   printf '%s[0m%s[?7h%s[?25h' "$E" "$E" "$E"  # restore SGR, autowrap, cursor — NO 2J
@@ -86,7 +86,7 @@ finish() {
 }
 trap 'finish' INT TERM
 
-coproc AWKC { awk -v cols="$cols" -v rows="$lines" -v BW="$bw" -v BH="$bh" '
+exec 3< <(awk -v cols="$cols" -v rows="$lines" -v BW="$bw" -v BH="$bh" '
 BEGIN {
   W = cols + 0; H = rows + 0
   PW = 2*W; PH = 4*H
@@ -187,21 +187,15 @@ END {
     printf "%s", out "\001"
     fflush()
   }
-}' <<<"$payload"; }
-
-# dup the coproc fd: bash closes ${AWKC[0]} when the coproc exits, which would
-# drop the final buffered frames
-exec 3<&"${AWKC[0]}"
+}' <<<"$payload")
+AWKPID=$!
 
 # start: hide cursor, disable autowrap, scroll prompt into scrollback, home
 printf '\033[?25l\033[?7l'
 for ((i = 0; i < lines; i++)); do printf '\n'; done
 printf '\033[H'
 
-while IFS= read -r -d $'\001' -u 3 frame; do
-  printf '%s' "$frame"
-  read -rsn1 -t 0.045 && finish
-done
+animation-playback soh 45 || finish
 exec 3<&-
 
 # static hold on the final banner frame (>=1.2s), skippable. Drawn, briefly

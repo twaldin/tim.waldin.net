@@ -3,8 +3,8 @@
 # A 1D-heat-array fire burns at the bottom of the screen in a 256-color
 # deep-red -> orange -> yellow -> white FORGE gradient while the twaldin banner
 # is hammered out above the flames: dim -> red-hot -> orange -> yellow ->
-# quenched brand green. awk (mawk) streams frames; bash paces them and polls
-# for a skip keypress. Pure bash 5.2 + coreutils + awk.
+# quenched brand green. awk (mawk) streams frames; the buffered player paces
+# them and polls for a skip keypress.
 #
 # END-CONTRACT v3: this is the FIRST thing the visitor's shell runs. The banner
 # text comes from ${BOOT_BANNER_FILE:-/tmp/boot-banner.txt} (plain-text figlet
@@ -84,7 +84,10 @@ printf '\033[H'
 
 trap 'kill_awk; final_frame; show_restore; exit 0' INT TERM
 
-exec 3< <(awk -v COLS="$cols" -v LINES="$lines" -v FR="$FR" -v F="$F" -v FADE="$FADE" '
+exec 3< <(FIRE_DIM="$(draw_banner 90)" FIRE_RED="$(draw_banner 31)" \
+  FIRE_ORANGE="$(draw_banner 33)" FIRE_YELLOW="$(draw_banner 93)" \
+  FIRE_GREEN="$(draw_banner '1;32')" \
+  awk -v COLS="$cols" -v LINES="$lines" -v FR="$FR" -v F="$F" -v FADE="$FADE" '
 BEGIN{
   srand()
   E=sprintf("%c",27)
@@ -148,28 +151,18 @@ BEGIN{
       }
       out=out row
     }
-    # one write per frame: bash reads the whole \n-terminated line and prints
-    # it in a single printf, so escapes never straddle a write boundary
+    if (f >= 32) out = out ENVIRON["FIRE_GREEN"]
+    else if (f >= 25) out = out ENVIRON["FIRE_YELLOW"]
+    else if (f >= 19) out = out ENVIRON["FIRE_ORANGE"]
+    else if (f >= 12) out = out ENVIRON["FIRE_RED"]
+    else if (f >= 5) out = out ENVIRON["FIRE_DIM"]
     printf "%s\n", out; fflush()
   }
 }')
 AWKPID=$!
 
 skipped=0
-f=0
-while IFS= read -r -u3 frame; do
-  printf '%s' "$frame"
-  # banner forge arc: dim -> red-hot -> orange -> bright yellow -> quenched green.
-  # Redrawn every frame so any transient stream-chunking glitch self-heals.
-  if   (( f >= 32 )); then draw_banner '1;32'
-  elif (( f >= 25 )); then draw_banner '93'
-  elif (( f >= 19 )); then draw_banner '33'
-  elif (( f >= 12 )); then draw_banner '31'
-  elif (( f >=  5 )); then draw_banner '90'
-  fi
-  if read -rsn1 -t 0.05; then skipped=1; break; fi
-  f=$(( f + 1 ))
-done
+animation-playback line 50 || skipped=1
 exec 3<&-
 kill_awk
 
