@@ -1,6 +1,3 @@
-// The /x tour: public/x/tour.json, recorded by scripts/record-tour.mjs.
-// { version: 1, cols, rows, frames: [[delayMs, data], ...] }, where delayMs is
-// the wait since the previous frame. The last frame holds the end screen.
 
 export type TourFrame = readonly [delayMs: number, data: string];
 

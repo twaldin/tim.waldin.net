@@ -40,7 +40,6 @@ const ZOMBIE_GRACE_MS = 30_000;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const MAX_CONNECTIONS_PER_IP = 30;
 
-/** ipLeases key: one live lease per IP for each replace-mode kind. */
 const ipKey = (kind, ip) => `${kind} ${ip}`;
 
 class Admission {
@@ -61,8 +60,6 @@ class Admission {
     this.pendingLeases = new Map();
     this.activeLeases = new Map();
     this.zombieLeases = new Map();
-    // ipKey(kind, ip) -> leaseId of the live (pending|active) lease of a
-    // replace-mode kind. Share-mode leases are never indexed; _countOnIp scans.
     this.ipLeases = new Map();
     this.pendingOperations = new Map();
     this.connectionTracker = new Map();
@@ -100,14 +97,6 @@ class Admission {
         }
         return this._restore(persistentLease, { onOutput, onClose, onSuperseded });
       }
-      // Share-mode kinds keep one lease per (kind, persistent id, IP): a
-      // reconnect while the first container is still coming up waits for that
-      // acquisition, then restores the lease like any reconnect (superseding
-      // the first connection) instead of reserving a second slot. Share mode
-      // never evicts, so the waiter cannot displace anyone when it wakes. A
-      // replace-mode reconnect must not wait: the replace path below already
-      // takes the IP's one lease over, and a waiter resuming after a newer
-      // same-IP connection evicted the awaited lease would evict that owner.
       const pendingLease = this.kinds[kind].ip.mode === 'share'
         ? this._findPendingLease(persistentId, kind)
         : null;
@@ -121,15 +110,9 @@ class Admission {
     const ipPolicy = this.kinds[kind].ip;
     let eviction;
     if (ipPolicy.mode === 'replace') {
-      // A same-IP connection of this kind without a matching persistent id
-      // replaces that IP's live lease of the kind. destroy() drops the old
-      // lease from the session count before its first await, so the
-      // replacement inherits the slot; the evicted lease's handle is torn down
-      // before lifecycle.lease starts for it.
       const existingLeaseId = this.ipLeases.get(ipKey(kind, ip));
       if (existingLeaseId) eviction = this._evict(existingLeaseId);
     } else if (this._countOnIp(ip, kind) >= ipPolicy.maxPerIp) {
-      // Checked before capacity: the IP's own limit is the more specific reason.
       return { mode: 'denied', reason: 'ip-cap' };
     }
     if (!eviction && this._capacityUsed() >= this.maxSessions) {
@@ -154,7 +137,6 @@ class Admission {
       state: 'pending',
       acquiredAt: now,
       lastActivity: now,
-      // Resolves once this acquisition has an outcome; same-id reconnects wait on it.
       settled: new Promise((resolve) => { settle = resolve; }),
     };
 
@@ -169,8 +151,6 @@ class Admission {
           this._endPendingLease(lease);
           return { mode: 'denied', reason: 'eviction-failed' };
         }
-        // A later same-IP connection may have evicted this lease during the
-        // teardown; leasing a container for it would only create one to destroy.
         if (lease.state !== 'pending') return { mode: 'denied', reason: 'cancelled' };
       }
 
@@ -201,8 +181,6 @@ class Admission {
     lease.state = 'zombie';
     lease.lastActivity = this.clock();
 
-    // A replace-mode kind keeps at most one zombie per IP. Share-mode zombies
-    // count against maxPerIp instead and never displace another lease.
     if (this.kinds[lease.kind].ip.mode === 'replace') {
       for (const [existingId, entry] of this.zombieLeases) {
         if (entry.lease.ip !== lease.ip || entry.lease.kind !== lease.kind) continue;
@@ -315,7 +293,6 @@ class Admission {
     return this.pendingLeases.size + this.activeLeases.size + this.zombieLeases.size;
   }
 
-  /** Leases of `kind` holding a slot for `ip`: pending, active and zombie. */
   _countOnIp(ip, kind) {
     const holders = [
       ...this.pendingLeases.values(),
@@ -337,7 +314,6 @@ class Admission {
     return null;
   }
 
-  // A lease of another kind never matches: that connection takes the cold path.
   _findPersistentLease(persistentId, kind) {
     for (const lease of this.activeLeases.values()) {
       if (lease.persistentId === persistentId && lease.kind === kind) return lease;
@@ -359,11 +335,6 @@ class Admission {
       lease.state = 'active';
       this.activeLeases.set(lease.leaseId, lease);
 
-      // Another browser on this IP may have leased the replace-mode slot while
-      // the tab was closed; the one-live-lease rule evicts it. Its teardown is
-      // not awaited: the restore stays free of real I/O, so no disconnect,
-      // timer or second restore can interleave before the rebind below hands
-      // over the stream. A failed teardown leaves an orphan for reclaimOrphans.
       if (this.kinds[lease.kind].ip.mode === 'replace') {
         const key = ipKey(lease.kind, lease.ip);
         const otherLeaseId = this.ipLeases.get(key);

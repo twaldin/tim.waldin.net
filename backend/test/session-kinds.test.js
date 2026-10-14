@@ -1,8 +1,5 @@
 'use strict';
 
-// Per-kind connection policy through SessionManager (TWA-114): the handshake's
-// auth.kind selects the idle / no-input windows and whether a command is
-// auto-typed, and every refusal reaches the client as one `session_denied`.
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
@@ -14,8 +11,6 @@ const { makeFakeClock } = require('./fake-clock');
 const { kindsWithWindows } = require('./kinds-with-windows');
 const { SESSION_KINDS, parseSessionKind } = require('../session-kinds');
 
-// Scaled-down windows; embed's idle window sits past its visible no-input
-// window so each timer is told apart.
 const SCALED_KINDS = {
   site: { ...SESSION_KINDS.site, idleMs: 3_000, noInputVisibleMs: 3_000, noInputHiddenMs: 600 },
   embed: { ...SESSION_KINDS.embed, idleMs: 1_500, noInputVisibleMs: 900, noInputHiddenMs: 200 },
@@ -36,10 +31,6 @@ function socket(id, ip, auth) {
 const siteSocket = () => socket('site', '203.0.113.1', { sessionId: 'browser-a' });
 const embedSocket = () => socket('embed', '203.0.113.1', { kind: 'embed', sessionId: 'iframe-1' });
 
-/**
- * SessionManager on mocked timers over an admission that replays a warmed
- * prompt and hands each kind its own cold lease (`H-site`, `H-embed`).
- */
 function managerOnMockTimers(t) {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const writes = [];
@@ -59,7 +50,6 @@ function managerOnMockTimers(t) {
   return { mgr: new SessionManager({ lifecycle, admission, kinds: SCALED_KINDS }), writes };
 }
 
-/** The real SessionManager → Admission → SessionLifecycle over LifecycleFake. */
 function composition(t, maxSessions) {
   const lifecycle = new SessionLifecycle({ docker: new LifecycleFake(), poolSize: 0 });
   const admission = new Admission({ lifecycle, maxSessions, clock: makeFakeClock() });

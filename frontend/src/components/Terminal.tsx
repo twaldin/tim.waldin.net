@@ -152,7 +152,6 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
         xterm.loadAddon(webgl);
       } catch { /* fall back to canvas */ }
 
-      // An embedded terminal must never navigate or rewrite its frame's URL.
       const oscUrlDisposable = embedded ? null : xterm.parser.registerOscHandler(9999, (data) => {
         try {
           const path = '/' + data.replace(/^\/+/, '');
@@ -262,8 +261,7 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
         currentTerminalElement.style.transform = "";
         fitAddon.fit();
         if (!embedded) return;
-        // Glyph advances snap differently per platform and renderer (Linux
-        // hinting rounds 6.6 px up to 7), so check the fitted grid itself.
+        // DOM and WebGL renderers round cell widths differently, so check the fitted grid itself.
         const minCols = embedMinCols(window.innerWidth);
         let fontSize = xterm.options.fontSize ?? MIN_EMBED_FONT_SIZE;
         while (xterm.cols < minCols && fontSize > MIN_EMBED_FONT_SIZE) {

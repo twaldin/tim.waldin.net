@@ -99,24 +99,22 @@ function storedSessionId(): SessionIdSource {
       try {
         const stored = localStorage.getItem(SESSION_ID_KEY);
         if (stored) return stored;
-      } catch { /* storage unavailable */ }
+      } catch {}
       memory ??= crypto.randomUUID();
       try {
         localStorage.setItem(SESSION_ID_KEY, memory);
-      } catch { /* storage unavailable */ }
+      } catch {}
       return memory;
     },
     forget: () => {
       memory = null;
       try {
         localStorage.removeItem(SESSION_ID_KEY);
-      } catch { /* storage unavailable */ }
+      } catch {}
     },
   };
 }
 
-// Embed: memory only, so two embeds in one browser hold separate leases while
-// a reconnect from the same embed can still resume its shell.
 function ephemeralSessionId(): SessionIdSource {
   let id: string | null = null;
   return {
@@ -138,7 +136,6 @@ const SESSION_KINDS: Record<SessionKind, {
       sessionId,
     }),
   },
-  // No initCommand: the embed prints its own hint instead of the boot animation.
   embed: {
     sessionIds: ephemeralSessionId,
     auth: (sessionId) => ({ kind: 'embed', sessionId }),
@@ -249,7 +246,6 @@ export function createWebSocketManager({
       sessionStatusCallback?.(status);
     });
 
-    // The server disconnects right after a denial.
     socket.on('session_denied', (payload: { reason?: unknown } | undefined) => {
       const reason = payload?.reason;
       deniedCallback?.(isDenialReason(reason) ? reason : 'unavailable');
@@ -284,8 +280,6 @@ export function createWebSocketManager({
     });
 
     socket.on('session_end', () => {
-      // Container exited (e.g. user typed 'exit'). Forget the session ID so
-      // the next reconnect gets a fresh container.
       sessionIds.forget();
       sessionEndCallback?.();
       // Disconnect so the caller can call connect() again for a fresh session.

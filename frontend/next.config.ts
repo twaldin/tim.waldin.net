@@ -1,6 +1,5 @@
 import type { NextConfig } from "next";
 
-// One builder for both policies so /x differs from the rest only in who may frame it.
 const contentSecurityPolicy = (frameAncestors: string) => [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",

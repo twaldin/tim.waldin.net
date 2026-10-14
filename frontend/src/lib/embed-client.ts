@@ -26,8 +26,6 @@ interface EmbedClientOptions {
   onChange: (state: EmbedState) => void;
 }
 
-// Runs the /x embed: the tour until a gesture, then a live embed session,
-// with every phase change decided by embed-machine's transition().
 export function createEmbedClient({ root, terminal, onChange }: EmbedClientOptions): EmbedClient {
   let state = initialEmbedState;
   let intersecting = true;
@@ -86,7 +84,6 @@ export function createEmbedClient({ root, terminal, onChange }: EmbedClientOptio
     onChange(state);
   };
 
-  // A cold lease replays its warmed prompt as output before session_status.
   manager.onOutput((data) => {
     if (state.phase === 'connecting') dispatch({ type: 'connected' });
     if (state.phase === 'live') terminal.writeToTerminal(data);
@@ -94,13 +91,11 @@ export function createEmbedClient({ root, terminal, onChange }: EmbedClientOptio
   manager.onSessionStatus(() => dispatch({ type: 'connected' }));
   manager.onDenied((reason) => {
     dispatch({ type: 'denied', reason });
-    // Drop the denied socket now so a quick retry gesture opens a new one.
     manager.disconnect();
   });
   manager.onDisconnect(() => dispatch({ type: 'disconnected' }));
   manager.onSessionEnd(() => dispatch({ type: 'disconnected' }));
   manager.onError(() => {
-    // Disconnecting also cancels the manager's own reconnect attempt.
     manager.disconnect();
     dispatch({ type: 'disconnected' });
   });
@@ -112,7 +107,6 @@ export function createEmbedClient({ root, terminal, onChange }: EmbedClientOptio
     terminal.focus();
   };
   const handleVisibility = () => dispatch({ type: 'visibilityChanged', hidden: isHidden() });
-  // Inside X's timeline, scrolled out of view counts as hidden.
   const observer = new IntersectionObserver((entries) => {
     intersecting = entries[entries.length - 1].isIntersecting;
     manager.reportVisibility();

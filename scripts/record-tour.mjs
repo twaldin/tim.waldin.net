@@ -1,12 +1,4 @@
 #!/usr/bin/env node
-// Records the /x embed's tour (frontend/public/x/tour.json) from a real
-// backend over Socket.IO: welcome (intro animation skipped like a visitor's
-// keypress would), then typed commands, with the output's real timings.
-//
-//   node scripts/record-tour.mjs --url http://localhost:3001
-//
-// Options: --url, --out, --cols, --rows, --commands a,b,c, --max-bytes.
-// Needs `pnpm install` in frontend/ (socket.io-client is resolved from there).
 
 import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
@@ -21,11 +13,8 @@ const { values: args } = parseArgs({
   options: {
     url: { type: 'string', default: 'http://localhost:3001' },
     out: { type: 'string', default: `${repoRoot}frontend/public/x/tour.json` },
-    // The grid a live 480x480 card fits.
     cols: { type: 'string', default: '72' },
     rows: { type: 'string', default: '33' },
-    // projects last: its OSC 9998 scrolls the view to its first line, and only
-    // a visitor's keystroke scrolls back down, which the tour never sends.
     commands: { type: 'string', default: 'welcome,about,projects' },
     'max-bytes': { type: 'string', default: String(200 * 1024) },
   },
@@ -36,15 +25,10 @@ const rows = Number(args.rows);
 const commands = args.commands.split(',').map((c) => c.trim()).filter(Boolean);
 const maxBytes = Number(args['max-bytes']);
 
-// Chunks closer together than this play as one frame; longer silences are
-// capped so the loop never sits on a static screen.
 const MERGE_MS = 30;
 const MAX_DELAY_MS = 2500;
 const END_HOLD_MS = 4000;
 const TYPING_DELAYS_MS = [110, 85, 140, 95, 120, 75, 105, 130, 90];
-// The site's private navigation and theme OSC codes (9999 URL sync, 9997
-// navigation, 9996/9995 theme flicker and persistence) must not replay in the
-// embed. 9998 (scroll to top) stays: projects uses it to show its first line.
 const PRIVATE_OSC = /\x1b\]999[5679];[^\x07\x1b]*(?:\x07|\x1b\\)/g;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -106,7 +90,6 @@ async function type(socket, text) {
 const socket = io(args.url, {
   transports: ['websocket'],
   reconnection: false,
-  // '' is the backend's no-op initCommand: no boot animation on connect.
   auth: { initCommand: '', sessionId: randomUUID() },
 });
 

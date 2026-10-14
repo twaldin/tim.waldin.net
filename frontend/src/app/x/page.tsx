@@ -21,7 +21,6 @@ export const metadata: Metadata = {
   },
   // Next's player descriptor requires a streamUrl, which an interactive
   // terminal does not have; the player tags go through `other` instead.
-  // Setting the card here replaces the root layout's summary_large_image.
   twitter: { card: 'player', title, description, players: [] },
   other: {
     'twitter:player': PLAYER_URL,

@@ -288,8 +288,6 @@ test('a disconnected session keeps its slot through the grace window and restore
   assert.equal((await admission.tryAcquire('203.0.113.41', {})).mode, 'cold');
 });
 
-// Per-kind IP policy (TWA-114): a site connection replaces its IP's site
-// lease; embeds share an IP up to four leases and never displace anything.
 
 test('a mixed-kind burst reserves exactly maxSessions slots; a site replacement at capacity inherits the evicted slot', async () => {
   const lifecycle = new FakeLifecycle({ delay: 20 });
@@ -496,7 +494,6 @@ test('an embed reconnecting while its first container is still pending takes tha
   assert.equal(lifecycle.leaseCalls.length, 1);
   assert.deepEqual(lifecycle.rebindCalls.map(({ handleId }) => handleId), ['handle-1']);
 
-  // The iframe holds one of the IP's four embed slots, not two.
   const others = await Promise.all(['iframe-2', 'iframe-3', 'iframe-4', 'iframe-5'].map((persistentId) =>
     admission.tryAcquire(ip, { kind: 'embed', persistentId })));
   assert.deepEqual(others.map(({ mode, reason }) => reason ?? mode), ['cold', 'cold', 'cold', 'ip-cap']);
@@ -513,8 +510,6 @@ test('after a reconnect during a pending acquisition, a later restore returns th
   });
   const reconnect = admission.tryAcquire(ip, { kind: 'embed', persistentId: 'iframe-1' });
   const [firstResult, reconnectResult] = await Promise.all([first, reconnect]);
-  // As SessionManager does for a socket that left during the acquire: the
-  // lease is zombified unless a later connection already took it over.
   if (!firstSuperseded) admission.zombify(firstResult.lease.leaseId);
   admission.zombify(reconnectResult.lease.leaseId);
 
@@ -544,7 +539,6 @@ test('a site reconnect during a held acquisition never evicts the newer connecti
     const c = admission.tryAcquire(ip, { persistentId: 'c' });
     releaseA();
     const [, bResult, cResult] = await Promise.all([a, b, c]);
-    // As SessionManager does when a socket left during its acquire.
     if (bLeaves && bResult.mode === 'cold') admission.zombify(bResult.lease.leaseId);
 
     assert.equal(cResult.mode, 'cold', `bLeaves=${bLeaves}`);

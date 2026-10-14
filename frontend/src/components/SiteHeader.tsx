@@ -83,7 +83,6 @@ export default function SiteHeader() {
     setCurrentMode(nextMode);
   };
 
-  // /x is the X Player Card iframe: the terminal alone, no site chrome.
   if (pathname === '/x') return null;
 
   return (

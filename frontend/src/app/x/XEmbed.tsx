@@ -13,7 +13,6 @@ import type { TerminalKey, TerminalRef } from '@/components/Terminal';
 import { createEmbedClient, type EmbedClient } from '@/lib/embed-client';
 import { initialEmbedState, type EmbedState } from '@/lib/embed-machine';
 
-// xterm references browser globals (`self`) at module level — skip SSR.
 const Terminal = dynamic(() => import('@/components/Terminal'), { ssr: false });
 
 const EXTRA_KEYS: ReadonlyArray<readonly [label: string, key: TerminalKey | 'ctrl']> = [
@@ -67,7 +66,6 @@ function statusLine(state: EmbedState): string {
   }
 }
 
-// Sticky ctrl turns the next typed character into its control code (c → ^C).
 function withCtrl(data: string): string {
   const code = data.toUpperCase().charCodeAt(0);
   return data.length === 1 && code >= 64 && code <= 95 ? String.fromCharCode(code - 64) : data;
@@ -77,7 +75,6 @@ export default function XEmbed() {
   const rootRef = useRef<HTMLDivElement>(null);
   const clientRef = useRef<EmbedClient | null>(null);
   const ctrlArmedRef = useRef(false);
-  // xterm loads in its own chunk; a tap or key before then still starts a shell.
   const earlyGestureRef = useRef(false);
   const markEarlyGesture = useCallback(() => { earlyGestureRef.current = true; }, []);
   const [terminal, setTerminal] = useState<TerminalRef | null>(null);

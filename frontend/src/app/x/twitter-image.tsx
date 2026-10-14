@@ -3,13 +3,11 @@ import { join } from 'path';
 import { ImageResponse } from 'next/og';
 import { DEFAULT_DARK_THEME, themes } from '@/config/themes';
 
-// X shows this in place of the player, so it matches the player's square shape.
 export const alt = 'twaldin — a live terminal you can play in the post';
 export const size = { width: 1200, height: 1200 };
 export const contentType = 'image/png';
 const defaultTheme = themes[DEFAULT_DARK_THEME];
 
-// figlet -f DOS_Rebel "twaldin", the banner app/opengraph-image.tsx bakes in.
 const FIGLET_TWALDIN = [
   '  █████                              ████      █████  ███            ',
   ' ░░███                              ░░███     ░░███  ░░░             ',

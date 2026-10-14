@@ -17,7 +17,6 @@ const DENIAL_MESSAGES: Record<DenialReason, string> = {
 export default function Home() {
   const wsManagerRef = useRef<WebSocketManager | null>(null);
   const terminalRef = useRef<TerminalRef | null>(null);
-  // A denial can arrive before the Terminal chunk has mounted.
   const pendingNoticeRef = useRef<string | null>(null);
   const firstOutputSeenRef = useRef(false);
   const firstPromptSeenRef = useRef(false);

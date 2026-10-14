@@ -64,9 +64,6 @@ const sessionManager = new SessionManager();
 // Per-socket command buffer for audit logging (raw chars → full commands).
 const cmdBufs = new Map();
 
-// Socket.IO connection handling. All admission policy (rate limit, per-IP leases,
-// persistent restore, capacity, zombies) lives behind the SessionManager →
-// Admission seam; server.js is now just socket wiring + audit logging.
 io.on('connection', (socket) => {
   const clientIP = socket.handshake.headers['x-real-ip'] || socket.handshake.address;
   const eventBucket = { tokens: EVENT_BUCKET_CAPACITY, updatedAt: Date.now() };

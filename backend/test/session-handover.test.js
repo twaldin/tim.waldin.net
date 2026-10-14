@@ -32,7 +32,6 @@ function makeManager(t, { poolSize = 5 } = {}) {
   const docker = new LifecycleFake();
   const lifecycle = new SessionLifecycle({ docker, poolSize });
   const admission = new Admission({ lifecycle, maxSessions: 40, clock });
-  // The test owns this table; a connection captures its kind's row at connect.
   const kinds = kindsWithWindows();
   const mgr = new SessionManager({ lifecycle, admission, kinds });
   t.after(() => { for (const state of mgr.conns.values()) mgr._clearTimers(state); });
@@ -238,8 +237,6 @@ test('a tab that resumes a cold lease whose socket left, before that acquire\'s 
 
 test('the first tab left open: its idle and no-input timers cannot end the shared shell', async (t) => {
   const { docker, lifecycle, mgr, kinds } = makeManager(t);
-  // The first tab's windows, scaled down (ms stand in for s); the second tab
-  // connects with the never-due windows so only the first tab's timers are due here.
   kinds.site = kindsWithWindows(40).site;
   const first = fakeSocket(mgr, 'tab-1', 'browser-a');
   await mgr.handleConnect(first);

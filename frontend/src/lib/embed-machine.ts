@@ -2,8 +2,6 @@ import type { DenialReason } from './websocket';
 
 export type BusyReason = Exclude<DenialReason, 'unavailable'>;
 
-// `attempt` counts automatic retries since the last gesture; connecting
-// carries it so a denial puts it back into busy.
 export type EmbedPhase =
   | { phase: 'tour' }
   | { phase: 'connecting'; attempt: number }
@@ -11,7 +9,6 @@ export type EmbedPhase =
   | { phase: 'busy'; reason: BusyReason; attempt: number }
   | { phase: 'ended' };
 
-// hidden: the page is hidden or the embed is scrolled out of view.
 export type EmbedState = EmbedPhase & { hidden: boolean };
 
 export type EmbedEvent =

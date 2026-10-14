@@ -36,7 +36,6 @@ function makeManager() {
 }
 
 // Seed a controller conn state (the fields the timer path reads) and arm the timer.
-// 60ms stands in for 60s hidden, 300ms for 300s visible.
 function seedConn(mgr, sid, { pageVisible = undefined, hasReceivedInput = false } = {}) {
   mgr.conns.set(sid, {
     socket: { emit() {}, disconnect() {} },

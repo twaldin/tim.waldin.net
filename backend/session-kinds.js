@@ -1,12 +1,5 @@
 'use strict';
 
-// Per-kind session policy: the main site and the X Player Card embed. Every
-// behaviour that differs between kinds is a field here; SessionManager reads
-// the timers and runsInitCommand, Admission reads `ip`.
-//   ip.mode 'replace': one live lease per IP; a newcomer evicts it.
-//   ip.mode 'share':   up to maxPerIp leases per IP (pending + active + zombie);
-//                      never evicts, so strangers behind one carrier NAT
-//                      cannot kick each other.
 const SESSION_KINDS = Object.freeze({
   site: Object.freeze({
     idleMs: 300_000,

@@ -21,7 +21,6 @@ const DISK_CHECK_INTERVAL_MS = 2 * 1000;
 const MAX_WRITABLE_BYTES = 1024 * 1024 * 1024;
 const DISK_LIMIT_MESSAGE = '\r\n[session closed: disk usage over 1 GB]\r\n';
 
-/** Admission denial reason -> the `session_denied` reason the client sees. */
 const DENIED_REASONS = { full: 'capacity', 'ip-cap': 'ip-cap' };
 
 class SessionManager {
@@ -29,7 +28,6 @@ class SessionManager {
     this.lifecycle = lifecycle || new SessionLifecycle({ poolSize: 5 });
     this.admission = admission
       || new Admission({ lifecycle: this.lifecycle, maxSessions: 40, kinds });
-    // Per-kind idle / no-input windows; each connection captures its row at connect.
     this.kinds = kinds;
 
     // socket.id -> per-connection controller state
@@ -52,7 +50,6 @@ class SessionManager {
     const policy = this.kinds[kind];
     let initCommand = typeof socket.handshake.auth?.initCommand === 'string'
       ? socket.handshake.auth.initCommand : undefined;
-    // '' is _maybeRunInitCommand's no-op sentinel.
     if (!policy.runsInitCommand) initCommand = '';
     const persistentId = typeof socket.handshake.auth?.sessionId === 'string'
       ? socket.handshake.auth.sessionId : undefined;
@@ -226,7 +223,6 @@ class SessionManager {
     this._destroy(socketId);
   }
 
-  // Denied before the conn got a lease; the client renders `reason`.
   _deny(socket, reason) {
     socket.emit('session_denied', { reason });
     socket.disconnect();
