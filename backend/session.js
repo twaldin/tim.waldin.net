@@ -21,13 +21,27 @@ const DISK_CHECK_INTERVAL_MS = 2 * 1000;
 const MAX_WRITABLE_BYTES = 1024 * 1024 * 1024;
 const DISK_LIMIT_MESSAGE = '\r\n[session closed: disk usage over 1 GB]\r\n';
 
+function envCount(name, fallback, min) {
+  const raw = process.env[name];
+  if (raw === undefined) return fallback;
+  const n = raw.trim() === '' ? NaN : Number(raw);
+  if (!Number.isSafeInteger(n) || n < min) {
+    throw new RangeError(`${name} must be an integer >= ${min}, got ${JSON.stringify(raw)}`);
+  }
+  return n;
+}
+
+// Production sets neither; bench/capacity raises the cap so it never binds.
+const POOL_SIZE = envCount('POOL_SIZE', 5, 0);
+const MAX_SESSIONS = envCount('MAX_SESSIONS', 40, 1);
+
 const DENIED_REASONS = { full: 'capacity', 'ip-cap': 'ip-cap' };
 
 class SessionManager {
   constructor({ lifecycle, admission, kinds = SESSION_KINDS } = {}) {
-    this.lifecycle = lifecycle || new SessionLifecycle({ poolSize: 5 });
+    this.lifecycle = lifecycle || new SessionLifecycle({ poolSize: POOL_SIZE });
     this.admission = admission
-      || new Admission({ lifecycle: this.lifecycle, maxSessions: 40, kinds });
+      || new Admission({ lifecycle: this.lifecycle, maxSessions: MAX_SESSIONS, kinds });
     this.kinds = kinds;
 
     // socket.id -> per-connection controller state
