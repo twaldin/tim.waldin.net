@@ -129,3 +129,11 @@ awk -v secs="$SECS" 'FILENAME ~ /classes$/ { cls[$1] = $2; next }
     key = c " " $3; d[key] += ($4 - t0[k]); n[key]++ }
   END { for (k in d) printf "%-40s %5d procs %6.3f\n", k, n[k], d[k] / 100 / secs }' \
   "$tmp/classes" "$tmp/procs0" "$tmp/procs1" | sort -k5 -n -r | head -15
+awk -v secs="$SECS" '
+  FILENAME ~ /cpu0$/ { if ($1 == "/init") i0 = $2; next }
+  FILENAME ~ /cpu1$/ { if ($1 == "/init") i1 = $2; next }
+  FILENAME ~ /procs0$/ { t0[$1 " " $3] = $4; next }
+  $2 == "/init" && ($1 " " $3) in t0 { alive += $4 - t0[$1 " " $3] }
+  END { printf "init: %.3f cores in processes alive throughout the window, %.3f in processes that started or exited inside it (runc, shims of destroyed containers)\n",
+    alive / 100 / secs, (i1 - i0) / 1e6 / secs - alive / 100 / secs }' \
+  "$tmp/cpu0" "$tmp/cpu1" "$tmp/procs0" "$tmp/procs1"

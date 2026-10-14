@@ -59,6 +59,7 @@ const ECHO_TIMEOUT_MS = 5000;
 const MAX_SPAWN_PER_S = 4;
 const MAX_LOADGEN_LAG_MS = 50;
 const CALIBRATION_REPS = 5;
+const MAX_LOGGED_FAILURES = 20;
 
 // The zsh prompt is ready for input: Oh My Posh's title, then zle-line-init
 // enabling keypad and bracketed-paste mode. Nothing but zsh sets the title.
@@ -152,6 +153,7 @@ class Session {
     this.tEnd = null;
     this.bytesOut = 0;
     this.bytesIn = 0;
+    this.tail = '';
     this.commands = 0;
     this.failure = null;
     this.leaving = false;
@@ -182,6 +184,7 @@ class Session {
     const t = now();
     if (this.tFirstOutput === null) this.tFirstOutput = t;
     this.bytesOut += Buffer.byteLength(data);
+    this.tail = (this.tail + data).slice(-300);
     for (const w of [...this.waiters]) {
       if (w.kind === 'any') {
         this._settle(w, { t, match: null, rest: '' });
@@ -262,6 +265,10 @@ class Session {
     if (this.failure || this.leaving) return;
     this.failure = reason;
     errors.push({ t: now(), kind: this.kind, reason: reason.replace(/[0-9a-f]{12,}/g, '<id>') });
+    if (errors.length <= MAX_LOGGED_FAILURES) {
+      log(`${this.kind} ${this.initCommand} failed after ${((now() - this.t0) / 1000).toFixed(1)}s: ${reason};`
+        + ` ${this.bytesOut} bytes, ends ${JSON.stringify(this.tail)}`);
+    }
     this.close();
   }
 
@@ -380,6 +387,9 @@ function keepAlive(kind, initCommand, flow) {
 function readCgroup(file) {
   return fs.readFileSync(`${opts.cgroup}/${file}`, 'utf8');
 }
+
+const [quota, period] = readCgroup('cpu.max').split(' ').map(Number);
+const hostCpus = quota / period;
 
 function keyed(text) {
   const out = {};
@@ -528,7 +538,7 @@ async function evaluate(n, start, mStart, end) {
     maxWorkingSetMiB: Math.round(Math.max(...workingSets) / MiB),
     maxSwapMiB: Math.round(Math.max(...measured.map((x) => x.swap)) / MiB),
     maxKernelMiB: Math.round(Math.max(...measured.map((x) => x.kernel)) / MiB),
-    cpuUtil: Number(((m1.cpuUsec - m0.cpuUsec) / span / 3).toFixed(3)),
+    cpuUtil: Number(((m1.cpuUsec - m0.cpuUsec) / span / hostCpus).toFixed(3)),
     cpuThrottledShare: Number(((m1.throttledUsec - m0.throttledUsec) / span).toFixed(3)),
     cpuPressureSome: Number(((m1.cpuSomeUsec - m0.cpuSomeUsec) / span).toFixed(3)),
     memPressureSome: Number(((m1.memSomeUsec - m0.memSomeUsec) / span).toFixed(3)),
