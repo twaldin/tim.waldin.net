@@ -106,7 +106,7 @@ Users can run destructive commands like `rm -rf /` or fork bombs - they only aff
 `bench/capacity/run.sh` measures N*, the most concurrent visitor sessions at which every SLO holds, on a Docker-in-Docker box on deckbox shaped like the VPS (3 CPU, 3.8 GB, 2 GB swap, Docker 29.3.0, containerd 2.2.2). It replays the production visitor mix with a memory hog and a fork abuser alive, and leaves out nginx, Next.js and agentelo. A deckbox core runs about 1.67 times faster than a VPS vCPU, so `--cpus 1.8` stands in for the VPS's CPU. Runs take a global lock and go one at a time; read the script header before running it.
 
 ```bash
-offload --cpus 4 --mem 8G --fetch bench/capacity/results -- bash bench/capacity/run.sh --lane 0 --repeat 3
+offload --cpus 4 --mem 8G --fetch bench/capacity/results -- env CAPACITY_COMMIT=$(git rev-parse HEAD) bash bench/capacity/run.sh --lane 0 --repeat 3
 ```
 
 The 100-session cap sits below the 133 to 145 sessions the current stack carried at `--cpus 1.8`, which leaves room for the services the harness omits.
