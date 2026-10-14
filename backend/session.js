@@ -19,11 +19,14 @@ const POOL_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const DISK_CHECK_INTERVAL_MS = 2 * 1000;
 const MAX_WRITABLE_BYTES = 1024 * 1024 * 1024;
 const DISK_LIMIT_MESSAGE = '\r\n[session closed: disk usage over 1 GB]\r\n';
+// Production sets neither; bench/capacity raises the cap so it never binds.
+const POOL_SIZE = Number(process.env.POOL_SIZE ?? 5);
+const MAX_SESSIONS = Number(process.env.MAX_SESSIONS ?? 40);
 
 class SessionManager {
   constructor({ lifecycle, admission } = {}) {
-    this.lifecycle = lifecycle || new SessionLifecycle({ poolSize: 5 });
-    this.admission = admission || new Admission({ lifecycle: this.lifecycle, maxSessions: 40 });
+    this.lifecycle = lifecycle || new SessionLifecycle({ poolSize: POOL_SIZE });
+    this.admission = admission || new Admission({ lifecycle: this.lifecycle, maxSessions: MAX_SESSIONS });
 
     // Idle kill: no USER INPUT for this long.
     this.sessionTimeout = 5 * 60 * 1000;
