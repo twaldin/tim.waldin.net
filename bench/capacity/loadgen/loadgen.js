@@ -11,10 +11,10 @@ const { performance } = require('node:perf_hooks');
 const { io } = require('socket.io-client');
 
 // Judged per step. promptAddedP95Ms is connect-to-prompt after the initCommand
-// minus that command's unloaded time (see calibrate): boot and welcome type
-// for ~8 s by design, every other initCommand finishes in under 0.4 s idle.
-// Memory headroom counts the working set, memory.current minus inactive file
-// pages, which the kernel reclaims before it swaps or OOM-kills.
+// minus that command's frozen unloaded time. boot and welcome take ~8 s by
+// design. Memory headroom counts memory.current minus inactive file pages,
+// the cAdvisor working-set convention. Active cache and kernel memory still
+// count; swap, raw memory and pressure are reported separately.
 const SLO = Object.freeze({
   firstOutputP95Ms: 2000,
   promptAddedP95Ms: 6000,
@@ -58,7 +58,11 @@ const ECHO_TIMEOUT_MS = 5000;
 // visitors (250 / 64 s), so no ramp is a burst a real day would not see.
 const MAX_SPAWN_PER_S = 4;
 const MAX_LOADGEN_LAG_MS = 50;
-const CALIBRATION_REPS = 5;
+// Median of five baseline-host runs per command, measured before any normal
+// visitors or hostiles on deckbox, 2026-10-14. Frozen across experiments.
+const idleMs = Object.freeze({
+  boot: 7685, welcome: 8200, blog: 77, about: 93, resume: 308, projects: 405, contact: 412,
+});
 const MAX_LOGGED_FAILURES = 20;
 
 // The zsh prompt is ready for input: Oh My Posh's title, then zle-line-init
@@ -71,12 +75,12 @@ const CONTAINER_ID = /containers\/([0-9a-f]{64})/;
 const MEMORY_HOG = "perl -e 'open(M,\"/sys/fs/cgroup/memory.max\");$m=<M>;"
   + 'while(1){open(C,"/sys/fs/cgroup/memory.current");$c=<C>;close C;'
   + "last if $c>$m-24*2**20;push @a,\"x\"x(4*2**20)}sleep 1e9'";
-const FORK_BOMB = 'b(){ b|b& };b';
+const CPU_FORK_ABUSER = "zsh -fc 'for i in {1..100}; do (while :; do :; done) & done; while :; do :; done'";
 
 function parseArgs(argv) {
   const opts = {
     url: null, steps: [], warmS: 30, measureS: 50, bisect: 0,
-    seed: 1, cgroup: null, out: null, mark: null, hostiles: true,
+    seed: 1, cgroup: null, out: null, mark: null,
   };
   for (let i = 2; i < argv.length; i += 2) {
     const [key, value] = [argv[i], argv[i + 1]];
@@ -90,12 +94,12 @@ function parseArgs(argv) {
       case '--cgroup': opts.cgroup = value; break;
       case '--out': opts.out = value; break;
       case '--mark': opts.mark = value; break;
-      case '--hostiles': opts.hostiles = value !== '0'; break;
+      case '--events': opts.events = value; break;
       default: throw new Error(`unknown option ${key}`);
     }
   }
-  if (!opts.url || !opts.steps.length || !opts.cgroup || !opts.out) {
-    throw new Error('required: --url --steps --cgroup --out');
+  if (!opts.url || !opts.steps.length || !opts.cgroup || !opts.out || !opts.events) {
+    throw new Error('required: --url --steps --cgroup --out --events');
   }
   if (opts.steps.some((n) => !Number.isInteger(n) || n <= WORKLOAD.probes)) {
     throw new Error(`every step must be an integer above the ${WORKLOAD.probes} probes`);
@@ -186,14 +190,11 @@ class Session {
     this.bytesOut += Buffer.byteLength(data);
     this.tail = (this.tail + data).slice(-300);
     for (const w of [...this.waiters]) {
-      if (w.kind === 'any') {
-        this._settle(w, { t, match: null, rest: '' });
-      } else if (w.kind === 'match') {
-        w.window += data;
-        const m = w.re.exec(w.window);
-        if (m) this._settle(w, { t, match: m, rest: w.window.slice(m.index + m[0].length) });
-        else w.window = w.window.slice(-512);
-      }
+      if (w.kind !== 'match') continue;
+      w.window += data;
+      const m = w.re.exec(w.window);
+      if (m) this._settle(w, { t, match: m, rest: w.window.slice(m.index + m[0].length) });
+      else w.window = w.window.slice(-512);
     }
   }
 
@@ -223,10 +224,6 @@ class Session {
     const m = re.exec(seed);
     if (m) return Promise.resolve({ t: now(), match: m, rest: seed.slice(m.index + m[0].length) });
     return this._wait({ kind: 'match', re, window: seed }, timeoutMs, label);
-  }
-
-  waitAny(timeoutMs) {
-    return this._wait({ kind: 'any' }, timeoutMs, null);
   }
 
   sleep(ms) {
@@ -338,7 +335,7 @@ async function probe(s) {
   while (!stopping) {
     await s.sleep(WORKLOAD.probeIntervalMs * (0.8 + 0.4 * rand()));
     const sent = now();
-    const echo = s.waitAny(ECHO_TIMEOUT_MS);
+    const echo = s.waitFor(key === 'x' ? /x/ : /\x08 \x08/, ECHO_TIMEOUT_MS, null);
     s.input(key);
     const got = await echo;
     echoes.push({ t: sent, ms: got ? got.t - sent : Infinity });
@@ -347,13 +344,15 @@ async function probe(s) {
 }
 
 const hostileContainers = new Map();
+const hostileIds = new Set();
 
-async function hostile(s, attack) {
+async function hostile(s, role, attack) {
   await reachPrompt(s);
   const idShown = s.waitFor(CONTAINER_ID, COMMAND_TIMEOUT_MS, 'hostile container id');
   s.input('grep -o -m1 "containers/[0-9a-f]*" /proc/self/mountinfo\r');
   const found = await idShown;
-  hostileContainers.set(s, found.match[1]);
+  hostileContainers.set(role, found.match[1]);
+  hostileIds.add(found.match[1]);
   await s.waitFor(PROMPT_READY, COMMAND_TIMEOUT_MS, 'hostile prompt', found.rest);
   s.input(`${attack}\r`);
   while (!stopping) {
@@ -405,14 +404,6 @@ function psiTotal(text, kind) {
   return Number(/total=(\d+)/.exec(line)[1]);
 }
 
-function oomKills(dir) {
-  try {
-    return keyed(fs.readFileSync(`${dir}/memory.events`, 'utf8')).oom_kill;
-  } catch {
-    return 0;
-  }
-}
-
 function sample() {
   const stat = keyed(readCgroup('memory.stat'));
   const cpu = keyed(readCgroup('cpu.stat'));
@@ -422,8 +413,20 @@ function sample() {
   for (const name of fs.readdirSync(`${opts.cgroup}/docker`)) {
     if (/^[0-9a-f]{64}$/.test(name)) containers++;
   }
-  const hostileOom = [...hostileContainers.values()]
-    .reduce((sum, id) => sum + oomKills(`${opts.cgroup}/docker/${id}`), 0);
+  const hostile = {};
+  for (const [role, id] of hostileContainers) {
+    try {
+      const dir = `${opts.cgroup}/docker/${id}`;
+      hostile[role] = {
+        id,
+        memory: Number(fs.readFileSync(`${dir}/memory.current`, 'utf8')),
+        pids: Number(fs.readFileSync(`${dir}/pids.current`, 'utf8')),
+        cpuUsec: keyed(fs.readFileSync(`${dir}/cpu.stat`, 'utf8')).usage_usec,
+      };
+    } catch {
+      hostile[role] = null;
+    }
+  }
   samples.push({
     t: now(),
     current: Number(readCgroup('memory.current')),
@@ -434,7 +437,7 @@ function sample() {
     kernel: stat.kernel,
     inactiveFile: stat.inactive_file,
     oomKill: keyed(readCgroup('memory.events')).oom_kill,
-    hostileOom,
+    hostile,
     cpuUsec: cpu.usage_usec,
     throttledUsec: cpu.throttled_usec,
     cpuSomeUsec: psiTotal(cpuPressure, 'some'),
@@ -466,7 +469,15 @@ async function backendUptime() {
 }
 
 let lastUptime = 0;
-let idleMs = {};
+
+function dockerEvents(start, end) {
+  const text = fs.readFileSync(opts.events, 'utf8');
+  return text.slice(0, text.lastIndexOf('\n') + 1).split('\n').filter(Boolean)
+    .map((line) => JSON.parse(line)).filter((event) => {
+      const t = event.timeNano / 1e6 - performance.timeOrigin;
+      return t >= start && t < end;
+    });
+}
 
 async function evaluate(n, start, mStart, end) {
   const inWindow = (t) => t >= mStart && t < end;
@@ -486,6 +497,11 @@ async function evaluate(n, start, mStart, end) {
   const stepErrors = errors.filter((e) => e.t >= start && e.t < end && e.kind !== 'hostile');
   const errorKinds = {};
   for (const e of stepErrors) errorKinds[e.reason] = (errorKinds[e.reason] || 0) + 1;
+  const events = dockerEvents(start, end);
+  if (events.some((e) => e.Action === 'die' && e.Actor.Attributes.name === 'term-backend')) {
+    stepErrors.push({ reason: 'backend crashed' });
+    errorKinds['backend crashed'] = 1;
+  }
 
   const uptime = await backendUptime();
   if (uptime === null || uptime < lastUptime) {
@@ -498,7 +514,9 @@ async function evaluate(n, start, mStart, end) {
   const measured = stepSamples.filter((x) => inWindow(x.t));
   const first = stepSamples[0];
   const last = stepSamples[stepSamples.length - 1];
-  const oom = (last.oomKill - first.oomKill) - Math.max(0, last.hostileOom - first.hostileOom);
+  const oomEvents = events.filter((e) => e.Action === 'oom');
+  const hostileOoms = oomEvents.filter((e) => hostileIds.has(e.Actor.ID)).length;
+  const oom = Math.max(oomEvents.length - hostileOoms, last.oomKill - first.oomKill - hostileOoms);
   const workingSets = measured.map((x) => x.current - x.inactiveFile);
   const headroom = Math.min(...measured.map((x) => 1 - (x.current - x.inactiveFile) / x.max));
   const m0 = measured[0];
@@ -512,6 +530,10 @@ async function evaluate(n, start, mStart, end) {
   const promptAddedP95 = quantile(promptAdded, 0.95);
   const echoP95 = quantile(echo, 0.95);
   const lagP99 = quantile(lag, 0.99) ?? 0;
+  const hostileMemory = Math.min(...measured.map((x) => x.hostile.memory?.memory ?? 0));
+  const hostilePids = Math.min(...measured.map((x) => x.hostile.cpu?.pids ?? 0));
+  const hostileCpu = m0.hostile.cpu?.id === m1.hostile.cpu?.id
+    ? ((m1.hostile.cpu?.cpuUsec ?? 0) - (m0.hostile.cpu?.cpuUsec ?? 0)) / span : 0;
   const checks = [
     ['firstOutputP95', firstOutputP95 !== null && firstOutputP95 <= SLO.firstOutputP95Ms],
     ['promptAddedP95', promptAddedP95 !== null && promptAddedP95 <= SLO.promptAddedP95Ms],
@@ -526,7 +548,8 @@ async function evaluate(n, start, mStart, end) {
     n,
     pass: failed.length === 0,
     failed,
-    valid: lagP99 <= MAX_LOADGEN_LAG_MS && sampled.length > 0 && echo.length > 0,
+    valid: lagP99 <= MAX_LOADGEN_LAG_MS && sampled.length > 0 && echo.length > 0
+      && hostileMemory >= 480 * MiB && hostilePids >= 90,
     firstOutputP95Ms: ms(firstOutputP95),
     promptAddedP95Ms: ms(promptAddedP95),
     promptAddedP95ByInitMs: promptAddedByInit,
@@ -543,6 +566,9 @@ async function evaluate(n, start, mStart, end) {
     cpuPressureSome: Number(((m1.cpuSomeUsec - m0.cpuSomeUsec) / span).toFixed(3)),
     memPressureSome: Number(((m1.memSomeUsec - m0.memSomeUsec) / span).toFixed(3)),
     memPressureFull: Number(((m1.memFullUsec - m0.memFullUsec) / span).toFixed(3)),
+    hostileMemoryMinMiB: Math.round(hostileMemory / MiB),
+    hostilePidsMin: hostilePids,
+    hostileCpuCores: Number(hostileCpu.toFixed(3)),
     containersAvg: Math.round(measured.reduce((a, x) => a + x.containers, 0) / measured.length),
     visitorsAvg: Math.round(measured.reduce((a, x) => a + x.visitors, 0) / measured.length),
     samples: { sessions: sampled.length, echo: echo.length },
@@ -577,21 +603,6 @@ async function runStep(n) {
   return result;
 }
 
-// Unloaded connect-to-prompt time per initCommand: one session per command at
-// a time. boot and welcome are typewriter animations that take longer than
-// any latency budget by design, so the prompt SLO judges time added under load.
-async function calibrate() {
-  const runs = Object.fromEntries(WORKLOAD.initCommands.map(([init]) => [init, []]));
-  for (let i = 0; i < CALIBRATION_REPS; i++) {
-    await Promise.all(Object.keys(runs).map(async (init) => {
-      const s = new Session('calibration', init);
-      await reachPrompt(s);
-      runs[init].push(s.tPrompt - s.t0);
-      s.leave();
-    }));
-  }
-  return Object.fromEntries(Object.entries(runs).map(([init, times]) => [init, Math.round(quantile(times, 0.5))]));
-}
 
 async function main() {
   fs.writeFileSync(opts.out, '');
@@ -604,15 +615,20 @@ async function main() {
   }, 100).unref();
   sample();
   lastUptime = (await backendUptime()) ?? 0;
-  idleMs = await calibrate();
-  fs.appendFileSync(opts.out, `${JSON.stringify({ type: 'calibration', idleMs })}\n`);
-  log(`idle connect-to-prompt ms: ${JSON.stringify(idleMs)}`);
+  fs.appendFileSync(opts.out, `${JSON.stringify({ type: 'calibration', frozen: true, idleMs })}\n`);
+  log(`frozen idle connect-to-prompt ms: ${JSON.stringify(idleMs)}`);
 
-  if (opts.hostiles) {
-    keepAlive('hostile', 'welcome', (s) => hostile(s, MEMORY_HOG));
-    keepAlive('hostile', 'welcome', (s) => hostile(s, FORK_BOMB));
-  }
+  keepAlive('hostile', 'welcome', (s) => hostile(s, 'memory', MEMORY_HOG));
+  keepAlive('hostile', 'welcome', (s) => hostile(s, 'cpu', CPU_FORK_ABUSER));
   for (let i = 0; i < WORKLOAD.probes; i++) keepAlive('probe', 'welcome', probe);
+  const floorDeadline = now() + PROMPT_TIMEOUT_MS;
+  while (true) {
+    sample();
+    const { hostile: h } = samples.at(-1);
+    if ((h.memory?.memory ?? 0) >= 480 * 2 ** 20 && (h.cpu?.pids ?? 0) >= 90) break;
+    if (now() >= floorDeadline) throw new Error('hostile floor did not reach 480 MiB and 90 pids');
+    await sleep(250);
+  }
 
   const results = [];
   let lastPass = null;
@@ -650,7 +666,7 @@ async function main() {
     bytesRelayed: sessions.reduce((a, s) => a + s.bytesOut + s.bytesIn, 0),
     errors: errors.filter((e) => e.kind !== 'hostile').length,
     hostileErrors: errors.filter((e) => e.kind === 'hostile').length,
-    hostileContainersSeen: [...new Set(hostileContainers.values())].length,
+    hostileContainersSeen: hostileIds.size,
   };
   fs.appendFileSync(opts.out, `${JSON.stringify(summary)}\n`);
   log(`N*=${summary.nStar} binding=${summary.bindingSlo.join(',') || 'none'} valid=${summary.valid}`);

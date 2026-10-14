@@ -30,13 +30,14 @@ for (const file of files) {
       String(s.meanLifetimeS).padStart(9),
     ].join(' '));
     for (const [reason, count] of Object.entries(s.errorKinds)) console.log(`        error x${count}: ${reason}`);
+    console.log(`        hostile floor ${s.hostileMemoryMinMiB} MiB, ${s.hostilePidsMin} pids, ${s.hostileCpuCores} CPU cores`);
   }
   if (!summary) {
     console.log('  no summary: the run did not finish');
     continue;
   }
   console.log(`  N*=${summary.nStar} first failing N=${summary.firstFailN} binding=${summary.bindingSlo.join(',') || 'none'}`
-    + `${summary.valid ? '' : ' (INVALID: load generator saturated or no samples)'}`);
+    + `${summary.valid ? '' : ' (INVALID: generator lag, missing samples or missing hostile work)'}`);
   console.log(`  sessions served ${summary.sessionsServed}/${summary.sessionsStarted}, commands ${summary.commandsRun},`
     + ` echo keystrokes ${summary.echoKeystrokes}, bytes relayed ${gib(summary.bytesRelayed)} GiB,`
     + ` errors ${summary.errors} (hostile ${summary.hostileErrors})`);
@@ -49,8 +50,10 @@ for (const file of files) {
 }
 
 const sorted = [...nStars].sort((a, b) => a - b);
-const median = sorted.length ? sorted[Math.floor((sorted.length - 1) / 2)] : null;
+const median = sorted.length
+  ? (sorted[Math.floor((sorted.length - 1) / 2)] + sorted[Math.floor(sorted.length / 2)]) / 2 : null;
 console.log(`\nmedian N* = ${median} over ${sorted.length} valid run(s): ${nStars.join(', ')}`
   + (sorted.length > 1 ? `; range ${sorted[0]}..${sorted.at(-1)}` : ''));
 console.log(`work: sessions served ${totals.served}, commands ${totals.commands}, echo keystrokes ${totals.echo},`
   + ` bytes relayed ${gib(totals.bytes)} GiB; session errors ${totals.errors} (errors in failing steps included)`);
+if (!files.length || nStars.length !== files.length) process.exitCode = 2;

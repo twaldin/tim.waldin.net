@@ -31,15 +31,38 @@
 #   --pool-size P     backend warm pool (default 5, as in production)
 #   --seed S          seed of the first run's visitor stream (default 1)
 #   --profile         after each run, hold its N* and record a CPU/memory profile
-#   --keep            leave the emulated host up for inspection
 #
 # Results land in bench/capacity/results/<run id>/ (one JSON line per step and
 # a summary per run). Everything else it creates is named capbench-<run id>-*
 # and removed on exit.
+#
+# Fixed workload and measurement choices are in loadgen.js. A step adds live
+# visitors at <=4/s, settles 30 s (the zombie grace), then measures 50 s. Its
+# 80 s steady hold exceeds the 64 s mean lifetime and cycles the churn once.
+# The ladder is coarse, roughly 20% between rungs; N* is the highest passing
+# tested rung, with an upper bound at the next failing rung. --bisect narrows it.
+#
+# Simplifications: nginx and Next.js are omitted, including their resident
+# memory, TLS and browser/asset work. This isolates terminal-serving capacity,
+# not whole-site capacity. All visitors have a 160x45 viewport, visible pages,
+# new identities and unique X-Real-IP values (backend/server.js trusts exactly
+# that nginx header). No refresh/resume traffic or internet RTT is simulated.
+# Blog's static-route traffic is modeled as terminal 'blog'; the five commands
+# without reported shares split 30% evenly. Think times/lifetimes are bounded
+# lognormals; the lifetime mean is calibrated to ~64 s, not a fitted log trace.
+# Four echo probes count in N; two persistent hostile sessions are extra.
+# The memory hog holds ~488 MiB of its 512 MiB limit, leaving PTY/shell overhead.
+# The CPU abuser forks up to PidsLimit and holds busy children at its 0.5-CPU
+# quota. Their cgroup use is printed, and missing hostile work invalidates a run.
+# Headroom is memory.current minus inactive_file, not raw total; active cache
+# and kernel/slab still count. Raw memory/swap/pressure and Docker events are
+# kept so cache subtraction cannot hide OOMs. The Docker 29.9 dind build embeds
+# containerd in dockerd; CPU speed/kernel/storage and shared host swap differ
+# from the VPS. These are experiment comparisons, not a promise of prod N*.
 set -euo pipefail
 
 LANE=0 REPEAT=1 STEPS=120,145,175,210,250,300,360,430,520 WARM=30 MEASURE=50 BISECT=0
-CPUS=3 MEMORY=3.8g SWAP=2g POOL_SIZE=5 SEED=1 PROFILE=0 KEEP=0
+CPUS=3 MEMORY=3.8g SWAP=2g POOL_SIZE=5 SEED=1 PROFILE=0
 while (($#)); do
   case "$1" in
     --lane) LANE=$2; shift 2 ;;
@@ -54,7 +77,6 @@ while (($#)); do
     --pool-size) POOL_SIZE=$2; shift 2 ;;
     --seed) SEED=$2; shift 2 ;;
     --profile) PROFILE=1; shift ;;
-    --keep) KEEP=1; shift ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
@@ -96,11 +118,9 @@ SCRATCH=$(mktemp -d "/tmp/$P.XXXXXX")
 
 cleanup() {
   local status=$?
-  if ((KEEP)); then
-    log "kept: docker exec -it $DIND sh   (remove: docker rm -f $DIND $P-loadgen; docker volume rm $P-var; docker network rm $P-net; docker rmi $P-session $P-backend; rm -rf $SCRATCH)"
-    return
-  fi
-  docker rm -f "$P-loadgen" "$DIND" >/dev/null 2>&1 || true
+  if [[ -n ${EVENTS_PID:-} ]]; then kill "$EVENTS_PID" 2>/dev/null || true; fi
+  if [[ -d $RESULTS ]]; then docker logs --timestamps "$DIND" >"$RESULTS/dockerd.log" 2>&1 || true; fi
+  docker rm -fv "$P-loadgen" "$P-npm" "$DIND" >/dev/null 2>&1 || true
   docker volume rm "$P-var" >/dev/null 2>&1 || true
   docker network rm "$P-net" >/dev/null 2>&1 || true
   docker rmi "$P-session" "$P-backend" >/dev/null 2>&1 || true
@@ -164,6 +184,8 @@ for _ in $(seq 60); do docker exec "$DIND" docker info >/dev/null 2>&1 && break;
 docker exec "$DIND" docker info >/dev/null
 DIND_CGROUP=/sys/fs/cgroup/system.slice/docker-$(docker inspect -f '{{.Id}}' "$DIND").scope
 [[ -r $DIND_CGROUP/memory.current ]] || { echo "cannot read $DIND_CGROUP (need cgroup v2 + systemd driver)" >&2; exit 1; }
+docker exec "$DIND" docker events --format '{{json .}}' >"$RESULTS/docker-events.jsonl" &
+EVENTS_PID=$!
 
 docker save "$P-session" "$P-backend" "$PROXY_IMAGE" | docker exec -i "$DIND" docker load -q >/dev/null
 docker exec "$DIND" docker tag "$P-session" twaldin/terminal-portfolio:latest
@@ -198,7 +220,8 @@ stop_stack() {
 loadgen() {
   docker run --rm --name "$P-loadgen" --network "$P-net" --cpuset-cpus "$LOADGEN_CPUS" \
     -u "$(id -u):$(id -g)" -v "$SCRATCH/loadgen:/app:ro" -v "$RESULTS:/out" -v "$DIND_CGROUP:/dind-cg:ro" \
-    "$NODE_IMAGE" node /app/loadgen.js --url "http://$DIND:3001" --cgroup /dind-cg "$@"
+    "$NODE_IMAGE" node /app/loadgen.js --url "http://$DIND:3001" --cgroup /dind-cg \
+    --events /out/docker-events.jsonl "$@"
 }
 
 # CPU time on the lane's threads that the emulated host did not use itself:
