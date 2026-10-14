@@ -13,11 +13,13 @@
 # plays nginx by sending X-Real-IP per virtual visitor.
 #
 # deckbox is a Ryzen 9 7900: 12 cores, two threads each (cpu N and N+12 share a
-# core). A lane is three whole cores with their sibling threads left idle; the
-# load generators of all lanes share cores 4 and 11. Three lanes can measure at
-# once. Each run reports how busy the lane's cores were with work not its own.
+# core), cores 0-5 and 6-11 on separate L3 caches. A lane is three whole cores
+# on one L3 with their sibling threads left idle; the load generators of all
+# lanes share cores 4 and 5, and core 0 is left to the OS. Three lanes can
+# measure at once. Each run reports how busy the lane's cores were with work
+# that was not its own.
 #
-#   --lane L          0: cpus 1-3, 1: cpus 5-7, 2: cpus 8-10 (default 0)
+#   --lane L          0: cpus 1-3, 1: cpus 6-8, 2: cpus 9-11 (default 0)
 #   --repeat K        K runs, each on a fresh backend stack; prints the median N* (default 1)
 #   --steps LIST      concurrency ladder; a run stops at its first failing step
 #   --warm S          seconds each step settles after its ramp, before measuring (default 30)
@@ -59,12 +61,12 @@ while (($#)); do
 done
 case $LANE in
   0) HOST_CPUS=1,2,3 ;;
-  1) HOST_CPUS=5,6,7 ;;
-  2) HOST_CPUS=8,9,10 ;;
+  1) HOST_CPUS=6,7,8 ;;
+  2) HOST_CPUS=9,10,11 ;;
   *) echo "--lane must be 0, 1 or 2" >&2; exit 2 ;;
 esac
 SIBLING_CPUS=$(tr , '\n' <<<"$HOST_CPUS" | awk '{ printf "%s%d", (NR > 1 ? "," : ""), $1 + 12 }')
-LOADGEN_CPUS=4,11,16,23
+LOADGEN_CPUS=4,5,16,17
 
 DIND_IMAGE=docker:29-dind@sha256:0b6d18a4a222e71c88be6034926b4f6cde2fc33c2218643d03ccfddc65995470
 NODE_IMAGE=node:24-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20
