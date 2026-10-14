@@ -262,7 +262,7 @@ for run in $(seq "$REPEAT"); do
     profiled=$!
     until [[ -e $RESULTS/measuring ]] || ! kill -0 "$profiled" 2>/dev/null; do sleep 1; done
     [[ -e $RESULTS/measuring ]] || { wait "$profiled"; exit 1; }
-    "$HERE/profile.sh" "$DIND" "$DIND_CGROUP" 30 >"$RESULTS/profile-$run-n$n.txt"
+    "$HERE/profile.sh" "$DIND" "$DIND_CGROUP" 30 "$n" >"$RESULTS/profile-$run-n$n.txt"
     wait "$profiled"
     rm -f "$RESULTS/measuring"
     stop_stack "$RESULTS/profile-$run.backend.log"
