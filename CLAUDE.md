@@ -13,7 +13,7 @@ xterm.js 5.5    ←──    Express + Socket.IO     ←──  per visitor IP
 ```
 
 - **`frontend/`** — Next.js 15 / React 19 app. Renders xterm.js with JetBrainsMono Nerd Font and 464 themes (`src/config/themes.ts`, defaults `Hardcore` / `Hardcore Light` following `prefers-color-scheme`; `src/lib/theme-manager.ts` persists the pick per mode), a Socket.IO client, and a URL ↔ command sync layer.
-- **`backend/`** — Node.js + Express + Socket.IO + dockerode, split into three modules: `session.js` (`SessionManager`: per-connection timers, initCommand auto-typing gated on the prompt and first resize), `admission.js` (`Admission`: one lease per IP, capacity cap, connection rate limit, reconnect grace), `lifecycle.js` (`SessionLifecycle`: every dockerode call, the warm pool, attach/rebind). `sandbox-policy.js` is the single source of the container spec.
+- **`backend/`** — Node.js + Express + Socket.IO + dockerode, split into three modules: `session.js` (`SessionManager`: per-connection timers, initCommand auto-typing gated on the prompt and first resize), `admission.js` (`Admission`: per-kind IP policy, capacity cap, connection rate limit, reconnect grace), `lifecycle.js` (`SessionLifecycle`: every dockerode call, the warm pool, attach/rebind). `session-kinds.js` is the per-kind policy table (main site vs `/x` embed), and `sandbox-policy.js` is the single source of the container spec.
 - **`container/`** — Ubuntu 24.04 image (`twaldin/terminal-portfolio:latest`) with zsh, Oh My Posh, neovim (nightly via bob), figlet, and `scripts/*.sh` for the portfolio (welcome, projects, blog, resume, contact, etc.).
 
 ## Frontend routing
@@ -28,22 +28,22 @@ Paths relative to `frontend/`.
 
 ## Runtime model: pre-warmed pool + IP-pinned sessions
 
-`SessionLifecycle` keeps **5 warm containers** ready (`poolSize`, set where `SessionManager` constructs it) so a new connection skips container creation. `Admission` enforces `maxSessions` = **40** visitor sessions — leases still acquiring a container, active leases, and zombies in their grace window; the warm spares are extra. The 41st concurrent visitor is denied (`Server is at capacity`). Every lease is an opaque `leaseId` → container `handleId` pair; `server.js` is socket wiring, the HTTP routes, and the audit log (`logger.js`).
+`SessionLifecycle` keeps **5 warm containers** ready (`poolSize`, set where `SessionManager` constructs it) so a new connection skips container creation. `Admission` enforces `maxSessions` = **40** visitor sessions — leases still acquiring a container, active leases, and zombies in their grace window; the warm spares are extra. The 41st concurrent visitor, site or embed, gets `session_denied` `{ reason: 'capacity' }` and is disconnected. Every lease is an opaque `leaseId` → container `handleId` pair; `server.js` is socket wiring, the HTTP routes, and the audit log (`logger.js`, whose `session_start` event records the connection's `kind`).
 
-Disconnect without `exit` (browser close, network drop) → `Admission.zombify` keeps the lease for a **30 s** grace window (`ZOMBIE_GRACE_MS`, at most one zombie per IP) so a quick reconnect can reattach without losing shell state.
+Disconnect without `exit` (browser close, network drop) → `Admission.zombify` keeps the lease for a **30 s** grace window (`ZOMBIE_GRACE_MS`) so a quick reconnect can reattach without losing shell state. An IP keeps at most one site zombie; embed zombies count toward the IP's embed cap.
 
-Each visitor IP holds **one live session at a time** (`Admission.ipLeases`). What a second Socket.IO connection from the same IP does depends on the persistent `sessionId` the browser sends in the handshake (`localStorage` key `terminal-session-id`):
+Each visitor IP holds **one live site session at a time** (`Admission.ipLeases`) plus up to **4 embed sessions** from the `/x` Player Card. The handshake's `auth.kind` picks the row of `SESSION_KINDS` (`backend/session-kinds.js`): `'embed'` selects the embed, anything else the site. Embed leases never evict or destroy another lease, and the fifth from one IP gets `session_denied` `{ reason: 'ip-cap' }`. What a second site connection from the same IP does depends on the persistent `sessionId` the browser sends in the handshake (`localStorage` key `terminal-session-id`):
 
 - **Same `sessionId`** (refresh, or a second tab in the same browser) → `Admission._restore` rebinds the existing container's stream to the new socket (`SessionLifecycle.rebind`), whether the old lease is still active or in its zombie window. The client gets `session_status: { mode: 'resume' }` and the URL's `initCommand` is re-run after the first resize so the output repaints. If the old tab is still open, Admission calls its `onSuperseded` sink in the same tick as the rebind and `SessionManager._retire` drops its connection: timers cleared, told `[session moved to a newer tab — refresh here to take it back]`, disconnected — so only the new tab's disconnect or idle timer can end the shell. It is not sent `session_end` (that would clear the browser-wide `sessionId`); a refresh in the old tab takes the session back the same way.
-- **Different `sessionId`** (another browser on the same IP) → `Admission._evict` first retires the displaced connection through its `onSuperseded` sink, then destroys the old lease and leases a new container. Late input, resize, disconnects and timers from the old connection cannot touch its destroyed handle or interrupt other visitors.
-- A `sessionId` presented from a different IP than its owner is denied (`ip-mismatch`) rather than resumed.
+- **Different `sessionId`** (another browser on the same IP) → `Admission._evict` first retires the displaced connection through its `onSuperseded` sink, then destroys the old site lease and leases a new container. The IP's embed leases are untouched. Late input, resize, disconnects and timers from the old connection cannot touch its destroyed handle or interrupt other visitors.
+- A `sessionId` presented from a different IP than its owner is denied (`ip-mismatch`, sent as `session_denied` `{ reason: 'unavailable' }`) rather than resumed. A restore also needs the same kind; a lease of the other kind never matches.
 - Type `exit` → the container stream closes, `SessionManager._handleStreamClose` emits `session_end`, the client clears its stored `sessionId`, and the slot is freed.
 
-Timers in `SessionManager` (`backend/session.js`), rate limit in `Admission` (`backend/admission.js`):
+Timers in `SessionManager` (`backend/session.js`) come from the connection's `SESSION_KINDS` row; the rate limit is in `Admission` (`backend/admission.js`):
 
-- **5 min idle** without keystrokes → kill (`sessionTimeout`).
-- **60 s no-input** after the lease is granted → kill (`noInputTimeout`) — kills bots and background tabs that never engage. Relaxed to **5 min** (`noInputTimeoutVisible`) while the client reports its page visible via the `visibility` socket event; never-reported (no-JS bots) stays 60 s. Resize and visibility never reset the idle timer, though a visibility change re-arms the no-input countdown until the first keystroke.
-- **30 connection attempts/min per IP** (`Admission.checkConnectionRate`; `MAX_CONNECTIONS_PER_IP`, `RATE_LIMIT_WINDOW_MS`), checked before any lease work.
+- **5 min idle** without keystrokes (embed **90 s**) → kill (`idleMs`).
+- **60 s no-input** after the lease is granted (embed **20 s**) → kill (`noInputHiddenMs`). This kills bots and background tabs that never engage. Relaxed to **5 min** (embed **90 s**, `noInputVisibleMs`) while the client reports its page visible via the `visibility` socket event; a client that never reports (no-JS bots) keeps the hidden window. Resize and visibility never reset the idle timer, though a visibility change re-arms the no-input countdown until the first keystroke.
+- **30 connection attempts/min per IP** (`Admission.checkConnectionRate`; `MAX_CONNECTIONS_PER_IP`, `RATE_LIMIT_WINDOW_MS`), checked before any lease work. A refused connection gets `session_denied` `{ reason: 'ip-cap' }`.
 
 ## Sandbox / security
 
@@ -89,7 +89,7 @@ The audit log (`events.jsonl`, with daily pageview rollups appended to it) lives
 ## Pointers
 
 - **`frontend/CLAUDE.md`** — URL → command allowlist, Socket.IO client, Terminal component (font sizing, mobile keyboard), OSC handlers (URL ↔ command sync, theme protocol), themes, blog pages (server-rendered vs. live terminal), share cards and SEO.
-- **`backend/CLAUDE.md`** — Module layout, warm pool and one lease per IP, timers and limits, container spec, boot sequence for a new visitor, initCommand validation, orphan reclaim, tests.
+- **`backend/CLAUDE.md`** — Module layout, warm pool and per-kind IP leases (site vs embed), denial events, timers and limits, container spec, boot sequence for a new visitor, initCommand validation, orphan reclaim, tests.
 - **`container/CLAUDE.md`** — Layout and script inventory, image build (bob nightly nvim with baked-in plugins, Oh My Posh prompt), `.zshrc` wiring and aliases, boot intro, blog handoff, terminal control sequences (the OSC table).
 
 ## Conventions

@@ -13,6 +13,7 @@ async function ok(label, fn) {
 }
 
 const SessionManager = require('../session.js');
+const { kindsWithWindows } = require('./kinds-with-windows');
 
 function makeFakes() {
   const calls = { zombify: [], destroy: [], write: [], resize: [] };
@@ -51,9 +52,7 @@ function fakeSocket(id) {
 
 (async () => {
   const { admission, lifecycle, calls } = makeFakes();
-  const mgr = new SessionManager({ lifecycle, admission });
-  mgr.noInputTimeout = 60_000_000;   // effectively never fire during this test
-  mgr.sessionTimeout = 60_000_000;
+  const mgr = new SessionManager({ lifecycle, admission, kinds: kindsWithWindows() });
 
   const socket = fakeSocket('sock-1');
   await mgr.handleConnect(socket);
@@ -84,13 +83,13 @@ function fakeSocket(id) {
     assert.ok(!mgr.conns.has('sock-1'), 'conn should be cleared');
   });
 
-  await ok('rate-limited IP is denied + disconnected', async () => {
+  await ok('rate-limited IP is denied with session_denied ip-cap + disconnected', async () => {
     const deniedAdmission = { ...admission, checkConnectionRate: () => false };
     const deniedMgr = new SessionManager({ lifecycle, admission: deniedAdmission });
-    deniedMgr.noInputTimeout = 60_000_000; deniedMgr.sessionTimeout = 60_000_000;
     const s = fakeSocket('sock-2');
     let disconnected = false; s.disconnect = () => { disconnected = true; };
     await deniedMgr.handleConnect(s);
+    assert.deepStrictEqual(s._emitted, [{ ev: 'session_denied', payload: { reason: 'ip-cap' } }]);
     assert.ok(disconnected, 'rate-limited connection should disconnect');
     assert.ok(!deniedMgr.conns.has('sock-2'));
   });
@@ -100,8 +99,7 @@ function fakeSocket(id) {
       ...admission,
       tryAcquire: async () => ({ mode: 'resume', lease: { leaseId: 'L3', handleId: 'H3' } }),
     };
-    const resumeMgr = new SessionManager({ lifecycle, admission: resumeAdmission });
-    resumeMgr.noInputTimeout = 60_000_000; resumeMgr.sessionTimeout = 60_000_000;
+    const resumeMgr = new SessionManager({ lifecycle, admission: resumeAdmission, kinds: kindsWithWindows() });
     const s = fakeSocket('sock-3');
     await resumeMgr.handleConnect(s);
     const status = s._emitted.find((e) => e.ev === 'session_status');

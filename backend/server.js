@@ -3,6 +3,7 @@ const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
 const SessionManager = require('./session');
+const { parseSessionKind } = require('./session-kinds');
 const logger = require('./logger');
 const adminRouter = require('./admin');
 const pageviews = require('./pageviews');
@@ -63,7 +64,7 @@ const sessionManager = new SessionManager();
 // Per-socket command buffer for audit logging (raw chars → full commands).
 const cmdBufs = new Map();
 
-// Socket.IO connection handling. All admission policy (rate limit, IP-singleton,
+// Socket.IO connection handling. All admission policy (rate limit, per-IP leases,
 // persistent restore, capacity, zombies) lives behind the SessionManager →
 // Admission seam; server.js is now just socket wiring + audit logging.
 io.on('connection', (socket) => {
@@ -77,6 +78,7 @@ io.on('connection', (socket) => {
   logger.append({
     type: 'session_start',
     id: socket.id,
+    kind: parseSessionKind(socket.handshake.auth?.kind),
     ip: clientIP,
     ua: socket.handshake.headers['user-agent'] || '',
     referrer: socket.handshake.headers['referer'] || socket.handshake.headers['referrer'] || '',

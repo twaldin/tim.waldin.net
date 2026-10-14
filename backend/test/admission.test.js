@@ -287,3 +287,192 @@ test('a disconnected session keeps its slot through the grace window and restore
   assert.equal(lifecycle.handles.size, 39);
   assert.equal((await admission.tryAcquire('203.0.113.41', {})).mode, 'cold');
 });
+
+// Per-kind IP policy (TWA-114): a site connection replaces its IP's site
+// lease; embeds share an IP up to four leases and never displace anything.
+
+test('a mixed-kind burst reserves exactly maxSessions slots; a site replacement at capacity inherits the evicted slot', async () => {
+  const lifecycle = new FakeLifecycle({ delay: 20 });
+  const admission = new Admission({ lifecycle, maxSessions: 6 });
+  const requests = [
+    ['198.51.100.1', 'site'],
+    ['198.51.100.2', 'embed'],
+    ['198.51.100.2', 'embed'],
+    ['198.51.100.3', 'site'],
+    ['198.51.100.2', 'site'],
+    ['198.51.100.4', 'embed'],
+    ['198.51.100.5', 'site'],
+    ['198.51.100.4', 'embed'],
+  ];
+
+  const results = await Promise.all(requests.map(([ip, kind]) => admission.tryAcquire(ip, { kind })));
+
+  assert.deepEqual(
+    results.map((result) => (result.mode === 'cold' ? `${result.lease.kind} ${result.lease.ip}` : result.reason)),
+    [
+      'site 198.51.100.1', 'embed 198.51.100.2', 'embed 198.51.100.2', 'site 198.51.100.3',
+      'site 198.51.100.2', 'embed 198.51.100.4', 'full', 'full',
+    ],
+  );
+  assert.equal(lifecycle.maxOutstandingLeases, 6);
+
+  let releaseTeardown;
+  const teardown = new Promise((resolve) => { releaseTeardown = resolve; });
+  const destroy = lifecycle.destroy.bind(lifecycle);
+  lifecycle.destroy = async (handleId) => { await teardown; return destroy(handleId); };
+  const replacing = admission.tryAcquire('198.51.100.1', { kind: 'site' });
+  const duringTeardown = await admission.tryAcquire('198.51.100.6', { kind: 'embed' });
+  releaseTeardown();
+  const replacement = await replacing;
+
+  assert.deepEqual(duringTeardown, { mode: 'denied', reason: 'full' });
+  assert.equal(replacement.mode, 'cold');
+  assert.equal(results[0].lease.state, 'ended');
+  assert.deepEqual(lifecycle.destroyCalls, [results[0].lease.handleId]);
+  assert.deepEqual(await admission.tryAcquire('198.51.100.6', { kind: 'embed' }), { mode: 'denied', reason: 'full' });
+});
+
+test('a site connection replaces only its IP\'s site lease; the embed leases on that IP stay active', async () => {
+  const lifecycle = new FakeLifecycle();
+  const admission = new Admission({ lifecycle });
+  const superseded = [];
+  const acquire = (kind, name) =>
+    admission.tryAcquire('198.51.100.20', { kind, onSuperseded: () => superseded.push(name) });
+
+  const embedA = await acquire('embed', 'embed-a');
+  const siteA = await acquire('site', 'site-a');
+  const embedB = await acquire('embed', 'embed-b');
+  const siteB = await acquire('site', 'site-b');
+
+  assert.deepEqual(
+    [embedA, siteA, embedB, siteB].map(({ lease }) => lease.state),
+    ['active', 'ended', 'active', 'active'],
+  );
+  assert.deepEqual(superseded, ['site-a']);
+  assert.deepEqual(lifecycle.destroyCalls, [siteA.lease.handleId]);
+});
+
+test('zombifying a site lease destroys only that IP\'s older site zombie, never an embed zombie', async () => {
+  const lifecycle = new FakeLifecycle();
+  const clock = makeFakeClock();
+  const admission = new Admission({ lifecycle, clock });
+  const ip = '198.51.100.30';
+  const embed = await admission.tryAcquire(ip, { kind: 'embed', persistentId: 'iframe-1' });
+  const olderSite = await admission.tryAcquire(ip, { kind: 'site', persistentId: 'browser-a' });
+  admission.zombify(embed.lease.leaseId);
+  admission.zombify(olderSite.lease.leaseId);
+
+  const newerSite = await admission.tryAcquire(ip, { kind: 'site', persistentId: 'browser-b' });
+  admission.zombify(newerSite.lease.leaseId);
+
+  assert.deepEqual(
+    [embed, olderSite, newerSite].map(({ lease }) => lease.state),
+    ['zombie', 'ended', 'zombie'],
+  );
+  assert.deepEqual(lifecycle.destroyCalls, [olderSite.lease.handleId]);
+  assert.equal((await admission.tryAcquire(ip, { kind: 'embed', persistentId: 'iframe-1' })).mode, 'resume');
+});
+
+test('an IP holds at most four embed leases, pending, active and zombie alike; the fifth is denied ip-cap with global room', async () => {
+  const lifecycle = new FakeLifecycle({ delay: 20 });
+  const clock = makeFakeClock();
+  const admission = new Admission({ lifecycle, clock, maxSessions: 40 });
+  const embed = () => admission.tryAcquire('198.51.100.40', { kind: 'embed' });
+  const [zombie, active] = await Promise.all([embed(), embed()]);
+  admission.zombify(zombie.lease.leaseId);
+  const pending = [embed(), embed()];
+
+  const fifth = await embed();
+  const neighbour = await admission.tryAcquire('198.51.100.41', { kind: 'embed' });
+  const settled = await Promise.all(pending);
+  await clock.advance(30_000);
+  const afterGrace = await embed();
+
+  assert.deepEqual(fifth, { mode: 'denied', reason: 'ip-cap' });
+  assert.equal(neighbour.mode, 'cold');
+  assert.deepEqual(settled.map(({ mode }) => mode), ['cold', 'cold']);
+  assert.equal(active.lease.state, 'active');
+  assert.equal(afterGrace.mode, 'cold');
+  assert.deepEqual(lifecycle.destroyCalls, [zombie.lease.handleId]);
+});
+
+test('embed acquisition, zombification and restore never evict or destroy another lease on the IP', async () => {
+  const lifecycle = new FakeLifecycle();
+  const clock = makeFakeClock();
+  const admission = new Admission({ lifecycle, clock });
+  const ip = '198.51.100.50';
+  let siteSuperseded = 0;
+  const site = await admission.tryAcquire(ip, { kind: 'site', onSuperseded: () => { siteSuperseded += 1; } });
+  const first = await admission.tryAcquire(ip, { kind: 'embed', persistentId: 'iframe-1' });
+  const second = await admission.tryAcquire(ip, { kind: 'embed', persistentId: 'iframe-2' });
+  admission.zombify(first.lease.leaseId);
+  admission.zombify(second.lease.leaseId);
+
+  const restored = await admission.tryAcquire(ip, { kind: 'embed', persistentId: 'iframe-1' });
+  const third = await admission.tryAcquire(ip, { kind: 'embed', persistentId: 'iframe-3' });
+
+  assert.equal(restored.mode, 'resume');
+  assert.deepEqual(
+    [site, first, second, third].map(({ lease }) => lease.state),
+    ['active', 'active', 'zombie', 'active'],
+  );
+  assert.equal(siteSuperseded, 0);
+  assert.deepEqual(lifecycle.destroyCalls, []);
+});
+
+test('an IP at its embed cap on a full server is denied ip-cap, not full', async () => {
+  const lifecycle = new FakeLifecycle();
+  const admission = new Admission({ lifecycle, maxSessions: 5 });
+  for (let iframe = 1; iframe <= 4; iframe += 1) {
+    await admission.tryAcquire('198.51.100.60', { kind: 'embed' });
+  }
+  await admission.tryAcquire('198.51.100.61', { kind: 'site' });
+
+  assert.deepEqual(await admission.tryAcquire('198.51.100.60', { kind: 'embed' }), { mode: 'denied', reason: 'ip-cap' });
+  assert.deepEqual(await admission.tryAcquire('198.51.100.62', { kind: 'embed' }), { mode: 'denied', reason: 'full' });
+});
+
+test('restore needs the same persistent id, kind and IP; the same id of another kind takes the cold path', async () => {
+  const lifecycle = new FakeLifecycle();
+  const clock = makeFakeClock();
+  const admission = new Admission({ lifecycle, clock });
+  const embed = await admission.tryAcquire('198.51.100.70', { kind: 'embed', persistentId: 'shared-id' });
+  admission.zombify(embed.lease.leaseId);
+
+  const otherIp = await admission.tryAcquire('198.51.100.71', { kind: 'embed', persistentId: 'shared-id' });
+  const otherKind = await admission.tryAcquire('198.51.100.70', { kind: 'site', persistentId: 'shared-id' });
+  const same = await admission.tryAcquire('198.51.100.70', { kind: 'embed', persistentId: 'shared-id' });
+
+  assert.deepEqual(otherIp, { mode: 'denied', reason: 'ip-mismatch' });
+  assert.equal(otherKind.mode, 'cold');
+  assert.equal(otherKind.lease.kind, 'site');
+  assert.equal(same.mode, 'resume');
+  assert.equal(same.lease, embed.lease);
+  assert.deepEqual(lifecycle.rebindCalls.map(({ handleId }) => handleId), [embed.lease.handleId]);
+});
+
+test('a site zombie restore evicts the site lease its IP took meanwhile and leaves the embed lease', async () => {
+  const lifecycle = new FakeLifecycle();
+  const clock = makeFakeClock();
+  const admission = new Admission({ lifecycle, clock });
+  const ip = '198.51.100.80';
+  const superseded = [];
+  const closedTab = await admission.tryAcquire(ip, { kind: 'site', persistentId: 'browser-a' });
+  admission.zombify(closedTab.lease.leaseId);
+  const embed = await admission.tryAcquire(ip, {
+    kind: 'embed', persistentId: 'iframe-1', onSuperseded: () => superseded.push('iframe-1'),
+  });
+  const otherBrowser = await admission.tryAcquire(ip, {
+    kind: 'site', persistentId: 'browser-b', onSuperseded: () => superseded.push('browser-b'),
+  });
+
+  const restored = await admission.tryAcquire(ip, { kind: 'site', persistentId: 'browser-a' });
+
+  assert.equal(restored.mode, 'resume');
+  assert.deepEqual(
+    [closedTab, embed, otherBrowser].map(({ lease }) => lease.state),
+    ['active', 'active', 'ended'],
+  );
+  assert.deepEqual(superseded, ['browser-b']);
+  assert.deepEqual(lifecycle.destroyCalls, [otherBrowser.lease.handleId]);
+});
