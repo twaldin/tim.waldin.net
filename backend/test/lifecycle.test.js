@@ -73,6 +73,75 @@ async function test(name, fn) {
     assert.strictEqual(docker.pruneContainersCalls, 0);
   });
 
+  for (const mode of ['warm pool', 'cold lease']) {
+    await test(`reclaim preserves a container still starting for a ${mode}`, async () => {
+      const docker = new LifecycleFake();
+      let releaseStart;
+      const started = docker.start.bind(docker);
+      const gate = new Promise((resolve) => { releaseStart = resolve; });
+      docker.start = async (id) => {
+        await started(id);
+        await gate;
+      };
+      const lifecycle = new SessionLifecycle({ docker, poolSize: mode === 'warm pool' ? 1 : 0 });
+      const lease = mode === 'cold lease'
+        ? lifecycle.lease('starting-visitor', { onOutput() {}, onClose() {} }) : null;
+      if (lease) lease.catch(() => {});
+      await waitFor(() => docker.startedIds.length === 1, 'container did not begin starting');
+      const id = docker.startedIds[0];
+      docker.listPayload = [
+        { Id: id, State: 'created', Labels: { app: 'terminal-portfolio' } },
+        { Id: 'portfolio-orphan', State: 'exited', Labels: { app: 'terminal-portfolio' } },
+      ];
+
+      try {
+        await lifecycle.reclaimOrphans();
+        assert.deepStrictEqual(docker.killedIds, ['portfolio-orphan']);
+        assert.deepStrictEqual(docker.removedIds, ['portfolio-orphan']);
+      } finally {
+        releaseStart();
+      }
+      if (lease) {
+        const handle = await lease;
+        assert.strictEqual(lifecycle.write(handle.handleId, 'ls\r'), true);
+        assert.deepStrictEqual(docker.streamFor(id).writes, ['ls\r']);
+      } else {
+        await waitFor(() => lifecycle.pool.length === 1, 'container did not enter the warm pool');
+        const handle = await lifecycle.lease('after-warm', { onOutput() {}, onClose() {} });
+        assert.strictEqual(handle.handleId, id);
+        assert.strictEqual(lifecycle.write(handle.handleId, 'ls\r'), true);
+      }
+    });
+  }
+
+  await test('reclaim preserves a container whose create response is still pending', async () => {
+    const docker = new LifecycleFake();
+    const create = docker.create.bind(docker);
+    let releaseCreate;
+    const gate = new Promise((resolve) => { releaseCreate = resolve; });
+    docker.create = async (spec) => {
+      const id = await create(spec);
+      await gate;
+      return id;
+    };
+    const lifecycle = new SessionLifecycle({ docker, poolSize: 0 });
+    const lease = lifecycle.lease('creating-visitor', { onOutput() {}, onClose() {} });
+    lease.catch(() => {});
+    await waitFor(() => docker.created.length === 1, 'create did not reach the daemon');
+    const id = docker.created[0].id;
+    docker.listPayload = [{ Id: id, State: 'created', Labels: { app: 'terminal-portfolio' } }];
+
+    const reclaimed = lifecycle.reclaimOrphans();
+    await new Promise((resolve) => setImmediate(resolve));
+    releaseCreate();
+    await reclaimed;
+    assert.deepStrictEqual(docker.killedIds, []);
+    assert.deepStrictEqual(docker.removedIds, []);
+    const handle = await lease;
+    assert.strictEqual(lifecycle.write(handle.handleId, 'ls\r'), true);
+    assert.deepStrictEqual(docker.streamFor(id).writes, ['ls\r']);
+  });
+
   await test('pool refills in the background after a lease', async () => {
     const docker = new LifecycleFake();
     const lifecycle = new SessionLifecycle({ docker, poolSize: 1 });
