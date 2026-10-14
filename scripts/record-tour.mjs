@@ -21,9 +21,12 @@ const { values: args } = parseArgs({
   options: {
     url: { type: 'string', default: 'http://localhost:3001' },
     out: { type: 'string', default: `${repoRoot}frontend/public/x/tour.json` },
-    cols: { type: 'string', default: '64' },
-    rows: { type: 'string', default: '30' },
-    commands: { type: 'string', default: 'welcome,projects,about' },
+    // The grid a live 480x480 card fits.
+    cols: { type: 'string', default: '72' },
+    rows: { type: 'string', default: '33' },
+    // projects last: its OSC 9998 scrolls the view to its first line, and only
+    // a visitor's keystroke scrolls back down, which the tour never sends.
+    commands: { type: 'string', default: 'welcome,about,projects' },
     'max-bytes': { type: 'string', default: String(200 * 1024) },
   },
 });
@@ -39,9 +42,10 @@ const MERGE_MS = 30;
 const MAX_DELAY_MS = 2500;
 const END_HOLD_MS = 4000;
 const TYPING_DELAYS_MS = [110, 85, 140, 95, 120, 75, 105, 130, 90];
-// The site's private OSC codes (999x: URL sync, navigation, theme flicker and
-// persistence) must not replay in the embed.
-const PRIVATE_OSC = /\x1b\]999\d;[^\x07\x1b]*(?:\x07|\x1b\\)/g;
+// The site's private navigation and theme OSC codes (9999 URL sync, 9997
+// navigation, 9996/9995 theme flicker and persistence) must not replay in the
+// embed. 9998 (scroll to top) stays: projects uses it to show its first line.
+const PRIVATE_OSC = /\x1b\]999[5679];[^\x07\x1b]*(?:\x07|\x1b\\)/g;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
