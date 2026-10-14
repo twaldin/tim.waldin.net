@@ -124,7 +124,10 @@ class DockerodeAdapter {
 
 class SessionLifecycle {
   constructor({ docker, poolSize = 5 } = {}) {
-    this.docker = docker || new DockerodeAdapter();
+    // CELL_SOCKET_DIR selects cell sandboxes (./cell-adapter) over per-visitor containers.
+    this.docker = docker || (process.env.CELL_SOCKET_DIR
+      ? new (require('./cell-adapter').CellAdapter)()
+      : new DockerodeAdapter());
     this.poolSize = Math.max(0, poolSize);
     this.pool = [];
     this.poolWarming = 0;

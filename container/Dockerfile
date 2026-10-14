@@ -1,3 +1,11 @@
+# The cell agent (cell/cellsh.c): a cell container runs it as pid 1 and
+# spawns visitor sandboxes from this same image.
+FROM ubuntu:24.04 AS cellsh
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev libseccomp-dev && \
+    rm -rf /var/lib/apt/lists/*
+COPY cell/cellsh.c /src/cellsh.c
+RUN gcc -O2 -Wall -Wextra -Werror -o /cellsh /src/cellsh.c -lseccomp
+
 FROM ubuntu:24.04
 
 # Prevent interactive prompts during package installation
@@ -217,6 +225,8 @@ ENV USER=portfolio
 ENV SHELL=/bin/zsh
 ENV PATH=/home/portfolio/.local/share/bob/nvim-bin:/home/portfolio/.local/bin:/home/portfolio/scripts:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ENV EDITOR=nvim
+
+COPY --from=cellsh /cellsh /usr/local/sbin/cellsh
 
 # Default command starts secure shell
 CMD ["/home/portfolio/secure-shell.sh"]

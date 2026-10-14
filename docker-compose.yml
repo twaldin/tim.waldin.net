@@ -6,6 +6,50 @@ x-logging: &logging
     max-size: "10m"
     max-file: "3"
 
+# A cell runs the session image with cellsh as pid 1. cellsh spawns each
+# visitor's sandbox (fresh pid/mount/net/ipc/uts/cgroup namespaces, its own
+# cgroup leaf with the session limits, tmpfs-backed overlay root, the session
+# seccomp profile and capability set) and serves it to the backend over a unix
+# socket on the cell_sockets volume. The capabilities below are the cell's:
+# SYS_ADMIN, SYS_CHROOT, MKNOD, NET_ADMIN and SETPCAP build the sandbox, and the
+# overlay acts on visitor files with its mounter's credentials, which need
+# DAC_OVERRIDE, FOWNER, FSETID, CHOWN and SETFCAP. Visitors keep only SETUID/SETGID.
+x-cell: &cell
+  image: twaldin/terminal-portfolio:latest
+  pull_policy: never
+  logging: *logging
+  user: "0:0"
+  working_dir: /
+  hostname: twaldin
+  network_mode: none
+  read_only: true
+  tmpfs:
+    - /run:rw,nosuid,nodev,noexec,size=16m,mode=755
+  volumes:
+    - cell_sockets:/run/cells
+  cap_drop:
+    - ALL
+  cap_add:
+    - SYS_ADMIN
+    - DAC_OVERRIDE
+    - FOWNER
+    - FSETID
+    - SETFCAP
+    - SYS_CHROOT
+    - SETUID
+    - SETGID
+    - SETPCAP
+    - MKNOD
+    - CHOWN
+    - NET_ADMIN
+  security_opt:
+    - apparmor=unconfined
+  cgroup: private
+  labels:
+    app: terminal-portfolio
+    role: cell
+  restart: unless-stopped
+
 services:
   # Nginx reverse proxy to route traffic
   nginx:
@@ -92,10 +136,12 @@ services:
       - NODE_ENV=production
       - FRONTEND_URL=http://frontend:3000
       - DOCKER_HOST=tcp://socket-proxy:2375
+      - CELL_SOCKET_DIR=/run/cells
       - ADMIN_EMAIL=timothy@waldin.net
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
     volumes:
       - backend_data:/app/data
+      - cell_sockets:/run/cells
     expose:
       - "3001"
     restart: unless-stopped
@@ -108,9 +154,21 @@ services:
       - no-new-privileges:true
     depends_on:
       - socket-proxy
+      - cell-1
+      - cell-2
     networks:
       - backend-net
       - docker-net
+
+  cell-1:
+    <<: *cell
+    container_name: term-cell-1
+    command: ["/usr/local/sbin/cellsh", "/run/cells/cell-1.sock", "/home/portfolio/secure-shell.sh"]
+
+  cell-2:
+    <<: *cell
+    container_name: term-cell-2
+    command: ["/usr/local/sbin/cellsh", "/run/cells/cell-2.sock", "/home/portfolio/secure-shell.sh"]
 
 networks:
   external-net:
@@ -127,3 +185,4 @@ networks:
 
 volumes:
   backend_data:
+  cell_sockets:
