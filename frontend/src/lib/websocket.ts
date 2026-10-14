@@ -76,6 +76,78 @@ function pathToCommand(pathname: string): string | undefined {
   return undefined;
 }
 
+export type SessionKind = 'site' | 'embed';
+export type DenialReason = 'capacity' | 'ip-cap' | 'unavailable';
+
+const isDenialReason = (value: unknown): value is DenialReason =>
+  value === 'capacity' || value === 'ip-cap' || value === 'unavailable';
+
+interface SessionIdSource {
+  get: () => string;
+  forget: () => void;
+}
+
+const SESSION_ID_KEY = 'terminal-session-id';
+
+// Site: one id per browser, persisted so a refresh reattaches the same
+// container. Storage can be blocked or throw (partitioned third-party frames,
+// privacy modes); memory then keeps the id for this page.
+function storedSessionId(): SessionIdSource {
+  let memory: string | null = null;
+  return {
+    get: () => {
+      try {
+        const stored = localStorage.getItem(SESSION_ID_KEY);
+        if (stored) return stored;
+      } catch {}
+      memory ??= crypto.randomUUID();
+      try {
+        localStorage.setItem(SESSION_ID_KEY, memory);
+      } catch {}
+      return memory;
+    },
+    forget: () => {
+      memory = null;
+      try {
+        localStorage.removeItem(SESSION_ID_KEY);
+      } catch {}
+    },
+  };
+}
+
+function ephemeralSessionId(): SessionIdSource {
+  let id: string | null = null;
+  return {
+    get: () => (id ??= crypto.randomUUID()),
+    forget: () => {
+      id = null;
+    },
+  };
+}
+
+const SESSION_KINDS: Record<SessionKind, {
+  sessionIds: () => SessionIdSource;
+  auth: (sessionId: string) => Record<string, string | undefined>;
+}> = {
+  site: {
+    sessionIds: storedSessionId,
+    auth: (sessionId) => ({
+      initCommand: typeof window !== 'undefined' ? pathToCommand(window.location.pathname) : undefined,
+      sessionId,
+    }),
+  },
+  embed: {
+    sessionIds: ephemeralSessionId,
+    auth: (sessionId) => ({ kind: 'embed', sessionId }),
+  },
+};
+
+export interface WebSocketManagerOptions {
+  kind?: SessionKind;
+  // What the backend hears as `visibility`; defaults to document.hidden.
+  isHidden?: () => boolean;
+}
+
 export interface WebSocketManager {
   socket: Socket | null;
   connect: () => void;
@@ -88,10 +160,15 @@ export interface WebSocketManager {
   onTti: (callback: (phase: string) => void) => void;
   onSessionEnd: (callback: () => void) => void;
   onSessionStatus: (callback: (status: { mode?: 'cold' | 'resume'; restoredType?: 'active' | 'zombie' }) => void) => void;
+  onDenied: (callback: (reason: DenialReason) => void) => void;
   resize: (cols: number, rows: number) => void;
+  reportVisibility: () => void;
 }
 
-export function createWebSocketManager(): WebSocketManager {
+export function createWebSocketManager({
+  kind = 'site',
+  isHidden = () => document.hidden,
+}: WebSocketManagerOptions = {}): WebSocketManager {
   let socket: Socket | null = null;
   let connectCallback: (() => void) | null = null;
   let disconnectCallback: (() => void) | null = null;
@@ -100,18 +177,10 @@ export function createWebSocketManager(): WebSocketManager {
   let ttiCallback: ((phase: string) => void) | null = null;
   let sessionEndCallback: (() => void) | null = null;
   let sessionStatusCallback: ((status: { mode?: 'cold' | 'resume'; restoredType?: 'active' | 'zombie' }) => void) | null = null;
+  let deniedCallback: ((reason: DenialReason) => void) | null = null;
 
-  // Generate or reuse persistent session ID
-  const getSessionId = (): string => {
-    if (typeof window === 'undefined') return `session-${Date.now()}`;
-
-    let sessionId = localStorage.getItem('terminal-session-id');
-    if (!sessionId) {
-      sessionId = crypto.randomUUID();
-      localStorage.setItem('terminal-session-id', sessionId);
-    }
-    return sessionId;
-  };
+  const sessionKind = SESSION_KINDS[kind];
+  const sessionIds = sessionKind.sessionIds();
   // Buffer the most recent resize so we can re-emit it once the socket connects.
   // Without this, the xterm fit on mount (at 100/200ms) fires before socket is
   // ready, we drop the emit, and the PTY stays at default 80x24 until the user
@@ -128,7 +197,7 @@ export function createWebSocketManager(): WebSocketManager {
   const emitVisibility = () => {
     if (typeof document === 'undefined') return;
     if (socket?.connected) {
-      socket.emit('visibility', { hidden: document.hidden });
+      socket.emit('visibility', { hidden: isHidden() });
     }
   };
 
@@ -145,9 +214,6 @@ export function createWebSocketManager(): WebSocketManager {
   const connect = () => {
     if (socket?.connected) return;
 
-    const initCommand = typeof window !== 'undefined' ? pathToCommand(window.location.pathname) : undefined;
-    const sessionId = getSessionId();
-
     socket = io(getWebSocketUrl(), {
       // websocket-first: skip the polling handshake on browsers that support WS
       // (essentially all of them). Falls back to polling if WS fails.
@@ -157,10 +223,7 @@ export function createWebSocketManager(): WebSocketManager {
       forceNew: false, // Don't force new connection to allow reattach
       upgrade: true,
       rememberUpgrade: true,
-      auth: {
-        initCommand,
-        sessionId // Send persistent session ID
-      },
+      auth: sessionKind.auth(sessionIds.get()),
     });
 
     if (!visibilityListenerAttached && typeof document !== 'undefined') {
@@ -181,6 +244,11 @@ export function createWebSocketManager(): WebSocketManager {
 
     socket.on('session_status', (status: { mode?: 'cold' | 'resume'; restoredType?: 'active' | 'zombie' }) => {
       sessionStatusCallback?.(status);
+    });
+
+    socket.on('session_denied', (payload: { reason?: unknown } | undefined) => {
+      const reason = payload?.reason;
+      deniedCallback?.(isDenialReason(reason) ? reason : 'unavailable');
     });
 
     socket.on('disconnect', () => {
@@ -212,11 +280,7 @@ export function createWebSocketManager(): WebSocketManager {
     });
 
     socket.on('session_end', () => {
-      // Container exited (e.g. user typed 'exit'). Clear the persistent session
-      // ID so the next reconnect gets a fresh container.
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('terminal-session-id');
-      }
+      sessionIds.forget();
       sessionEndCallback?.();
       // Disconnect so the caller can call connect() again for a fresh session.
       socket?.disconnect();
@@ -272,6 +336,10 @@ export function createWebSocketManager(): WebSocketManager {
     sessionStatusCallback = callback;
   };
 
+  const onDenied = (callback: (reason: DenialReason) => void) => {
+    deniedCallback = callback;
+  };
+
   const resize = (cols: number, rows: number) => {
     lastResize = { cols, rows };
     if (socket?.connected) {
@@ -291,6 +359,8 @@ export function createWebSocketManager(): WebSocketManager {
     onTti,
     onSessionEnd,
     onSessionStatus,
+    onDenied,
     resize,
+    reportVisibility: emitVisibility,
   };
 }

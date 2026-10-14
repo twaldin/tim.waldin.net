@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-const contentSecurityPolicy = [
+const contentSecurityPolicy = (frameAncestors: string) => [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
@@ -8,7 +8,7 @@ const contentSecurityPolicy = [
   "font-src 'self'",
   // Safari < 16 does not match same-origin wss: against 'self'; name both hosts.
   "connect-src 'self' wss://tim.waldin.net wss://twald.in",
-  "frame-ancestors 'self'",
+  `frame-ancestors ${frameAncestors}`,
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -42,11 +42,24 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: "Content-Security-Policy",
-            value: contentSecurityPolicy,
+            value: contentSecurityPolicy("'self'"),
           },
           {
             key: "Permissions-Policy",
             value: permissionsPolicy,
+          },
+        ],
+      },
+      // The X Player Card frames /x on desktop web. Exact path; the last
+      // matching header wins, so this rule must stay after the global one.
+      {
+        source: "/x",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: contentSecurityPolicy(
+              "'self' https://x.com https://*.x.com https://twitter.com https://*.twitter.com",
+            ),
           },
         ],
       },

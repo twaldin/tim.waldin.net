@@ -7,6 +7,7 @@ const SessionLifecycle = require('../lifecycle');
 const SessionManager = require('../session');
 const { makeFakeClock } = require('./fake-clock');
 const LifecycleFake = require('./lifecycle-fake');
+const { kindsWithWindows } = require('./kinds-with-windows');
 
 const MAX_WRITABLE_BYTES = 1024 * 1024 * 1024;
 
@@ -22,7 +23,7 @@ function socket(id, ip) {
   const emitted = [];
   return {
     id,
-    handshake: { headers: { 'x-real-ip': ip }, auth: { initCommand: '' } },
+    handshake: { headers: { 'x-real-ip': ip }, auth: {} },
     emit(event, payload) { emitted.push({ event, payload }); },
     disconnect() { this.disconnected = true; },
     emitted,
@@ -35,10 +36,7 @@ function harness(poolSize = 0) {
   const lifecycle = new SessionLifecycle({ docker, poolSize });
   const clock = makeFakeClock();
   const admission = new Admission({ lifecycle, clock, maxSessions: 10 });
-  const manager = new SessionManager({ lifecycle, admission });
-  manager.sessionTimeout = 60_000_000;
-  manager.noInputTimeout = 60_000_000;
-  manager.noInputTimeoutVisible = 60_000_000;
+  const manager = new SessionManager({ lifecycle, admission, kinds: kindsWithWindows() });
   return { docker, lifecycle, admission, manager };
 }
 

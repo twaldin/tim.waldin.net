@@ -4,6 +4,7 @@
 // foundation. Admission never constructs a container spec; that authority stays
 // in SessionLifecycle.
 require('./sandbox-policy');
+const { SESSION_KINDS } = require('./session-kinds');
 
 /**
  * Contract notes for underspecified mechanics:
@@ -28,6 +29,7 @@ require('./sandbox-policy');
  * @property {string} leaseId equal to the socket id
  * @property {string} handleId references a SessionHandle
  * @property {string} ip
+ * @property {'site'|'embed'} kind selects the IP policy in SESSION_KINDS
  * @property {string} [persistentId]
  * @property {'pending'|'active'|'zombie'|'ended'} state
  * @property {number} acquiredAt
@@ -38,8 +40,10 @@ const ZOMBIE_GRACE_MS = 30_000;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const MAX_CONNECTIONS_PER_IP = 30;
 
+const ipKey = (kind, ip) => `${kind} ${ip}`;
+
 class Admission {
-  constructor({ lifecycle, maxSessions = 40, clock = Date.now }) {
+  constructor({ lifecycle, maxSessions = 40, clock = Date.now, kinds = SESSION_KINDS }) {
     if (!lifecycle) throw new TypeError('lifecycle is required');
     if (!Number.isInteger(maxSessions) || maxSessions < 1) {
       throw new RangeError('maxSessions must be a positive integer');
@@ -51,6 +55,7 @@ class Admission {
     this.lifecycle = lifecycle;
     this.maxSessions = maxSessions;
     this.clock = clock;
+    this.kinds = kinds;
 
     this.pendingLeases = new Map();
     this.activeLeases = new Map();
@@ -74,34 +79,43 @@ class Admission {
    * stream; `onSuperseded` fires synchronously when a later connection
    * resumes this lease or evicts it to take the IP.
    * @param {string} ip
-   * @param {{persistentId?: string, initCommand?: string, onOutput?: function(string): void,
-   *   onClose?: function(): void, onSuperseded?: function(): void}} options
+   * @param {{kind?: 'site'|'embed', persistentId?: string, initCommand?: string,
+   *   onOutput?: function(string): void, onClose?: function(): void,
+   *   onSuperseded?: function(): void}} options
    * @returns {Promise<{mode: 'cold'|'resume', lease: Lease}|{mode: 'denied', reason: string}>}
    */
-  async tryAcquire(ip, { persistentId, initCommand, onOutput, onClose, onSuperseded } = {}) {
+  async tryAcquire(ip, { kind = 'site', persistentId, initCommand, onOutput, onClose, onSuperseded } = {}) {
     // Command execution is deliberately outside the frozen lifecycle interface.
     // Accept it here so the public Admission signature remains exact.
     void initCommand;
 
     if (persistentId) {
-      const persistentLease = this._findPersistentLease(persistentId);
+      const persistentLease = this._findPersistentLease(persistentId, kind);
       if (persistentLease) {
         if (persistentLease.ip !== ip) {
           return { mode: 'denied', reason: 'ip-mismatch' };
         }
         return this._restore(persistentLease, { onOutput, onClose, onSuperseded });
       }
+      const pendingLease = this.kinds[kind].ip.mode === 'share'
+        ? this._findPendingLease(persistentId, kind)
+        : null;
+      if (pendingLease) {
+        if (pendingLease.ip !== ip) return { mode: 'denied', reason: 'ip-mismatch' };
+        await pendingLease.settled;
+        return this.tryAcquire(ip, { kind, persistentId, initCommand, onOutput, onClose, onSuperseded });
+      }
     }
 
-    // A same-IP connection without a matching persistent id replaces that IP's
-    // live lease. destroy() drops the old lease from the session count before
-    // its first await, so the replacement inherits the slot; the evicted
-    // lease's handle is torn down before lifecycle.lease starts for it.
-    const existingLeaseId = this.ipLeases.get(ip);
+    const ipPolicy = this.kinds[kind].ip;
     let eviction;
-    if (existingLeaseId) {
-      eviction = this._evict(existingLeaseId);
-    } else if (this._capacityUsed() >= this.maxSessions) {
+    if (ipPolicy.mode === 'replace') {
+      const existingLeaseId = this.ipLeases.get(ipKey(kind, ip));
+      if (existingLeaseId) eviction = this._evict(existingLeaseId);
+    } else if (this._countOnIp(ip, kind) >= ipPolicy.maxPerIp) {
+      return { mode: 'denied', reason: 'ip-cap' };
+    }
+    if (!eviction && this._capacityUsed() >= this.maxSessions) {
       // H6: no await occurs between this check and the pendingLeases entry
       // below, so concurrent tryAcquire calls cannot overshoot maxSessions.
       return { mode: 'denied', reason: 'full' };
@@ -109,11 +123,13 @@ class Admission {
 
     const now = this.clock();
     const leaseId = `lease-${now}-${this.nextLeaseId++}`;
+    let settle;
     /** @type {Lease} */
     const lease = {
       leaseId,
       handleId: '',
       ip,
+      kind,
       persistentId,
       onOutput,
       onClose,
@@ -121,31 +137,34 @@ class Admission {
       state: 'pending',
       acquiredAt: now,
       lastActivity: now,
+      settled: new Promise((resolve) => { settle = resolve; }),
     };
 
     this.pendingLeases.set(leaseId, lease);
-    this.ipLeases.set(ip, leaseId);
+    if (ipPolicy.mode === 'replace') this.ipLeases.set(ipKey(kind, ip), leaseId);
 
-    if (eviction) {
-      try {
-        await eviction;
-      } catch {
-        this._endPendingLease(lease);
-        return { mode: 'denied', reason: 'eviction-failed' };
-      }
-      // A later same-IP connection may have evicted this lease during the
-      // teardown; leasing a container for it would only create one to destroy.
-      if (lease.state !== 'pending') return { mode: 'denied', reason: 'cancelled' };
-    }
-
-    const operation = this._fulfillLease(lease);
-    this.pendingOperations.set(leaseId, operation);
     try {
-      return await operation;
-    } finally {
-      if (this.pendingOperations.get(leaseId) === operation) {
-        this.pendingOperations.delete(leaseId);
+      if (eviction) {
+        try {
+          await eviction;
+        } catch {
+          this._endPendingLease(lease);
+          return { mode: 'denied', reason: 'eviction-failed' };
+        }
+        if (lease.state !== 'pending') return { mode: 'denied', reason: 'cancelled' };
       }
+
+      const operation = this._fulfillLease(lease);
+      this.pendingOperations.set(leaseId, operation);
+      try {
+        return await operation;
+      } finally {
+        if (this.pendingOperations.get(leaseId) === operation) {
+          this.pendingOperations.delete(leaseId);
+        }
+      }
+    } finally {
+      settle();
     }
   }
 
@@ -158,20 +177,19 @@ class Admission {
     if (!lease) return false;
 
     this.activeLeases.delete(leaseId);
-    if (this.ipLeases.get(lease.ip) === leaseId) {
-      this.ipLeases.delete(lease.ip);
-    }
+    this._releaseIp(lease);
     lease.state = 'zombie';
     lease.lastActivity = this.clock();
 
-    // Preserve the old behavior of retaining at most one zombie per IP.
-    for (const [existingId, entry] of this.zombieLeases) {
-      if (entry.lease.ip !== lease.ip) continue;
-      this.clearTimer(entry.timer);
-      this.zombieLeases.delete(existingId);
-      entry.lease.state = 'ended';
-      void this.lifecycle.destroy(entry.lease.handleId).catch(() => {});
-      break;
+    if (this.kinds[lease.kind].ip.mode === 'replace') {
+      for (const [existingId, entry] of this.zombieLeases) {
+        if (entry.lease.ip !== lease.ip || entry.lease.kind !== lease.kind) continue;
+        this.clearTimer(entry.timer);
+        this.zombieLeases.delete(existingId);
+        entry.lease.state = 'ended';
+        void this.lifecycle.destroy(entry.lease.handleId).catch(() => {});
+        break;
+      }
     }
 
     let timer;
@@ -216,9 +234,7 @@ class Admission {
 
     if (!lease) return false;
 
-    if (this.ipLeases.get(lease.ip) === leaseId) {
-      this.ipLeases.delete(lease.ip);
-    }
+    this._releaseIp(lease);
     lease.state = 'ended';
 
     const pendingOperation = this.pendingOperations.get(leaseId);
@@ -277,12 +293,33 @@ class Admission {
     return this.pendingLeases.size + this.activeLeases.size + this.zombieLeases.size;
   }
 
-  _findPersistentLease(persistentId) {
+  _countOnIp(ip, kind) {
+    const holders = [
+      ...this.pendingLeases.values(),
+      ...this.activeLeases.values(),
+      ...[...this.zombieLeases.values()].map(({ lease }) => lease),
+    ];
+    return holders.filter((lease) => lease.ip === ip && lease.kind === kind).length;
+  }
+
+  _releaseIp(lease) {
+    const key = ipKey(lease.kind, lease.ip);
+    if (this.ipLeases.get(key) === lease.leaseId) this.ipLeases.delete(key);
+  }
+
+  _findPendingLease(persistentId, kind) {
+    for (const lease of this.pendingLeases.values()) {
+      if (lease.persistentId === persistentId && lease.kind === kind) return lease;
+    }
+    return null;
+  }
+
+  _findPersistentLease(persistentId, kind) {
     for (const lease of this.activeLeases.values()) {
-      if (lease.persistentId === persistentId) return lease;
+      if (lease.persistentId === persistentId && lease.kind === kind) return lease;
     }
     for (const { lease } of this.zombieLeases.values()) {
-      if (lease.persistentId === persistentId) return lease;
+      if (lease.persistentId === persistentId && lease.kind === kind) return lease;
     }
     return null;
   }
@@ -298,15 +335,13 @@ class Admission {
       lease.state = 'active';
       this.activeLeases.set(lease.leaseId, lease);
 
-      // Another browser on this IP may have leased while the tab was closed;
-      // the one-live-lease rule evicts it. Its teardown is not awaited: the
-      // restore stays free of real I/O, so no disconnect, timer or second
-      // restore can interleave before the rebind below hands over the stream.
-      // A failed teardown leaves an orphan for reclaimOrphans.
-      const otherLeaseId = this.ipLeases.get(lease.ip);
-      this.ipLeases.set(lease.ip, lease.leaseId);
-      if (otherLeaseId && otherLeaseId !== lease.leaseId) {
-        void this._evict(otherLeaseId).catch(() => {});
+      if (this.kinds[lease.kind].ip.mode === 'replace') {
+        const key = ipKey(lease.kind, lease.ip);
+        const otherLeaseId = this.ipLeases.get(key);
+        this.ipLeases.set(key, lease.leaseId);
+        if (otherLeaseId && otherLeaseId !== lease.leaseId) {
+          void this._evict(otherLeaseId).catch(() => {});
+        }
       }
     }
 
@@ -358,9 +393,7 @@ class Admission {
     if (this.pendingLeases.get(lease.leaseId) === lease) {
       this.pendingLeases.delete(lease.leaseId);
     }
-    if (this.ipLeases.get(lease.ip) === lease.leaseId) {
-      this.ipLeases.delete(lease.ip);
-    }
+    this._releaseIp(lease);
     lease.state = 'ended';
   }
 

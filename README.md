@@ -53,7 +53,7 @@ term-site/
 │   ├── blog/posts/            # Markdown posts
 │   └── fonts/                 # figlet font pool for the banner
 ├── e2e/                       # Playwright suite (run by .github/workflows/e2e.yml)
-├── scripts/                   # Ops scripts: deploy, VPS, blog, repo cards, fonts, themes
+├── scripts/                   # Ops scripts: deploy, VPS, blog, repo cards, fonts, themes, the /x tour recorder
 ├── docker-compose.yml         # nginx, frontend, backend, socket-proxy
 ├── nginx.conf                 # Reverse proxy, SSL, rate limiting
 └── deploy.sh                  # Build images, then swap the stack
@@ -83,7 +83,7 @@ Native package commands remain available for isolated work: `cd frontend && pnpm
 ## Security
 
 Each visitor gets an isolated Docker container with:
-- 512 MB RAM limit (no swap), 0.5 CPU limit, 100 process limit, 100 MB `noexec,nosuid` tmpfs on `/tmp`
+- 192 MiB RAM limit (no swap), 0.5 CPU limit, 100 process limit, 100 MB `noexec,nosuid` tmpfs on `/tmp`
 - No network access (`NetworkMode: none`)
 - Non-root `portfolio` user; all capabilities dropped, then only `SETUID` and `SETGID` added back for the `sudo` demo
 - Disk: a 2-second writable-layer watchdog destroys active or disconnected-grace sessions over 1 GiB, and the seccomp profile (Docker's default minus `fallocate`) forbids instant block reservation, so a fill is bounded by disk write speed times the check interval. There is still no hard per-container quota
@@ -91,15 +91,25 @@ Each visitor gets an isolated Docker container with:
 - The backend and frontend services drop all capabilities; the backend also uses a read-only rootfs, a 16 MB hardened `/tmp`, and `no-new-privileges`
 
 Session limits (`backend/session.js`, `backend/admission.js`):
-- Pre-warmed pool of 5 containers; hard cap of 40 concurrent sessions
-- One live session per IP: a new connection from the same IP replaces the old one; at most 30 connections per IP per minute
-- Idle kill after 5 minutes without a keystroke
-- Bot kill: a session that never receives input is freed after 60 s, relaxed to 5 minutes while the page reports itself visible
+- Pre-warmed pool of 5 containers; hard cap of 100 concurrent sessions
+- One live main-site session per IP: a new main-site connection from the same IP replaces the old one. `/x` embed sessions share an IP up to 4 and never replace anything. At most 30 connections per IP per minute
+- Idle kill after 5 minutes without a keystroke (embed: 90 s)
+- Bot kill: a session that never receives input is freed after 60 s, relaxed to 5 minutes while the page reports itself visible (embed: 20 s hidden, 90 s visible)
 - 30-second reconnect grace after a disconnect; a refresh within it resumes the same container (same IP only)
 - Socket.IO messages are capped at 8 KiB; a generous per-socket token bucket drops event floods, and audit fields are bounded with common credential shapes redacted from commands, referrers and init commands
 - Nginx: 10 requests/s per IP (burst 20) for dynamic/backend routes; `/_next/static/` and `/fonts/` share a separate 100 requests/s budget (burst 200). At most 128 concurrent requests per IP (HTTP/2 counts each stream) and 10 concurrent Socket.IO connections per IP.
 
 Users can run destructive commands like `rm -rf /` or fork bombs - they only affect their own container, not the host.
+
+## Capacity
+
+`bench/capacity/run.sh` measures N*, the most concurrent visitor sessions at which every SLO holds, on a Docker-in-Docker box on deckbox shaped like the VPS (3 CPU, 3.8 GB, 2 GB swap, Docker 29.3.0, containerd 2.2.2). It replays the production visitor mix with a memory hog and a fork abuser alive, and leaves out nginx, Next.js and agentelo. A deckbox core runs about 1.67 times faster than a VPS vCPU, so `--cpus 1.8` stands in for the VPS's CPU. Runs take a global lock and go one at a time; read the script header before running it.
+
+```bash
+offload --cpus 4 --mem 8G --fetch bench/capacity/results -- env CAPACITY_COMMIT=$(git rev-parse HEAD) bash bench/capacity/run.sh --lane 0 --repeat 3
+```
+
+The 100-session cap sits below the 133 to 145 sessions the current stack carried at `--cpus 1.8`, which leaves room for the services the harness omits.
 
 ## Terminal Commands
 

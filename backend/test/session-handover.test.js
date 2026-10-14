@@ -13,9 +13,9 @@ const { Admission } = require('../admission');
 const SessionLifecycle = require('../lifecycle');
 const LifecycleFake = require('./lifecycle-fake');
 const { makeFakeClock } = require('./fake-clock');
+const { kindsWithWindows } = require('./kinds-with-windows');
 
 const IP = '203.0.113.1';
-const FOREVER = 60_000_000;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Holds every call of one LifecycleFake method until `release()`. */
@@ -32,12 +32,10 @@ function makeManager(t, { poolSize = 5 } = {}) {
   const docker = new LifecycleFake();
   const lifecycle = new SessionLifecycle({ docker, poolSize });
   const admission = new Admission({ lifecycle, maxSessions: 40, clock });
-  const mgr = new SessionManager({ lifecycle, admission });
-  mgr.sessionTimeout = FOREVER;
-  mgr.noInputTimeout = FOREVER;
-  mgr.noInputTimeoutVisible = FOREVER;
+  const kinds = kindsWithWindows();
+  const mgr = new SessionManager({ lifecycle, admission, kinds });
   t.after(() => { for (const state of mgr.conns.values()) mgr._clearTimers(state); });
-  return { clock, docker, lifecycle, mgr };
+  return { clock, docker, lifecycle, mgr, kinds };
 }
 
 /**
@@ -49,7 +47,7 @@ function fakeSocket(mgr, id, sessionId) {
   const socket = {
     id,
     connected: true,
-    handshake: { headers: { 'x-real-ip': IP }, auth: { sessionId, initCommand: '' } },
+    handshake: { headers: { 'x-real-ip': IP }, auth: { sessionId } },
     emitted: [],
     emit(ev, payload) { socket.emitted.push({ ev, payload }); },
     disconnect() {
@@ -238,17 +236,13 @@ test('a tab that resumes a cold lease whose socket left, before that acquire\'s 
 });
 
 test('the first tab left open: its idle and no-input timers cannot end the shared shell', async (t) => {
-  const { docker, lifecycle, mgr } = makeManager(t);
-  // The first tab's windows, scaled down (ms stand in for s); the second tab
-  // connects with the defaults so only the first tab's timers are due here.
-  mgr.sessionTimeout = 40;
-  mgr.noInputTimeout = 40;
+  const { docker, lifecycle, mgr, kinds } = makeManager(t);
+  kinds.site = kindsWithWindows(40).site;
   const first = fakeSocket(mgr, 'tab-1', 'browser-a');
   await mgr.handleConnect(first);
   const { lease } = mgr.conns.get('tab-1');
   const { handleId } = lease;
-  mgr.sessionTimeout = FOREVER;
-  mgr.noInputTimeout = FOREVER;
+  kinds.site = kindsWithWindows().site;
 
   const second = fakeSocket(mgr, 'tab-2', 'browser-a');
   await mgr.handleConnect(second);

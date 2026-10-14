@@ -13,6 +13,7 @@ async function ok(label, fn) {
 }
 
 const SessionManager = require('../session.js');
+const { kindsWithWindows } = require('./kinds-with-windows');
 
 function makeFakes() {
   const calls = { zombify: [], destroy: [], write: [], resize: [] };
@@ -42,7 +43,7 @@ function fakeSocket(id) {
   const emitted = [];
   return {
     id,
-    handshake: { headers: { 'x-real-ip': '9.9.9.9' }, auth: { initCommand: '' } },
+    handshake: { headers: { 'x-real-ip': '9.9.9.9' }, auth: {} },
     emit: (ev, payload) => emitted.push({ ev, payload }),
     disconnect: () => {},
     _emitted: emitted,
@@ -51,9 +52,7 @@ function fakeSocket(id) {
 
 (async () => {
   const { admission, lifecycle, calls } = makeFakes();
-  const mgr = new SessionManager({ lifecycle, admission });
-  mgr.noInputTimeout = 60_000_000;   // effectively never fire during this test
-  mgr.sessionTimeout = 60_000_000;
+  const mgr = new SessionManager({ lifecycle, admission, kinds: kindsWithWindows() });
 
   const socket = fakeSocket('sock-1');
   await mgr.handleConnect(socket);
@@ -84,13 +83,13 @@ function fakeSocket(id) {
     assert.ok(!mgr.conns.has('sock-1'), 'conn should be cleared');
   });
 
-  await ok('rate-limited IP is denied + disconnected', async () => {
+  await ok('rate-limited IP is denied with session_denied ip-cap + disconnected', async () => {
     const deniedAdmission = { ...admission, checkConnectionRate: () => false };
     const deniedMgr = new SessionManager({ lifecycle, admission: deniedAdmission });
-    deniedMgr.noInputTimeout = 60_000_000; deniedMgr.sessionTimeout = 60_000_000;
     const s = fakeSocket('sock-2');
     let disconnected = false; s.disconnect = () => { disconnected = true; };
     await deniedMgr.handleConnect(s);
+    assert.deepStrictEqual(s._emitted, [{ ev: 'session_denied', payload: { reason: 'ip-cap' } }]);
     assert.ok(disconnected, 'rate-limited connection should disconnect');
     assert.ok(!deniedMgr.conns.has('sock-2'));
   });
@@ -100,14 +99,29 @@ function fakeSocket(id) {
       ...admission,
       tryAcquire: async () => ({ mode: 'resume', lease: { leaseId: 'L3', handleId: 'H3' } }),
     };
-    const resumeMgr = new SessionManager({ lifecycle, admission: resumeAdmission });
-    resumeMgr.noInputTimeout = 60_000_000; resumeMgr.sessionTimeout = 60_000_000;
+    const resumeMgr = new SessionManager({ lifecycle, admission: resumeAdmission, kinds: kindsWithWindows() });
     const s = fakeSocket('sock-3');
     await resumeMgr.handleConnect(s);
     const status = s._emitted.find((e) => e.ev === 'session_status');
     assert.ok(status && status.payload.mode === 'resume', 'expected resume session_status');
     assert.ok(calls.write.some(([id, d]) => id === 'H3' && d === '\x03'),
       'resume should send Ctrl-C to the restored container');
+    for (const c of resumeMgr.conns.values()) resumeMgr._clearTimers(c);
+  });
+
+  await ok('an embed resume leaves the restored shell running', async () => {
+    const resumeAdmission = {
+      ...admission,
+      tryAcquire: async () => ({ mode: 'resume', lease: { leaseId: 'L4', handleId: 'H4' } }),
+    };
+    const resumeMgr = new SessionManager({ lifecycle, admission: resumeAdmission, kinds: kindsWithWindows() });
+    const s = fakeSocket('sock-4');
+    s.handshake.auth = { kind: 'embed', sessionId: 'embed-1' };
+    await resumeMgr.handleConnect(s);
+    const status = s._emitted.find((e) => e.ev === 'session_status');
+    assert.ok(status && status.payload.mode === 'resume', 'expected resume session_status');
+    assert.ok(!calls.write.some(([id]) => id === 'H4'),
+      'an embed replays no command, so nothing may interrupt its shell');
     for (const c of resumeMgr.conns.values()) resumeMgr._clearTimers(c);
   });
 

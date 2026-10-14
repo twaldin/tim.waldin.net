@@ -13,6 +13,12 @@ bash "$(dirname "$0")/container/build.sh"
 echo "Building service images..."
 docker compose build --no-cache
 
+# Raise root's inotify instance limit before the new backend can run up to
+# 100 sessions plus its warm pool; see deploy/sysctl/60-term-site.conf.
+echo "Installing sysctl settings..."
+install -m 0644 deploy/sysctl/60-term-site.conf /etc/sysctl.d/60-term-site.conf
+sysctl -q -p /etc/sysctl.d/60-term-site.conf
+
 # Swap: stop old stack, start freshly built images
 echo "Restarting services on new images..."
 docker compose down

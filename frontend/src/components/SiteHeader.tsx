@@ -8,6 +8,7 @@ import {
   type MouseEvent,
 } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import {
   applySaved,
   resolvedMode,
@@ -41,6 +42,7 @@ function hardNav(href: string, beforeNavigate?: () => void) {
 }
 
 export default function SiteHeader() {
+  const pathname = usePathname();
   const menuRef = useRef<HTMLDetailsElement>(null);
   const [currentMode, setCurrentMode] = useState<ResolvedThemeMode>('dark');
   const linkStyle: CSSProperties = {
@@ -80,6 +82,8 @@ export default function SiteHeader() {
     setMode(nextMode);
     setCurrentMode(nextMode);
   };
+
+  if (pathname === '/x') return null;
 
   return (
     <header

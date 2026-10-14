@@ -14,23 +14,35 @@
 
 const SessionLifecycle = require('./lifecycle');
 const { Admission } = require('./admission');
+const { SESSION_KINDS, parseSessionKind } = require('./session-kinds');
 
 const POOL_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const DISK_CHECK_INTERVAL_MS = 2 * 1000;
 const MAX_WRITABLE_BYTES = 1024 * 1024 * 1024;
 const DISK_LIMIT_MESSAGE = '\r\n[session closed: disk usage over 1 GB]\r\n';
 
-class SessionManager {
-  constructor({ lifecycle, admission } = {}) {
-    this.lifecycle = lifecycle || new SessionLifecycle({ poolSize: 5 });
-    this.admission = admission || new Admission({ lifecycle: this.lifecycle, maxSessions: 40 });
+function envCount(name, fallback, min) {
+  const raw = process.env[name];
+  if (raw === undefined) return fallback;
+  const n = raw.trim() === '' ? NaN : Number(raw);
+  if (!Number.isSafeInteger(n) || n < min) {
+    throw new RangeError(`${name} must be an integer >= ${min}, got ${JSON.stringify(raw)}`);
+  }
+  return n;
+}
 
-    // Idle kill: no USER INPUT for this long.
-    this.sessionTimeout = 5 * 60 * 1000;
-    // Bot kill: a session that never receives input within this window is freed.
-    this.noInputTimeout = 60 * 1000;
-    // Visibility-aware relaxation: a visible page gets the longer window.
-    this.noInputTimeoutVisible = 5 * 60 * 1000;
+// Production sets neither; bench/capacity raises the cap so it never binds.
+const POOL_SIZE = envCount('POOL_SIZE', 5, 0);
+const MAX_SESSIONS = envCount('MAX_SESSIONS', 100, 1);
+
+const DENIED_REASONS = { full: 'capacity', 'ip-cap': 'ip-cap' };
+
+class SessionManager {
+  constructor({ lifecycle, admission, kinds = SESSION_KINDS } = {}) {
+    this.lifecycle = lifecycle || new SessionLifecycle({ poolSize: POOL_SIZE });
+    this.admission = admission
+      || new Admission({ lifecycle: this.lifecycle, maxSessions: MAX_SESSIONS, kinds });
+    this.kinds = kinds;
 
     // socket.id -> per-connection controller state
     this.conns = new Map();
@@ -48,6 +60,8 @@ class SessionManager {
   /** Wire a freshly-connected socket to a (new or restored) session. */
   async handleConnect(socket) {
     const clientIP = socket.handshake.headers['x-real-ip'] || socket.handshake.address;
+    const kind = parseSessionKind(socket.handshake.auth?.kind);
+    const policy = this.kinds[kind];
     const initCommand = typeof socket.handshake.auth?.initCommand === 'string'
       ? socket.handshake.auth.initCommand : undefined;
     const persistentId = typeof socket.handshake.auth?.sessionId === 'string'
@@ -56,6 +70,7 @@ class SessionManager {
     const state = {
       socket,
       ip: clientIP,
+      policy,
       lease: null,
       initCommand,
       promptSeen: false,
@@ -74,9 +89,7 @@ class SessionManager {
 
     // Connection rate limit — all admission policy lives in Admission now.
     if (!this.admission.checkConnectionRate(clientIP)) {
-      socket.emit('error', 'Too many connections. Please wait a minute.');
-      socket.disconnect();
-      this.conns.delete(socket.id);
+      this._deny(socket, 'ip-cap');
       return;
     }
 
@@ -98,22 +111,15 @@ class SessionManager {
     let result;
     try {
       result = await this.admission.tryAcquire(
-        clientIP, { persistentId, initCommand, onOutput, onClose, onSuperseded });
+        clientIP, { kind, persistentId, initCommand, onOutput, onClose, onSuperseded });
     } catch (e) {
       console.error(`handleConnect failed for ${socket.id}:`, e.message);
-      socket.emit('error', 'Failed to create terminal session');
-      socket.disconnect();
-      this.conns.delete(socket.id);
+      this._deny(socket, 'unavailable');
       return;
     }
 
     if (result.mode === 'denied') {
-      const msg = result.reason === 'full'
-        ? 'Server is at capacity. Please try again shortly.'
-        : 'Session unavailable. Please refresh.';
-      socket.emit('error', msg);
-      socket.disconnect();
-      this.conns.delete(socket.id);
+      this._deny(socket, DENIED_REASONS[result.reason] ?? 'unavailable');
       return;
     }
 
@@ -132,7 +138,7 @@ class SessionManager {
     state.lease = result.lease;
     state.mode = result.mode;
     socket.emit('session_status', { mode: result.mode });
-    console.log(`Session ${socket.id} ${result.mode} (lease ${state.lease.leaseId})`);
+    console.log(`Session ${socket.id} ${kind} ${result.mode} (lease ${state.lease.leaseId})`);
 
     // Apply any resize/visibility that arrived during the async acquire.
     if (state.pendingResize) {
@@ -147,8 +153,9 @@ class SessionManager {
     }
 
     // A resume keeps an existing prompt; reset the initCommand gate so the
-    // incoming resize repaints the URL's command into the fresh xterm.
-    if (result.mode === 'resume') {
+    // incoming resize repaints the URL's command into the fresh xterm. A kind
+    // that replays no command (embed) resumes its shell untouched.
+    if (result.mode === 'resume' && policy.runsInitCommand) {
       state.promptSeen = true;
       state.firstResizeApplied = false;
       state.initCommandRun = false;
@@ -230,6 +237,12 @@ class SessionManager {
     this._destroy(socketId);
   }
 
+  _deny(socket, reason) {
+    socket.emit('session_denied', { reason });
+    socket.disconnect();
+    this.conns.delete(socket.id);
+  }
+
   // Another connection took this conn's lease or is evicting it on this IP.
   // Drop the conn before teardown/rebind leaves it with a stale handle, and
   // before disconnect can zombify the displaced lease. Never send session_end:
@@ -258,9 +271,7 @@ class SessionManager {
     if (state.initCommandRun) return;
     if (!state.promptSeen || !state.firstResizeApplied) return;
 
-    // Empty-string initCommand is a deliberate no-op sentinel (the blog cold
-    // page already shows content and has the user typing).
-    if (state.initCommand === '') { state.initCommandRun = true; return; }
+    if (!state.policy.runsInitCommand) { state.initCommandRun = true; return; }
 
     state.initCommandRun = true;
     // boot === welcome: the intro animation + welcome content is a single
@@ -311,18 +322,19 @@ class SessionManager {
   _setSessionTimeout(socketId) {
     const state = this.conns.get(socketId);
     if (!state) return;
-    if (state.timeout) clearTimeout(state.timeout);
+    clearTimeout(state.timeout);
+    const { idleMs } = state.policy;
     state.timeout = setTimeout(() => {
       const s = this.conns.get(socketId);
       if (!s) return;
-      console.log(`Session ${socketId} timed out (idle ${this.sessionTimeout / 1000}s)`);
+      console.log(`Session ${socketId} timed out (idle ${idleMs / 1000}s)`);
       const sock = s.socket;
       this._destroy(socketId);
       if (sock) {
         try { sock.emit('output', '\r\n[session idle — closed]\r\n'); } catch { /* ignore */ }
         try { sock.disconnect(); } catch { /* ignore */ }
       }
-    }, this.sessionTimeout);
+    }, idleMs);
   }
 
   _setNoInputTimeout(socketId) {
@@ -330,8 +342,8 @@ class SessionManager {
     if (!state) return;
     if (state.noInputTimer) clearTimeout(state.noInputTimer);
     const timeout = state.pageVisible === true
-      ? this.noInputTimeoutVisible
-      : this.noInputTimeout;
+      ? state.policy.noInputVisibleMs
+      : state.policy.noInputHiddenMs;
     state.noInputTimer = setTimeout(() => {
       const s = this.conns.get(socketId);
       if (!s || s.hasReceivedInput) return;

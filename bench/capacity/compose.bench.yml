@@ -1,0 +1,22 @@
+# Overlay on the production docker-compose.yml, applied by run.sh inside the
+# emulated host. Only backend and socket-proxy start: the load generator plays
+# nginx by sending X-Real-IP itself, so the backend needs a published port on
+# a non-internal network.
+services:
+  backend:
+    image: ${BENCH_BACKEND_IMAGE:?}
+    pull_policy: never
+    environment:
+      - MAX_SESSIONS=${BENCH_MAX_SESSIONS:?}
+      - POOL_SIZE=${BENCH_POOL_SIZE:?}
+    ports:
+      - "3001:3001"
+    networks:
+      - bench-net
+
+  socket-proxy:
+    pull_policy: never
+
+networks:
+  bench-net:
+    driver: bridge

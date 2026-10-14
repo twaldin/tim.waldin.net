@@ -31,8 +31,6 @@ function makeManager() {
     destroy: async () => true,
   };
   const mgr = new SessionManager({ lifecycle, admission });
-  mgr.noInputTimeout = 60;          // 60ms stands in for 60s
-  mgr.noInputTimeoutVisible = 300;  // 300ms stands in for 300s
   mgr.destroyed = destroyed;
   return mgr;
 }
@@ -42,6 +40,7 @@ function seedConn(mgr, sid, { pageVisible = undefined, hasReceivedInput = false 
   mgr.conns.set(sid, {
     socket: { emit() {}, disconnect() {} },
     ip: '1.2.3.4',
+    policy: { idleMs: 60_000_000, noInputVisibleMs: 300, noInputHiddenMs: 60 },
     lease: { leaseId: `L-${sid}`, handleId: `H-${sid}` },
     initCommand: undefined,
     promptSeen: true,

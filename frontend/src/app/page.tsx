@@ -2,14 +2,22 @@
 
 import dynamic from 'next/dynamic';
 import { useEffect, useRef, useCallback } from 'react';
-import { createWebSocketManager, WebSocketManager } from '@/lib/websocket';
+import { createWebSocketManager, WebSocketManager, type DenialReason } from '@/lib/websocket';
+import type { TerminalRef } from '@/components/Terminal';
 
 // xterm references browser globals (`self`) at module level — skip SSR.
 const Terminal = dynamic(() => import('@/components/Terminal'), { ssr: false });
 
+const DENIAL_MESSAGES: Record<DenialReason, string> = {
+  capacity: 'Every shell is busy right now. Refresh in a minute to try again.',
+  'ip-cap': 'Too many new shells from your network. Wait a minute, then refresh.',
+  unavailable: 'The terminal is unavailable right now. Refresh to try again.',
+};
+
 export default function Home() {
   const wsManagerRef = useRef<WebSocketManager | null>(null);
-  const terminalRef = useRef<{ writeToTerminal: (data: string) => void; clearTerminal: () => void; fitTerminal: () => void } | null>(null);
+  const terminalRef = useRef<TerminalRef | null>(null);
+  const pendingNoticeRef = useRef<string | null>(null);
   const firstOutputSeenRef = useRef(false);
   const firstPromptSeenRef = useRef(false);
   const welcomeSeenRef = useRef(false);
@@ -47,6 +55,12 @@ export default function Home() {
     wsManager.onDisconnect(() => {});
 
     wsManager.onError(() => {});
+
+    wsManager.onDenied((reason) => {
+      const notice = `\r\n${DENIAL_MESSAGES[reason]}\r\n`;
+      if (terminalRef.current) terminalRef.current.writeToTerminal(notice);
+      else pendingNoticeRef.current = notice;
+    });
 
     wsManager.onSessionEnd(() => {
       // Session ended (exit, idle timeout, dead container). Show the "session
@@ -115,6 +129,13 @@ export default function Home() {
     wsManagerRef.current?.resize(cols, rows);
   }, []);
 
+  const attachTerminal = useCallback((terminal: TerminalRef | null) => {
+    terminalRef.current = terminal;
+    if (terminal && pendingNoticeRef.current) {
+      terminal.writeToTerminal(pendingNoticeRef.current);
+      pendingNoticeRef.current = null;
+    }
+  }, []);
 
   return (
     <div
@@ -128,7 +149,7 @@ export default function Home() {
       }}
     >
       <Terminal
-        ref={terminalRef}
+        ref={attachTerminal}
         onData={handleTerminalData}
         onResize={handleTerminalResize}
       />
