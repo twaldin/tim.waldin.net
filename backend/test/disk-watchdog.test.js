@@ -1,6 +1,9 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { mkdtemp, mkdir, writeFile, rm } = require('node:fs/promises');
+const { tmpdir } = require('node:os');
+const path = require('node:path');
 const test = require('node:test');
 const { Admission } = require('../admission');
 const SessionLifecycle = require('../lifecycle');
@@ -30,9 +33,9 @@ function socket(id, ip) {
   };
 }
 
-function harness(poolSize = 0) {
+function harness(poolSize = 0, cgroupRoot) {
   const docker = new LifecycleFake();
-  const lifecycle = new SessionLifecycle({ docker, poolSize });
+  const lifecycle = new SessionLifecycle({ docker, poolSize, cgroupRoot });
   const clock = makeFakeClock();
   const admission = new Admission({ lifecycle, clock, maxSessions: 10 });
   const manager = new SessionManager({ lifecycle, admission });
@@ -110,3 +113,39 @@ test('one failed inspect does not stop the rest of the sweep', async () => {
   assert.equal(second.disconnected, true);
   await manager.destroyAllSessions();
 });
+
+for (const driver of ['systemd', 'cgroupfs']) {
+  test(`${driver} write pre-filter preserves a small session and closes an oversized writer`, async (t) => {
+    const root = await mkdtemp(path.join(tmpdir(), 'disk-watchdog-'));
+    const { docker, admission, manager } = harness(0, root);
+    t.after(async () => {
+      await manager.destroyAllSessions();
+      await rm(root, { recursive: true, force: true });
+    });
+    const client = socket(`writer-${driver}`, '203.0.113.6');
+    await manager.handleConnect(client);
+    const { lease } = manager.conns.get(client.id);
+    const group = driver === 'systemd'
+      ? path.join(root, 'system.slice', `docker-${lease.handleId}.scope`)
+      : path.join(root, 'docker', lease.handleId);
+    await mkdir(group, { recursive: true });
+    const stats = path.join(group, 'io.stat');
+    await writeFile(stats, '8:0 rbytes=0 wbytes=49152 rios=0 wios=5\n');
+
+    await manager._sweepDiskUsage();
+
+    assert.equal(admission.activeLeases.has(lease.leaseId), true);
+    assert.equal(client.disconnected, false);
+    assert.deepEqual(docker.inspectCalls, []);
+    docker.writableSizes.set(lease.handleId, MAX_WRITABLE_BYTES + 1);
+    await writeFile(stats, '8:0 rbytes=0 wbytes=1073741824 rios=0 wios=100\n');
+
+    await manager._sweepDiskUsage();
+
+    assert.equal(admission.activeLeases.has(lease.leaseId), false);
+    assert.equal(client.disconnected, true);
+    assert.ok(docker.removedIds.includes(lease.handleId));
+    assert.deepEqual(client.emitted.filter(({ event }) => event === 'output').at(-1),
+      { event: 'output', payload: '\r\n[session closed: disk usage over 1 GB]\r\n' });
+  });
+}

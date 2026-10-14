@@ -10,6 +10,7 @@ const {
   buildContainerSpec,
   labelFilter,
 } = require('./sandbox-policy');
+const CgroupWrites = require('./cgroup-writes');
 
 /**
  * @typedef {object} SessionHandle
@@ -123,8 +124,9 @@ class DockerodeAdapter {
 }
 
 class SessionLifecycle {
-  constructor({ docker, poolSize = 5 } = {}) {
+  constructor({ docker, poolSize = 5, cgroupRoot } = {}) {
     this.docker = docker || new DockerodeAdapter();
+    this.cgroupWrites = new CgroupWrites(cgroupRoot);
     this.poolSize = Math.max(0, poolSize);
     this.pool = [];
     this.poolWarming = 0;
@@ -207,8 +209,10 @@ class SessionLifecycle {
     return this.docker.resize(handleId, { h: rows, w: cols });
   }
 
-  writableBytes(handleId) {
+  async writableBytes(handleId) {
     this._record(handleId);
+    // ext4 writeback plus the 512 MiB memory cap bounds unflushed allocation.
+    if (!await this.cgroupWrites.requiresInspection(handleId)) return null;
     return this.docker.writableBytes(handleId);
   }
 
@@ -217,6 +221,7 @@ class SessionLifecycle {
     if (!record) return false;
 
     this.handles.delete(handleId);
+    this.cgroupWrites.forget(handleId);
     this._unbindStream(record);
     try {
       record.stream.end();

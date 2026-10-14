@@ -86,9 +86,9 @@ Each visitor gets an isolated Docker container with:
 - 512 MB RAM limit (no swap), 0.5 CPU limit, 100 process limit, 100 MB `noexec,nosuid` tmpfs on `/tmp`
 - No network access (`NetworkMode: none`)
 - Non-root `portfolio` user; all capabilities dropped, then only `SETUID` and `SETGID` added back for the `sudo` demo
-- Disk: a 2-second writable-layer watchdog destroys active or disconnected-grace sessions over 1 GiB, and the seccomp profile (Docker's default minus `fallocate`) forbids instant block reservation, so a fill is bounded by disk write speed times the check interval. There is still no hard per-container quota
+- Disk: a 2-second writable-layer watchdog destroys active or disconnected-grace sessions over 1 GiB. It reads each session's cgroup v2 `io.stat` through a read-only host-cgroup mount and inspects the writable layer once cumulative writes reach 256 MiB. Missing or invalid counters, a replaced cgroup, or a decreasing counter require full size inspections. Production uses ext4 without reflinks, with cgroup-aware writeback. Unflushed allocation is bounded by the session's 512 MiB memory limit and disabled swap; the 256 MiB write threshold leaves another 256 MiB below the 1 GiB limit. The seccomp profile (Docker's default minus `fallocate`) forbids instant block reservation, so a fill remains bounded by disk write speed times the check interval. There is still no hard per-container quota
 - Docker Socket Proxy restricts the backend's API access to containers, POST, info, and ping (no images, networks, volumes, build, or exec); its release and digest are pinned
-- The backend and frontend services drop all capabilities; the backend also uses a read-only rootfs, a 16 MB hardened `/tmp`, and `no-new-privileges`
+- The backend and frontend services drop all capabilities; the backend also uses a read-only rootfs, a 16 MB hardened `/tmp`, `no-new-privileges`, and a read-only cgroup mount that cannot change host resource limits or process membership
 
 Session limits (`backend/session.js`, `backend/admission.js`):
 - Pre-warmed pool of 5 containers; hard cap of 40 concurrent sessions

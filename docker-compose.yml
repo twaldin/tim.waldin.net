@@ -96,6 +96,7 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
     volumes:
       - backend_data:/app/data
+      - /sys/fs/cgroup:/host-cgroup:ro
     expose:
       - "3001"
     restart: unless-stopped

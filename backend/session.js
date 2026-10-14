@@ -403,7 +403,7 @@ class SessionManager {
           }
           continue;
         }
-        if (bytes <= MAX_WRITABLE_BYTES) continue;
+        if (bytes === null || bytes <= MAX_WRITABLE_BYTES) continue;
 
         console.warn(`Session ${lease.leaseId} exceeded writable disk limit (${bytes} bytes)`);
         const liveEntry = [...this.conns.entries()]
