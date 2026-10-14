@@ -1,0 +1,7 @@
+FROM docker:29.3.0-dind@sha256:1ba18449911d01f477a3fc104123c85d677addc60701b14b3fcb5381f9c4a537
+ADD --checksum=sha256:5db46232ce716f85bf1e71497a9038c87e63030574bf03f9d09557802188ad27 https://github.com/containerd/containerd/releases/download/v2.2.2/containerd-static-2.2.2-linux-amd64.tar.gz /tmp/containerd.tar.gz
+RUN tar -xzf /tmp/containerd.tar.gz -C /usr/local bin/containerd bin/containerd-shim-runc-v2 && rm /tmp/containerd.tar.gz
+RUN apk add --no-cache crun
+COPY <<'EOF' /etc/docker/daemon.json
+{"default-runtime":"crun","runtimes":{"crun":{"path":"/usr/bin/crun"}}}
+EOF

@@ -78,6 +78,8 @@ docker compose logs --tail=50 frontend backend nginx
 
 The running site is [https://tim.waldin.net](https://tim.waldin.net), not a localhost preview. Source edits do not update the running service images. Publishing a runtime change is a separate, explicitly scoped production operation: the root `deploy.sh` builds images, swaps the stack, prunes build cache, and installs the certbot renewal hooks and the hourly host monitor (`deploy/term-monitor.sh`). Do not run it just to start development or apply a documentation/script cleanup.
 
+The runtime installer (`deploy/term-runtime.py`) requires Python 3 and crun 1.28 or newer with seccomp, capability, and AppArmor support on the host. `deploy.sh` installs it as `/usr/local/bin/term-runtime.py` and runs it before building images. It selects crun for new containers, preserves unrelated `/etc/docker/daemon.json` settings, validates the merged configuration, and reloads the local Docker daemon without restarting existing containers. A conflicting existing crun registration stops deployment before the stack is changed.
+
 Native package commands remain available for isolated work: `cd frontend && pnpm dev` and `cd backend && npm start`. They are not a replacement production startup procedure. The backend needs a Docker daemon and the sandbox image; do not point a second backend at the production daemon, where it could interfere with live session containers. See [the frontend guide](frontend/CLAUDE.md#dev--build--tests) for native blog setup. Package tests are `cd frontend && pnpm test` and `cd backend && npm test`; backend unit tests need no Docker daemon.
 
 ## Security

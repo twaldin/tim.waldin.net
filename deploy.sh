@@ -3,6 +3,10 @@ set -e  # Exit on any error
 
 echo "Starting deployment..."
 
+echo "Installing container runtime configuration..."
+install -m 0755 deploy/term-runtime.py /usr/local/bin/term-runtime.py
+/usr/local/bin/term-runtime.py
+
 # Build everything BEFORE stopping the stack — the old services keep serving
 # while images build, so downtime is the container swap (seconds), not the
 # multi-minute --no-cache build. Crawlers (X/Google link previews) used to
