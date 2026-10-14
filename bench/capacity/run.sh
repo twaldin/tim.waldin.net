@@ -31,6 +31,7 @@
 #   --pool-size P     backend warm pool (default 5, as in production)
 #   --seed S          seed of the first run's visitor stream (default 1)
 #   --profile         after each run, hold its N* and record a CPU/memory profile
+#   --profile-n N     profile an already-measured N rather than this run's highest pass
 #
 # Results land in bench/capacity/results/<run id>/ (one JSON line per step and
 # a summary per run). Everything else it creates is named capbench-<run id>-*
@@ -62,7 +63,7 @@
 set -euo pipefail
 
 LANE=0 REPEAT=1 STEPS=120,145,175,210,250,300,360,430,520 WARM=30 MEASURE=50 BISECT=0
-CPUS=3 MEMORY=3.8g SWAP=2g POOL_SIZE=5 SEED=1 PROFILE=0
+CPUS=3 MEMORY=3.8g SWAP=2g POOL_SIZE=5 SEED=1 PROFILE=0 PROFILE_N=
 while (($#)); do
   case "$1" in
     --lane) LANE=$2; shift 2 ;;
@@ -77,6 +78,7 @@ while (($#)); do
     --pool-size) POOL_SIZE=$2; shift 2 ;;
     --seed) SEED=$2; shift 2 ;;
     --profile) PROFILE=1; shift ;;
+    --profile-n) PROFILE=1; PROFILE_N=$2; shift 2 ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
@@ -250,6 +252,7 @@ for run in $(seq "$REPEAT"); do
   stop_stack "$RESULTS/run-$run.backend.log"
 
   n=$(sed -n 's/.*"type":"summary".*"nStar":\([0-9]*\).*/\1/p' "$RESULTS/run-$run.jsonl")
+  n=${PROFILE_N:-$n}
   if ((PROFILE)) && [[ -n $n ]]; then
     log "profiling run $run at N=$n on a fresh stack"
     start_stack
@@ -258,6 +261,7 @@ for run in $(seq "$REPEAT"); do
       --out "/out/profile-$run.jsonl" &
     profiled=$!
     until [[ -e $RESULTS/measuring ]] || ! kill -0 "$profiled" 2>/dev/null; do sleep 1; done
+    [[ -e $RESULTS/measuring ]] || { wait "$profiled"; exit 1; }
     "$HERE/profile.sh" "$DIND" "$DIND_CGROUP" 30 >"$RESULTS/profile-$run-n$n.txt"
     wait "$profiled"
     rm -f "$RESULTS/measuring"
@@ -265,6 +269,6 @@ for run in $(seq "$REPEAT"); do
   fi
 done
 
-docker run --rm -v "$RESULTS:/out:ro" -v "$HERE/summarize.js:/summarize.js:ro" "$NODE_IMAGE" \
+docker run --rm --name "$P-summary" -v "$RESULTS:/out:ro" -v "$HERE/summarize.js:/summarize.js:ro" "$NODE_IMAGE" \
   node /summarize.js /out | tee "$RESULTS/summary.txt"
 log "results in $RESULTS"
