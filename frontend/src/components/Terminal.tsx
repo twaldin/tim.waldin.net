@@ -238,9 +238,28 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(
       const fitLayout = () => {
         const grid = gridRef.current;
         if (grid) {
-          xterm.resize(grid.cols, grid.rows);
+          // Whole-pixel cells skew a fixed grid's shape at small fonts and
+          // leave it short of the box. Keep the nearby font whose grid fills
+          // the most, then scale the rendered grid the rest of the way.
+          const boxWidth = currentTerminalElement.clientWidth;
+          const boxHeight = currentTerminalElement.clientHeight;
+          const screen = currentTerminalElement.querySelector<HTMLElement>(".xterm-screen");
+          const base = layoutFontSize();
+          let best = { fontSize: base, scale: 1, filled: -1 };
+          for (let fontSize = base; fontSize <= base + 3; fontSize++) {
+            xterm.options.fontSize = fontSize;
+            xterm.resize(grid.cols, grid.rows);
+            if (!screen?.offsetWidth || !screen.offsetHeight) return;
+            const scale = Math.min(boxWidth / screen.offsetWidth, boxHeight / screen.offsetHeight);
+            const filled = screen.offsetWidth * screen.offsetHeight * scale * scale;
+            if (filled > best.filled) best = { fontSize, scale, filled };
+          }
+          xterm.options.fontSize = best.fontSize;
+          currentTerminalElement.style.transformOrigin = "0 0";
+          currentTerminalElement.style.transform = `scale(${best.scale})`;
           return;
         }
+        currentTerminalElement.style.transform = "";
         fitAddon.fit();
         if (!embedded) return;
         // Glyph advances snap differently per platform and renderer (Linux
