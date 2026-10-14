@@ -597,6 +597,9 @@ async function runStep(n) {
     await sleep(1000 / MAX_SPAWN_PER_S);
   }
   admitted = target;
+  // A bisect step below the last one starts at its own level, not with the
+  // last step's visitors still finishing their lifetimes.
+  for (const s of [...visitors].slice(target)) s.leave();
   await sleep(opts.warmS * 1000);
   const mStart = now();
   if (opts.mark) fs.writeFileSync(opts.mark, '');
