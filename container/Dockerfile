@@ -1,3 +1,9 @@
+FROM ubuntu:24.04 AS animation-build
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev && \
+    rm -rf /var/lib/apt/lists/*
+COPY animation-playback.c /tmp/animation-playback.c
+RUN gcc -O2 -Wall -Wextra -Werror -o /animation-playback /tmp/animation-playback.c
+
 # The cell agent (cell/cellsh.c): a cell container runs it as pid 1 and
 # spawns visitor sandboxes from this same image.
 FROM ubuntu:24.04 AS cellsh
@@ -22,6 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps coreutils findutils ncurses-base zsh figlet sudo && \
     useradd -m -s /bin/zsh -d /home/portfolio portfolio && \
     rm -rf /var/lib/apt/lists/*
+COPY --from=animation-build /animation-playback /usr/local/bin/animation-playback
 
 # Copy all scripts
 COPY scripts/ /home/portfolio/scripts/
