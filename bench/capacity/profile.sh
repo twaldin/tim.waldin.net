@@ -47,14 +47,17 @@ cgroup_cpu() {
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 classes >"$tmp/classes"
-cgroup_cpu >"$tmp/cpu0"
+start=$(awk '{print $1}' /proc/uptime)
 awk '/^(user|system)_usec/ { print }' "$CG/cpu.stat" >"$tmp/us0"
+cgroup_cpu >"$tmp/cpu0"
 procs >"$tmp/procs0"
 sleep "$SECS"
 classes >>"$tmp/classes"
-cgroup_cpu >"$tmp/cpu1"
+end=$(awk '{print $1}' /proc/uptime)
 awk '/^(user|system)_usec/ { print }' "$CG/cpu.stat" >"$tmp/us1"
+cgroup_cpu >"$tmp/cpu1"
 procs >"$tmp/procs1"
+SPAN=$(awk -v start="$start" -v end="$end" 'BEGIN { print end - start }')
 sort -u "$tmp/classes" -o "$tmp/classes"
 
 MiB=1048576
@@ -102,13 +105,16 @@ awk 'NR == FNR { cls[$1] = $2; next }
   "$tmp/classes" "$tmp/procs1" | sort -k6 -n -r | head -25
 
 echo
-echo "== CPU over ${SECS}s, in cores (the host has $(awk '{ printf "%g", $1 / $2 }' "$CG/cpu.max")) =="
-awk -v secs="$SECS" '
+# Enumerating hundreds of processes takes time too; use the actual interval,
+# not just sleep's requested duration, or CPU use can appear to exceed the cap.
+echo "== CPU over ${SPAN}s, in cores (the host has $(awk '{ printf "%g", $1 / $2 }' "$CG/cpu.max")) =="
+echo "sample uptime $start..$end; requested sleep ${SECS}s"
+awk -v secs="$SPAN" '
   FILENAME ~ /us0$/ { u0[$1] = $2; next }
   FILENAME ~ /us1$/ { u1[$1] = $2; next }
   END { printf "user %.2f, system %.2f\n", (u1["user_usec"] - u0["user_usec"]) / secs / 1e6, (u1["system_usec"] - u0["system_usec"]) / secs / 1e6 }' \
   "$tmp/us0" "$tmp/us1"
-awk -v secs="$SECS" '
+awk -v secs="$SPAN" '
   FILENAME ~ /classes$/ { cls[$1] = $2; next }
   FILENAME ~ /cpu0$/ { a[$1] = $2; next }
   { if ($1 in a) d = $2 - a[$1]; else next
@@ -122,14 +128,14 @@ awk -v secs="$SECS" '
   }' "$tmp/classes" "$tmp/cpu0" "$tmp/cpu1"
 
 echo
-echo "== top processes by CPU over ${SECS}s (alive at both ends; cores) =="
-awk -v secs="$SECS" 'FILENAME ~ /classes$/ { cls[$1] = $2; next }
+echo "== top processes by CPU over ${SPAN}s (alive at both ends; cores) =="
+awk -v secs="$SPAN" 'FILENAME ~ /classes$/ { cls[$1] = $2; next }
   FILENAME ~ /procs0$/ { t0[$1 " " $3] = $4; next }
   { k = $1 " " $3; if (!(k in t0)) next; c = $2 == "/init" ? "init" : ($2 in cls ? cls[$2] : "other")
     key = c " " $3; d[key] += ($4 - t0[k]); n[key]++ }
   END { for (k in d) printf "%-40s %5d procs %6.3f\n", k, n[k], d[k] / 100 / secs }' \
   "$tmp/classes" "$tmp/procs0" "$tmp/procs1" | sort -k5 -n -r | head -15
-awk -v secs="$SECS" '
+awk -v secs="$SPAN" '
   FILENAME ~ /cpu0$/ { if ($1 == "/init") i0 = $2; next }
   FILENAME ~ /cpu1$/ { if ($1 == "/init") i1 = $2; next }
   FILENAME ~ /procs0$/ { t0[$1 " " $3] = $4; next }

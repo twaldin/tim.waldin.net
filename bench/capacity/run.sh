@@ -34,8 +34,8 @@
 #   --profile-n N     profile an already-measured N rather than this run's highest pass
 #
 # Results land in bench/capacity/results/<run id>/ (one JSON line per step and
-# a summary per run). Everything else it creates is named capbench-<run id>-*
-# and removed on exit.
+# a summary per run). Host-daemon resources use the capbench-<run id>-* prefix.
+# Inner containers live only in that run's isolated daemon. Both are removed.
 #
 # Fixed workload and measurement choices are in loadgen.js. A step adds live
 # visitors at <=4/s, settles 30 s (the zombie grace), then measures 50 s. Its
@@ -122,7 +122,7 @@ cleanup() {
   local status=$?
   if [[ -n ${EVENTS_PID:-} ]]; then kill "$EVENTS_PID" 2>/dev/null || true; fi
   if [[ -d $RESULTS ]]; then docker logs --timestamps "$DIND" >"$RESULTS/dockerd.log" 2>&1 || true; fi
-  docker rm -fv "$P-loadgen" "$P-npm" "$DIND" >/dev/null 2>&1 || true
+  docker rm -fv "$P-loadgen" "$P-npm" "$P-summary" "$DIND" >/dev/null 2>&1 || true
   docker volume rm "$P-var" >/dev/null 2>&1 || true
   docker network rm "$P-net" >/dev/null 2>&1 || true
   docker rmi "$P-session" "$P-backend" >/dev/null 2>&1 || true
@@ -238,7 +238,7 @@ interference() {
   read -r s1 st1 < <(cpu_ticks "$SIBLING_CPUS")
   u1=$(awk '/^usage_usec/ { print $2 }' "$DIND_CGROUP/cpu.stat")
   awk -v b=$((b1 - b0)) -v t=$((t1 - t0)) -v s=$((s1 - s0)) -v st=$((st1 - st0)) -v u=$((u1 - u0)) 'BEGIN {
-    printf "lane cpus: %.1f%% busy, %.1f%% of it not the emulated host; sibling threads %.1f%% busy\n",
+    printf "lane cpus: %.1f%% busy, %.1f percentage points unattributed to the emulated host; sibling threads %.1f%% busy\n",
       100 * b / t, 100 * (b / 100 - u / 1e6) / (t / 100), 100 * s / st }'
 }
 
