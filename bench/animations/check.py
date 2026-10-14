@@ -11,7 +11,7 @@ import threading
 ANIMATIONS = ("braille-fire", "braille-plasma", "starfield-warp", "logo-decode", "font-cycle")
 
 
-def capture(image, animation, width, fixture, sample, trace=False, skip=False):
+def capture(image, animation, width, fixture, sample, skip=False):
     name = f"cap-anim-check-{animation}-{width}-{sample}"
     command = [
         "docker", "run", "--rm", "--name", name, "--network", "none",
@@ -25,10 +25,6 @@ def capture(image, animation, width, fixture, sample, trace=False, skip=False):
     ]
     if (fixture / "fixed-random.so").exists():
         command[2:2] = ["-e", "LD_PRELOAD=/check/fixed-random.so"]
-    if trace:
-        command[-1] = "export BOOT_BANNER_FILE=/check/banner; " + (
-            f"strace -f -c bash -c 'RANDOM=7; source /check/{animation}.sh'"
-        )
     proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if skip:
         proc.stdin.write(b"x")
@@ -54,8 +50,6 @@ def capture(image, animation, width, fixture, sample, trace=False, skip=False):
             reader.join()
     if status:
         raise RuntimeError(streams["err"].decode(errors="replace"))
-    if trace:
-        return streams["out"], streams["err"].decode(errors="replace")
     timing = [line for line in streams["err"].decode().splitlines() if line.startswith("ANIM_TIME ")]
     if len(timing) != 1 or streams["err"].decode().strip() != timing[0]:
         raise RuntimeError(streams["err"].decode(errors="replace"))
@@ -73,7 +67,6 @@ def main():
     parser.add_argument("images", nargs="+")
     parser.add_argument("--widths", default="40,80,160")
     parser.add_argument("--repeat", type=int, default=5)
-    parser.add_argument("--trace", action="store_true")
     parser.add_argument("--fixed-random", type=pathlib.Path)
     parser.add_argument("--skip", action="store_true", help="Queue one skip key before the first frame.")
     parser.add_argument("--output", type=pathlib.Path, required=True)
@@ -112,17 +105,12 @@ def main():
                     for image in args.images:
                         code = (fixture / f"{image.replace('/', '_').replace(':', '_')}-{animation}").read_text()
                         (fixture / f"{animation}.sh").write_text(code)
-                        data, timing = capture(image_ids[image], animation, width, fixture, sample, args.trace, args.skip)
+                        data, timing = capture(image_ids[image], animation, width, fixture, sample, args.skip)
                         filename = f"{image.replace('/', '_').replace(':', '_')}-{animation}-{width}-{sample}"
                         (args.output / f"{filename}.bin").write_bytes(data)
                         record = {"image": image, "image_id": image_ids[image], "animation": animation,
                                   "width": width, "sample": sample, "bytes": len(data),
                                   "sha256": hashlib.sha256(data).hexdigest(), "skip": args.skip}
-                        if args.trace:
-                            (args.output / f"{filename}.trace").write_text(timing)
-                            results.append({**record, "mode": "trace", "trace_file": f"{filename}.trace"})
-                            print(f"{image} {animation} width={width}\n{timing}", flush=True)
-                            continue
                         if reference is None:
                             reference = data
                         if (args.fixed_random or animation in ("braille-plasma", "font-cycle")) and data != reference:
