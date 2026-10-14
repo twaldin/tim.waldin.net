@@ -4,9 +4,9 @@ export type BusyReason = Exclude<DenialReason, 'unavailable'>;
 
 export type EmbedPhase =
   | { phase: 'tour' }
-  | { phase: 'connecting'; attempt: number }
+  | { phase: 'connecting'; autoRetries: number }
   | { phase: 'live' }
-  | { phase: 'busy'; reason: BusyReason; attempt: number }
+  | { phase: 'busy'; reason: BusyReason; autoRetries: number }
   | { phase: 'ended' };
 
 export type EmbedState = EmbedPhase & { hidden: boolean };
@@ -31,7 +31,7 @@ export function transition(state: EmbedState, event: EmbedEvent): EmbedState {
       return { ...state, hidden: event.hidden };
     case 'gesture':
       return state.phase === 'tour' || state.phase === 'busy' || state.phase === 'ended'
-        ? { phase: 'connecting', attempt: 0, hidden }
+        ? { phase: 'connecting', autoRetries: 0, hidden }
         : state;
     case 'connected':
       return state.phase === 'connecting' ? { phase: 'live', hidden } : state;
@@ -39,12 +39,12 @@ export function transition(state: EmbedState, event: EmbedEvent): EmbedState {
       if (state.phase !== 'connecting') return state;
       return event.reason === 'unavailable'
         ? { phase: 'ended', hidden }
-        : { phase: 'busy', reason: event.reason, attempt: state.attempt, hidden };
+        : { phase: 'busy', reason: event.reason, autoRetries: state.autoRetries, hidden };
     case 'disconnected':
       return state.phase === 'connecting' || state.phase === 'live' ? { phase: 'ended', hidden } : state;
     case 'retryTimer':
-      return state.phase === 'busy' && !hidden && state.attempt < MAX_AUTO_RETRIES
-        ? { phase: 'connecting', attempt: state.attempt + 1, hidden }
+      return state.phase === 'busy' && !hidden && state.autoRetries < MAX_AUTO_RETRIES
+        ? { phase: 'connecting', autoRetries: state.autoRetries + 1, hidden }
         : state;
   }
 }

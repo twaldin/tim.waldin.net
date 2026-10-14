@@ -43,12 +43,16 @@ let outputWaiter = null;
 function record(chunk) {
   let text = oscCarry + chunk;
   oscCarry = '';
-  // Hold back only an OSC still open at the chunk's end (no BEL, at most a
-  // trailing ESC that may begin ST); any later ESC has already ended it.
+  // Hold back an OSC still open at the chunk's end (no BEL, at most a trailing
+  // ESC that may begin ST; any later ESC has already ended it), or a lone
+  // trailing ESC that may begin one.
   const open = text.lastIndexOf('\x1b]');
-  if (open !== -1 && /^[^\x07\x1b]*\x1b?$/.test(text.slice(open + 2))) {
-    oscCarry = text.slice(open);
-    text = text.slice(0, open);
+  const held = open !== -1 && /^[^\x07\x1b]*\x1b?$/.test(text.slice(open + 2))
+    ? open
+    : text.endsWith('\x1b') ? text.length - 1 : -1;
+  if (held !== -1) {
+    oscCarry = text.slice(held);
+    text = text.slice(0, held);
   }
   text = text.replace(PRIVATE_OSC, '');
   if (!text) return;
@@ -90,7 +94,8 @@ async function type(socket, text) {
 const socket = io(args.url, {
   transports: ['websocket'],
   reconnection: false,
-  auth: { initCommand: '', sessionId: randomUUID() },
+  // An embed session runs no initCommand, so the tour starts at a bare prompt.
+  auth: { kind: 'embed', sessionId: randomUUID() },
 });
 
 const ready = new Promise((resolve, reject) => {

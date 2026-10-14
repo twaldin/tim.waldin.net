@@ -43,7 +43,7 @@ function fakeSocket(id) {
   const emitted = [];
   return {
     id,
-    handshake: { headers: { 'x-real-ip': '9.9.9.9' }, auth: { initCommand: '' } },
+    handshake: { headers: { 'x-real-ip': '9.9.9.9' }, auth: {} },
     emit: (ev, payload) => emitted.push({ ev, payload }),
     disconnect: () => {},
     _emitted: emitted,

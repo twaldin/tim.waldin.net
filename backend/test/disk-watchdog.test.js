@@ -23,7 +23,7 @@ function socket(id, ip) {
   const emitted = [];
   return {
     id,
-    handshake: { headers: { 'x-real-ip': ip }, auth: { initCommand: '' } },
+    handshake: { headers: { 'x-real-ip': ip }, auth: {} },
     emit(event, payload) { emitted.push({ event, payload }); },
     disconnect() { this.disconnected = true; },
     emitted,

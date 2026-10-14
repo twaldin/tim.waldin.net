@@ -48,9 +48,8 @@ class SessionManager {
     const clientIP = socket.handshake.headers['x-real-ip'] || socket.handshake.address;
     const kind = parseSessionKind(socket.handshake.auth?.kind);
     const policy = this.kinds[kind];
-    let initCommand = typeof socket.handshake.auth?.initCommand === 'string'
+    const initCommand = typeof socket.handshake.auth?.initCommand === 'string'
       ? socket.handshake.auth.initCommand : undefined;
-    if (!policy.runsInitCommand) initCommand = '';
     const persistentId = typeof socket.handshake.auth?.sessionId === 'string'
       ? socket.handshake.auth.sessionId : undefined;
 
@@ -257,9 +256,7 @@ class SessionManager {
     if (state.initCommandRun) return;
     if (!state.promptSeen || !state.firstResizeApplied) return;
 
-    // Empty-string initCommand is a deliberate no-op sentinel (the blog cold
-    // page already shows content and has the user typing).
-    if (state.initCommand === '') { state.initCommandRun = true; return; }
+    if (!state.policy.runsInitCommand) { state.initCommandRun = true; return; }
 
     state.initCommandRun = true;
     // boot === welcome: the intro animation + welcome content is a single

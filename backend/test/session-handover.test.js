@@ -47,7 +47,7 @@ function fakeSocket(mgr, id, sessionId) {
   const socket = {
     id,
     connected: true,
-    handshake: { headers: { 'x-real-ip': IP }, auth: { sessionId, initCommand: '' } },
+    handshake: { headers: { 'x-real-ip': IP }, auth: { sessionId } },
     emitted: [],
     emit(ev, payload) { socket.emitted.push({ ev, payload }); },
     disconnect() {

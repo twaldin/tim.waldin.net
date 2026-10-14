@@ -58,12 +58,12 @@ The timer windows come from the connection's `SESSION_KINDS` row, captured at co
 
 ## Boot sequence for a new visitor
 
-1. A site socket connects with `auth.sessionId` (persistent UUID) and `auth.initCommand` (URL-derived; `''` is allowed). An embed socket connects with `auth.kind: 'embed'` and `auth.sessionId` only. IP = `x-real-ip` header (set by nginx) or the socket address. `server.js` logs `session_start` with the parsed `kind` and calls `SessionManager.handleConnect`.
+1. A site socket connects with `auth.sessionId` (persistent UUID) and `auth.initCommand` (URL-derived, optional). An embed socket connects with `auth.kind: 'embed'` and `auth.sessionId` only. IP = `x-real-ip` header (set by nginx) or the socket address. `server.js` logs `session_start` with the parsed `kind` and calls `SessionManager.handleConnect`.
 2. `Admission.checkConnectionRate(ip)` fails → `session_denied` `{ reason: 'ip-cap' }` + disconnect.
 3. `Admission.tryAcquire` decides `resume` vs `cold` (Runtime model above). A cold lease takes a warm container (`_takeFromPool`) or builds one (`_createPrepared`: create → start → resize 140×40 → attach), then `bindStream`s the sink, replays the buffered prompt and refills the pool.
 4. `socket.emit('session_status', { mode })`; parked resize / visibility are applied. On `resume` the gate is re-armed (`promptSeen = true`, `firstResizeApplied = false`) and `\x03` is written so a script left running by the previous socket stops; the first applied resize then triggers the initCommand.
 5. `_maybeRunInitCommand` runs once `promptSeen` (output containing `~ `) and `firstResizeApplied` are both true; `resizeFallback` opens the gate at the pre-resize size if no resize ever arrives.
-6. `_maybeRunInitCommand` picks the command: `''` is a no-op sentinel (blog cold pages already show content, and every embed connection gets it from `runsInitCommand: false`), otherwise `initCommand || 'boot'`. `_autoType` types only a literal `welcome` char-by-char (20 ms/char, `tti` events `welcome-start` / `welcome-enter-sent`); everything else is written atomically with `\r`. The initCommand replays on every connect, including refresh/resume.
+6. `_maybeRunInitCommand` runs nothing for a kind with `runsInitCommand: false` (embed); otherwise it types `initCommand || 'boot'`. `_autoType` types only a literal `welcome` char-by-char (20 ms/char, `tti` events `welcome-start` / `welcome-enter-sent`); everything else is written atomically with `\r`. The initCommand replays on every connect, including refresh/resume.
 
 ## InitCommand validation
 
