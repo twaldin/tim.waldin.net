@@ -153,8 +153,9 @@ class SessionManager {
     }
 
     // A resume keeps an existing prompt; reset the initCommand gate so the
-    // incoming resize repaints the URL's command into the fresh xterm.
-    if (result.mode === 'resume') {
+    // incoming resize repaints the URL's command into the fresh xterm. A kind
+    // that replays no command (embed) resumes its shell untouched.
+    if (result.mode === 'resume' && policy.runsInitCommand) {
       state.promptSeen = true;
       state.firstResizeApplied = false;
       state.initCommandRun = false;

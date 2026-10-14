@@ -109,6 +109,22 @@ function fakeSocket(id) {
     for (const c of resumeMgr.conns.values()) resumeMgr._clearTimers(c);
   });
 
+  await ok('an embed resume leaves the restored shell running', async () => {
+    const resumeAdmission = {
+      ...admission,
+      tryAcquire: async () => ({ mode: 'resume', lease: { leaseId: 'L4', handleId: 'H4' } }),
+    };
+    const resumeMgr = new SessionManager({ lifecycle, admission: resumeAdmission, kinds: kindsWithWindows() });
+    const s = fakeSocket('sock-4');
+    s.handshake.auth = { kind: 'embed', sessionId: 'embed-1' };
+    await resumeMgr.handleConnect(s);
+    const status = s._emitted.find((e) => e.ev === 'session_status');
+    assert.ok(status && status.payload.mode === 'resume', 'expected resume session_status');
+    assert.ok(!calls.write.some(([id]) => id === 'H4'),
+      'an embed replays no command, so nothing may interrupt its shell');
+    for (const c of resumeMgr.conns.values()) resumeMgr._clearTimers(c);
+  });
+
   await ok('startPoolMaintenance arms one interval of each kind and is idempotent', () => {
     mgr.startPoolMaintenance();
     const maintenanceTimer = mgr._maintTimer;
