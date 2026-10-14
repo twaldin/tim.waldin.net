@@ -129,6 +129,8 @@ class SessionLifecycle {
     this.pool = [];
     this.poolWarming = 0;
     this.handles = new Map();
+    this.creating = new Set();
+    this.preparing = new Set();
 
     this._fillPool();
   }
@@ -160,6 +162,7 @@ class SessionLifecycle {
       escapeTail: '',
     };
     this.handles.set(handle.handleId, record);
+    this.preparing.delete(handle.handleId);
 
     try {
       this.bindStream(handle, prepared.stream, callbacks);
@@ -225,13 +228,15 @@ class SessionLifecycle {
   }
 
   /**
-   * Reclaim only portfolio-labeled containers that are neither active nor pooled.
-   * This deliberately does not call either Docker prune endpoint.
+   * Reclaim only portfolio-labeled containers not owned by this lifecycle.
+   * A container belongs to us from create through pool or lease handoff.
    */
   async reclaimOrphans() {
     const filters = labelFilter();
     const containers = await this.docker.list({ all: true, filters });
-    const retained = new Set(this.handles.keys());
+    // list can include a created container before its create response arrives.
+    await Promise.allSettled([...this.creating]);
+    const retained = new Set([...this.handles.keys(), ...this.preparing]);
     for (const item of this.pool) retained.add(item.id);
 
     for (const info of containers) {
@@ -310,6 +315,7 @@ class SessionLifecycle {
     };
     pooled.stream.on('close', pooled.closeHandler);
     this.pool.push(pooled);
+    this.preparing.delete(prepared.id);
   }
 
   _takeFromPool() {
@@ -322,7 +328,15 @@ class SessionLifecycle {
   }
 
   async _createPrepared(sessionId) {
-    const id = await this.docker.create(buildContainerSpec(sessionId));
+    const creation = this.docker.create(buildContainerSpec(sessionId));
+    this.creating.add(creation);
+    let id;
+    try {
+      id = await creation;
+      this.preparing.add(id);
+    } finally {
+      this.creating.delete(creation);
+    }
     let stream;
     try {
       await this.docker.start(id);
@@ -335,6 +349,7 @@ class SessionLifecycle {
       return { id, stream };
     } catch (error) {
       await this._killAndRemove(id);
+      this.preparing.delete(id);
       throw error;
     }
   }
