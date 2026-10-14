@@ -53,10 +53,12 @@ const SANDBOX_POLICY = Object.freeze({
   // Hardening follow-ups (daemon-level, NOT in this object): userns-remap,
   // storage quota, no-new-privileges (blocked by the sudo demo).
   hostConfig: Object.freeze({
-    Memory: 512 * 1024 * 1024,
+    // nvim with the baked plugins on the largest shipped text file plus a full
+    // 100 MB /tmp peaks at 138 MiB; a larger file only OOMs that visitor's editor.
+    Memory: 192 * 1024 * 1024,
     // Equal to Memory: no swap. Docker's default (2x Memory) let each session
-    // push 512 MB into the host's shared 2 GB swap.
-    MemorySwap: 512 * 1024 * 1024,
+    // push its limit again into the host's shared 2 GB swap.
+    MemorySwap: 192 * 1024 * 1024,
     CpuQuota: 50000,
     PidsLimit: 100,
     ReadonlyRootfs: false,
