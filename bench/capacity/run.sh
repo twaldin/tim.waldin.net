@@ -118,7 +118,7 @@ log() { printf '[run %s] %s\n' "$(date +%H:%M:%S)" "$*" >&2; }
 # The existing directory inode stays stable across runs and needs no cleanup.
 LOCK=/tmp
 exec 9<"$LOCK"
-flock -n 9 || { echo "another capacity run holds the shared host inotify lock" >&2; exit 1; }
+flock -n 9 || { log "waiting for another capacity run to release the shared host inotify lock"; flock 9; }
 SCRATCH=$(mktemp -d "/tmp/$P.XXXXXX")
 
 cleanup() {
