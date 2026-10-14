@@ -6,6 +6,10 @@
 #
 #   machine-ok-queue run -- bench/capacity/run.sh --lane 0 --repeat 3
 #
+# A copy without .git (offload syncs one) records CAPACITY_COMMIT instead:
+#
+#   offload -- env CAPACITY_COMMIT=$(git rev-parse HEAD) bash bench/capacity/run.sh ...
+#
 # The emulated host is a privileged docker:dind container shaped like the prod
 # VPS (3 CPUs, 3.8 GB RAM, 2 GB swap). Inside it run dockerd, the backend and
 # socket-proxy from docker-compose.yml (plus compose.bench.yml) and the session
@@ -154,7 +158,11 @@ mkdir -p "$RESULTS"
   echo "id=$ID lane=$LANE cpus=$HOST_CPUS (siblings $SIBLING_CPUS idle) loadgen=$LOADGEN_CPUS"
   echo "host: --cpus $CPUS --memory $MEMORY --memory-swap $MEMORY_SWAP pool=$POOL_SIZE"
   echo "steps=$STEPS warm=$WARM measure=$MEASURE bisect=$BISECT seed=$SEED repeat=$REPEAT"
-  echo "commit=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown) dirty_files=$(git -C "$ROOT" status --porcelain 2>/dev/null | wc -l)"
+  if git -C "$ROOT" rev-parse HEAD >/dev/null 2>&1; then
+    echo "commit=$(git -C "$ROOT" rev-parse HEAD) dirty_files=$(git -C "$ROOT" status --porcelain | wc -l)"
+  else
+    echo "commit=${CAPACITY_COMMIT:-unknown} dirty_files=unknown"
+  fi
   echo "uptime: $(uptime)"
 } >"$RESULTS/config.txt"
 log "run $ID: lane $LANE (cpus $HOST_CPUS), $CPUS cpus, $MEMORY ram + $SWAP swap, pool $POOL_SIZE"
