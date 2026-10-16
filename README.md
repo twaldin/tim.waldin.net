@@ -80,6 +80,8 @@ The running site is [https://tim.waldin.net](https://tim.waldin.net), not a loca
 
 Native package commands remain available for isolated work: `cd frontend && pnpm dev` and `cd backend && npm start`. They are not a replacement production startup procedure. The backend needs a Docker daemon and the sandbox image; do not point a second backend at the production daemon, where it could interfere with live session containers. See [the frontend guide](frontend/CLAUDE.md#dev--build--tests) for native blog setup. Package tests are `cd frontend && pnpm test` and `cd backend && npm test`; backend unit tests need no Docker daemon.
 
+Browser checks run against the deployed site. Run `cd e2e && npm ci && npx playwright install chromium`, then `BASE_URL=https://tim.waldin.net npx playwright test --workers=1`. To check only the X Player Card, add `x.spec.ts` before `--workers=1`. That spec checks the card metadata and framing headers, then starts a usable shell only after a keypress. It opens at most two embed sessions per run, including its one retry, and exits each live shell.
+
 ## Security
 
 Each visitor gets an isolated Docker container with:
