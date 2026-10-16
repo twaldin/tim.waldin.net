@@ -14,9 +14,13 @@ test.describe('/x Player Card', () => {
     expect(response?.headers()['x-frame-options']).toBeUndefined();
     const csp = response?.headers()['content-security-policy'] ?? '';
     const ancestors = csp.split(';').find((directive) => directive.trim().startsWith('frame-ancestors ')) ?? '';
-    expect(ancestors).toMatch(/(?:^|\s)https:\/\/x\.com(?:\s|$)/);
-    expect(ancestors).toMatch(/(?:^|\s)https:\/\/twitter\.com(?:\s|$)/);
-    expect(ancestors).not.toMatch(/(?:^|\s)\*(?:\s|$)/);
+    expect(ancestors.trim().split(/\s+/).slice(1).sort()).toEqual([
+      "'self'",
+      'https://*.twitter.com',
+      'https://*.x.com',
+      'https://twitter.com',
+      'https://x.com',
+    ]);
 
     await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute('content', 'player');
     await expect(page.locator('meta[name="twitter:player"]')).toHaveAttribute('content', 'https://tim.waldin.net/x');
@@ -38,12 +42,15 @@ test.describe('/x Player Card', () => {
     let output = '';
     const sockets: string[] = [];
     let sessionEnded = false;
+    let socketClosed = false;
     page.on('request', (request) => {
       if (new URL(request.url()).pathname.startsWith('/socket.io/')) socketRequests.push(request.url());
     });
     page.on('websocket', (socket) => {
       if (!new URL(socket.url()).pathname.startsWith('/socket.io/')) return;
       sockets.push(socket.url());
+      socketClosed = false;
+      socket.on('close', () => { socketClosed = true; });
       socket.on('framereceived', ({ payload }) => {
         if (typeof payload !== 'string' || !payload.startsWith('42[')) return;
         const [event, data] = JSON.parse(payload.slice(2));
@@ -79,6 +86,7 @@ test.describe('/x Player Card', () => {
         await expect.soft(page.getByRole('status')).toHaveText(
           'session ended · press any key for a new shell', { timeout: 5000 },
         );
+        await expect.soft.poll(() => socketClosed, { timeout: 5000 }).toBe(true);
       }
     }
   });
