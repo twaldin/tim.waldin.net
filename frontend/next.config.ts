@@ -6,8 +6,8 @@ const contentSecurityPolicy = (frameAncestors: string) => [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self'",
-  // Safari < 16 does not match same-origin wss: against 'self'; name both hosts.
-  "connect-src 'self' wss://tim.waldin.net wss://twald.in",
+  // Safari < 16 does not match same-origin wss: against 'self'; name the host.
+  "connect-src 'self' wss://tim.waldin.net",
   `frame-ancestors ${frameAncestors}`,
   "object-src 'none'",
   "base-uri 'self'",

@@ -13,8 +13,6 @@ const server = http.createServer(app);
 
 // Production CORS origins
 const PROD_ORIGINS = [
-  'https://twald.in',
-  'https://terminal.twald.in',
   'https://tim.waldin.net'
 ];
 
