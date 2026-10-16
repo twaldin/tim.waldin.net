@@ -63,19 +63,22 @@ test.describe('/x Player Card', () => {
     try {
       await expect(page.getByRole('status')).toHaveText('● live shell');
       await expect.poll(() => output).toContain('❯');
-      expect(sockets).toHaveLength(1);
       await page.keyboard.press('Control+u');
       await page.keyboard.type('printf "embed-%s\\n" "$((6 * 7))"');
       await page.keyboard.press('Enter');
       await expect.poll(() => output).toContain('embed-42');
+      expect(sockets).toHaveLength(1);
     } finally {
-      if (!sessionEnded && await page.getByRole('status').textContent() === '● live shell') {
+      if (await page.getByRole('status').textContent() === '● live shell') {
+        sessionEnded = false;
         await page.keyboard.press('Control+c');
         await page.keyboard.press('Control+u');
         await page.keyboard.type('exit');
         await page.keyboard.press('Enter');
-        await expect.poll(() => sessionEnded).toBe(true);
-        await expect(page.getByRole('status')).toHaveText('session ended · press any key for a new shell');
+        await expect.soft.poll(() => sessionEnded, { timeout: 5000 }).toBe(true);
+        await expect.soft(page.getByRole('status')).toHaveText(
+          'session ended · press any key for a new shell', { timeout: 5000 },
+        );
       }
     }
   });

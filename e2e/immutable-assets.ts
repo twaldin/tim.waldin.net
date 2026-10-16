@@ -4,7 +4,7 @@ import type { APIResponse, Page, Route } from '@playwright/test';
 // Replays the site's immutable build assets (content-hashed JS/CSS chunks
 // under /_next/static and the fonts under /fonts, all served with
 // `Cache-Control: immutable`) from a per-worker memory cache, for the
-// "returning visitor" tests in terminal.spec.ts only. The "first visit" check
+// returning-visitor tests and the /x Player Card tests. The "first visit" check
 // deliberately runs without this so the cold-load signal stays observable.
 //
 // Why: every Playwright test gets a fresh browser context with an empty HTTP
