@@ -118,7 +118,7 @@ done
 # Final health check
 echo ""
 echo "Testing site connectivity..."
-if curl -s -o /dev/null -w "%{http_code}" http://localhost/ | grep -q "200\|302"; then
+if SITE_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 --resolve tim.waldin.net:443:127.0.0.1 https://tim.waldin.net/) && [ "$SITE_STATUS" = "200" ]; then
     echo "Site is responding correctly"
 else
     echo "Site may not be fully ready yet. Check logs if issues persist."
