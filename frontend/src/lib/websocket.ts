@@ -5,9 +5,8 @@ import { io, Socket } from 'socket.io-client';
 // Legacy pretty URL: /projects/<alias> jumps straight into the project
 // (runs the alias command, which cd's + shows the project info page).
 const PROJECT_ALIASES = new Set([
-  'easl', 'flt', 'agentelo', 'trade-up-bot',
-  'tim.waldin.net', 'stm32-games', 'dotfiles', 'hone', 'harness', 'studyspot',
-  'tetrio-tui', 'deck', 'hone-a-drone', 'gepa-ts', 'also',
+  'easl', 'hone', 'trade-up-bot', 'tim.waldin.net', 'harness', 'flt',
+  'studyspot', 'stm32-games', 'tetrio-tui', 'gepa-ts', 'dotfiles', 'also',
 ]);
 
 const NAVIGATION_COMMANDS: Record<string, true> = {
@@ -21,19 +20,16 @@ const NAVIGATION_COMMANDS: Record<string, true> = {
   about: true,
   gui: true,
   easl: true,
-  flt: true,
-  agentelo: true,
   hone: true,
-  harness: true,
-  'tim.waldin.net': true,
   'trade-up-bot': true,
+  'tim.waldin.net': true,
+  harness: true,
+  flt: true,
   studyspot: true,
   'stm32-games': true,
-  dotfiles: true,
   'tetrio-tui': true,
-  deck: true,
-  'hone-a-drone': true,
   'gepa-ts': true,
+  dotfiles: true,
   also: true,
 };
 

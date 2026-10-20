@@ -14,7 +14,7 @@ git_activity "${PURPLE}"
 
 echo ""
 
-typewriter "${RED}You are now in the projects/dotfiles directory${RESET}"
+typewriter "${RED}You are now in ~/.dotfiles, linked from ~/projects/dotfiles${RESET}"
 typewriter "${DIM}Use ls, tree, cat, nvim, or other commands to explore the actual git repository of this project,${RESET}"
 typewriter "${DIM}or type home to go back to the home page ${RESET}"
 echo ""

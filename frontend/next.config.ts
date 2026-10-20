@@ -77,6 +77,21 @@ const nextConfig: NextConfig = {
         destination: "/projects/tim.waldin.net",
         permanent: true,
       },
+      {
+        source: "/projects/agentelo",
+        destination: "https://github.com/twaldin/agentelo",
+        statusCode: 301,
+      },
+      {
+        source: "/projects/deck",
+        destination: "https://github.com/twaldin/deck",
+        statusCode: 301,
+      },
+      {
+        source: "/projects/hone-a-drone",
+        destination: "https://github.com/twaldin/hone-a-drone",
+        statusCode: 301,
+      },
     ];
   },
 };

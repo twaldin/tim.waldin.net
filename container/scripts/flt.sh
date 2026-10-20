@@ -7,6 +7,8 @@ echo ""
 ascii_typewriter "flt" "DOS_Rebel" "${PURPLE}"
 
 echo ""
+typewriter "${DIM}archived on github: no longer maintained${RESET}"
+echo ""
 
 create_box "Description" "CLI tool that spawns and orchestrates AI coding agents across
 6 harnesses (Claude Code, Codex, Gemini CLI, Aider, OpenCode, SWE-agent)

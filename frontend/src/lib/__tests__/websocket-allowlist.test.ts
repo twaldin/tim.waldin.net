@@ -57,18 +57,20 @@ describe('URL command allowlist', () => {
   });
 
   it.each([
-    ['/easl', 'easl'],
-    ['/t/easl', 'easl'],
-    ['/projects/easl', 'easl'],
-    ['/tim.waldin.net', 'tim.waldin.net'],
-    ['/t/tim.waldin.net', 'tim.waldin.net'],
-    ['/projects/tim.waldin.net', 'tim.waldin.net'],
-  ])('launches %s through the handshake', (path, command) => {
+    'easl', 'hone', 'trade-up-bot', 'tim.waldin.net', 'harness', 'flt',
+    'studyspot', 'stm32-games', 'tetrio-tui', 'gepa-ts', 'dotfiles', 'also',
+  ].flatMap(alias => [
+    [`/${alias}`, alias],
+    [`/t/${alias}`, alias],
+    [`/projects/${alias}`, alias],
+  ]))('launches %s through the handshake', (path, command) => {
     connectFrom(path);
     expectInitCommand(command);
   });
 
-  it.each(['/term-site', '/t/term-site', '/projects/term-site'])('rejects the removed command at %s', path => {
+  it.each([
+    'term-site', 'agentelo', 'deck', 'hone-a-drone',
+  ].flatMap(alias => [`/${alias}`, `/t/${alias}`, `/projects/${alias}`]))('rejects the removed command at %s', path => {
     connectFrom(path);
     expectInitCommand(undefined);
   });

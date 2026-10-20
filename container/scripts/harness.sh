@@ -7,6 +7,8 @@ echo ""
 ascii_typewriter "harness" "DOS_Rebel" "${PURPLE}"
 
 echo ""
+typewriter "${DIM}archived on github: no longer maintained${RESET}"
+echo ""
 
 create_box "Description" "Unified python+ts interface for invoking 26 AI coding CLIs as
 subprocesses — claude-code, codex, opencode, gemini, aider, pi, omp,

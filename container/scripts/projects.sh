@@ -12,19 +12,16 @@ echo ""
 # Copy stays grid-cell short (≤ ~60 cols) so the wide layout never wraps.
 ENTRIES=(
   'easl|easl|a native mac app for coding agents on one infinite board|swift, libghostty, webkit, zmx'
-  'harness|harness|one python+ts interface to 26 coding-agent CLIs|Python, TypeScript, per-CLI adapters'
-  'hone|hone|GEPA prompt optimizer — 0.65 to 0.85 on unseen bugs|Python, GEPA/dspy, harness'
-  'flt|flt|spawn + orchestrate fleets of coding agents in tmux|TypeScript, Bun, raw ANSI TUI'
-  'agentelo|agentelo|Bradley-Terry leaderboard for coding agents (148-agent baseline)|TypeScript, Next.js, SQLite, Bun'
-  'tim.waldin.net|tim.waldin.net|this site, with a docker container for every visitor|next.js, node.js, socket.io, docker'
+  'hone|hone|improves code; fixed objective, optimizer never grades itself|TypeScript, sandboxed evaluators, hone-capsules'
   'trade-up-bot|trade-up-bot|CS2 trade-up arbitrage — live at tradeupbot.app|TypeScript, React, PostgreSQL, Redis'
-  'studyspot|studyspot|co-founded AI study platform — RAG + Claude over course docs|Next.js, Cloudflare Workers, pgvector'
+  'tim.waldin.net|tim.waldin.net|this site, with a docker container for every visitor|next.js, node.js, socket.io, docker'
+  'harness|harness|(archived) one python+ts interface to 26 coding-agent CLIs|Python, TypeScript, per-CLI adapters'
+  'flt|flt|(archived) orchestrate coding-agent fleets in tmux|TypeScript, Bun, raw ANSI TUI'
+  'studyspot|studyspot|(archived) co-founded AI study platform — RAG + Claude|Next.js, Cloudflare Workers, pgvector'
   'stm32-games|stm32 games|complete snake in bare-metal C on an stm32 blue pill + lcd|C, st7789 lcd, libopencm3'
-  'dotfiles|dotfiles|development environment configs|raw nvim (native vim.pack), zsh, tmux, ghostty'
-  'tetrio-tui|tetrio-tui|TETR.IO TUI — protocol/engine; --offline solo|TypeScript, truecolor TUI'
-  'deck|deck|local operator-attended software factory / Prime Agent|TypeScript, Bun, Prime Agent'
-  'hone-a-drone|hone-a-drone|hone-evolved drone racing controllers|Python, hone/GEPA, lsy_drone_racing'
+  'tetrio-tui|tetrio-tui|TETR.IO TUI client — not installed in this container|TypeScript, truecolor TUI'
   'gepa-ts|gepa-ts|1-1 TS port of gepa.optimize_anything — zero deps|TypeScript, published @twaldin/gepa-ts'
+  'dotfiles|dotfiles|development environment configs|raw nvim (native vim.pack), zsh, tmux, ghostty'
   'also|also|the rest of github.com/twaldin|hackathons, archived predecessors, forks'
 )
 
@@ -98,8 +95,6 @@ if (( CELL_W >= 46 )); then
   grid_row 6 7
   grid_row 8 9
   grid_row 10 11
-  grid_row 12 13
-  grid_row 14
 else
   CELL_W=$(( cols - 2 ))
   for i in "${!ENTRIES[@]}"; do

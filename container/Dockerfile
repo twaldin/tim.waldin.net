@@ -130,7 +130,6 @@ RUN --mount=type=secret,id=github_token,required=false,mode=0644 \
     easl_missing_blobs && test ! -s "$easl_history/missing" && \
     rm -r "$easl_history" && \
     $CLONE https://github.com/twaldin/flt.git && \
-    $CLONE https://github.com/twaldin/agentelo.git && \
     $CLONE https://github.com/twaldin/stm32-games.git && \
     $CLONE https://github.com/twaldin/tim.waldin.net.git && \
     $CLONE https://github.com/twaldin/trade-up-bot.git && \
@@ -143,7 +142,6 @@ RUN --mount=type=secret,id=github_token,required=false,mode=0644 \
     $CLONE https://github.com/twaldin/studyspot.git && \
     ln -sf /home/portfolio/scripts/easl.sh /home/portfolio/projects/easl/easl.sh && \
     ln -sf /home/portfolio/scripts/flt.sh /home/portfolio/projects/flt/flt.sh && \
-    ln -sf /home/portfolio/scripts/agentelo.sh /home/portfolio/projects/agentelo/agentelo.sh && \
     ln -sf /home/portfolio/scripts/stm32-games.sh /home/portfolio/projects/stm32-games/stm32-games.sh && \
     ln -sf /home/portfolio/scripts/tim.waldin.net.sh /home/portfolio/projects/tim.waldin.net/tim.waldin.net.sh && \
     ln -sf /home/portfolio/scripts/trade-up-bot.sh /home/portfolio/projects/trade-up-bot/trade-up-bot.sh && \
@@ -153,12 +151,8 @@ RUN --mount=type=secret,id=github_token,required=false,mode=0644 \
     ln -sf /home/portfolio/scripts/dotfiles.sh /home/portfolio/.dotfiles/dotfiles.sh && \
     ln -sf /home/portfolio/.dotfiles /home/portfolio/projects/dotfiles && \
     mkdir -p /home/portfolio/projects/tetrio-tui \
-             /home/portfolio/projects/deck \
-             /home/portfolio/projects/hone-a-drone \
              /home/portfolio/projects/gepa-ts && \
     ln -sf /home/portfolio/scripts/tetrio-tui.sh /home/portfolio/projects/tetrio-tui/tetrio-tui.sh && \
-    ln -sf /home/portfolio/scripts/deck.sh /home/portfolio/projects/deck/deck.sh && \
-    ln -sf /home/portfolio/scripts/hone-a-drone.sh /home/portfolio/projects/hone-a-drone/hone-a-drone.sh && \
     ln -sf /home/portfolio/scripts/gepa-ts.sh /home/portfolio/projects/gepa-ts/gepa-ts.sh && \
     ln -sf /home/portfolio/scripts/also.sh /home/portfolio/projects/also.sh
 
