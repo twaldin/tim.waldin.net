@@ -115,6 +115,12 @@ RUN --mount=type=secret,id=github_token,required=false,mode=0644 \
     git -C easl sparse-checkout set --no-cone '/*' '!/docs/media/' \
       '!/Tests/CanvasCoreTests/Fixtures/browser-quality/*.png' \
       '!/resources/fonts/*.ttf' '!/.github/social-card.png' && \
+    # nvim's git blame needs source history in the network-isolated sandbox.
+    git -C easl rev-list --objects --all -- . ':(exclude)docs/media' \
+      ':(exclude)Tests/CanvasCoreTests/Fixtures/browser-quality/*.png' \
+      ':(exclude)resources/fonts/*.ttf' ':(exclude).github/social-card.png' | \
+      cut -d ' ' -f 1 | git -C easl fetch --no-tags --no-write-fetch-head \
+        --filter=blob:none --stdin origin && \
     $CLONE https://github.com/twaldin/flt.git && \
     $CLONE https://github.com/twaldin/agentelo.git && \
     $CLONE https://github.com/twaldin/stm32-games.git && \
