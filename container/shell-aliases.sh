@@ -1,9 +1,10 @@
 # Shared by interactive bash and zsh; keep navigation identical in both shells.
 alias projects='cd ~/projects && /home/portfolio/scripts/projects.sh'
+alias easl='cd ~/projects/easl && /home/portfolio/scripts/easl.sh'
 alias flt='cd ~/projects/flt && /home/portfolio/scripts/flt.sh'
 alias agentelo='cd ~/projects/agentelo && /home/portfolio/scripts/agentelo.sh'
 alias stm32-games='cd ~/projects/stm32-games && /home/portfolio/scripts/stm32-games.sh'
-alias term-site='cd ~/projects/term-site && /home/portfolio/scripts/term-site.sh'
+alias tim.waldin.net='cd ~/projects/tim.waldin.net && /home/portfolio/scripts/tim.waldin.net.sh'
 alias trade-up-bot='cd ~/projects/trade-up-bot && /home/portfolio/scripts/trade-up-bot.sh'
 alias hone='cd ~/projects/hone && /home/portfolio/scripts/hone.sh'
 alias harness='cd ~/projects/harness && /home/portfolio/scripts/harness.sh'

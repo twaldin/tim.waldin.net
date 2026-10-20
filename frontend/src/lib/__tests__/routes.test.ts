@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isValidPath, getPageMetadata } from '../routes';
+import { isValidPath, getPageMetadata, getOgImage } from '../routes';
 
 describe('isValidPath', () => {
   it('/ → true', () => expect(isValidPath('/')).toBe(true));
@@ -17,6 +17,15 @@ describe('isValidPath', () => {
   it('/projects/gepa-ts → true', () => expect(isValidPath('/projects/gepa-ts')).toBe(true));
   it('/also → true', () => expect(isValidPath('/also')).toBe(true));
   it('/projects/also → true', () => expect(isValidPath('/projects/also')).toBe(true));
+  it.each([
+    '/easl', '/t/easl', '/projects/easl',
+    '/tim.waldin.net', '/t/tim.waldin.net', '/projects/tim.waldin.net',
+  ])('%s accepts the project command', path => {
+    expect(isValidPath(path)).toBe(true);
+  });
+  it.each(['/term-site', '/t/term-site', '/projects/term-site'])('%s rejects the removed alias', path => {
+    expect(isValidPath(path)).toBe(false);
+  });
   it('/notacommand → false', () => expect(isValidPath('/notacommand')).toBe(false));
   it('/skyblock-qol → false (removed project)', () => expect(isValidPath('/skyblock-qol')).toBe(false));
   it('/projects/skyblock-qol → false (removed project)', () => expect(isValidPath('/projects/skyblock-qol')).toBe(false));
@@ -68,5 +77,25 @@ describe('getPageMetadata', () => {
   it('/flt returns project metadata', () => {
     const m = getPageMetadata('/flt');
     expect(m.title).toBe('flt — twaldin');
+  });
+});
+
+describe('project metadata and share cards', () => {
+  it.each(['easl', 'tim.waldin.net'])('%s uses its project title and card on every supported path', alias => {
+    for (const path of [`/${alias}`, `/t/${alias}`, `/projects/${alias}`]) {
+      expect(getPageMetadata(path)).toEqual({
+        title: `${alias} — twaldin`,
+        description: `Project: ${alias}.`,
+      });
+      expect(getOgImage(path)).toEqual({
+        url: `/repo-card/${alias}`, width: 1280, height: 640,
+      });
+    }
+  });
+
+  it.each(['/about', '/projects/also', '/projects/term-site'])('%s uses the root card', path => {
+    expect(getOgImage(path)).toEqual({
+      url: '/opengraph-image', width: 1200, height: 630,
+    });
   });
 });

@@ -111,10 +111,28 @@ RUN --mount=type=secret,id=github_token,required=false,mode=0644 \
     # Shallow clones: project pages show the last five commits, and full
     # histories only grow the image.
     CLONE="git clone --depth 20 --single-branch" && \
+    $CLONE --filter=blob:none --sparse https://github.com/twaldin/easl.git && \
+    git -C easl sparse-checkout set --no-cone '/*' '!/docs/media/' \
+      '!/Tests/CanvasCoreTests/Fixtures/browser-quality/*.png' \
+      '!/resources/fonts/*.ttf' '!/.github/social-card.png' && \
+    # nvim's git blame needs source history in the network-isolated sandbox.
+    easl_history="$(mktemp -d)" && \
+    easl_missing_blobs() { \
+      git -C easl rev-list --objects --all --missing=print -- . ':(exclude)docs/media' \
+        ':(exclude)Tests/CanvasCoreTests/Fixtures/browser-quality/*.png' \
+        ':(exclude)resources/fonts/*.ttf' ':(exclude).github/social-card.png' \
+        > "$easl_history/objects" && \
+      awk '/^\?/ { print substr($0, 2) }' "$easl_history/objects" > "$easl_history/missing"; \
+    } && \
+    easl_missing_blobs && \
+    git -C easl fetch --no-tags --no-write-fetch-head --filter=blob:none --stdin origin \
+      < "$easl_history/missing" && \
+    easl_missing_blobs && test ! -s "$easl_history/missing" && \
+    rm -r "$easl_history" && \
     $CLONE https://github.com/twaldin/flt.git && \
     $CLONE https://github.com/twaldin/agentelo.git && \
     $CLONE https://github.com/twaldin/stm32-games.git && \
-    ($CLONE https://github.com/twaldin/term-site.git || mkdir -p term-site) && \
+    $CLONE https://github.com/twaldin/tim.waldin.net.git && \
     $CLONE https://github.com/twaldin/trade-up-bot.git && \
     # hone's capsules/*/ hold ~3.3 GB of benchmark toolchains and fixtures;
     # keep each capsule's top-level config/manifest files, not its subtrees.
@@ -123,10 +141,11 @@ RUN --mount=type=secret,id=github_token,required=false,mode=0644 \
     git -C hone sparse-checkout set --no-cone '/*' '!/capsules/*/*/' && \
     $CLONE https://github.com/twaldin/harness.git && \
     $CLONE https://github.com/twaldin/studyspot.git && \
+    ln -sf /home/portfolio/scripts/easl.sh /home/portfolio/projects/easl/easl.sh && \
     ln -sf /home/portfolio/scripts/flt.sh /home/portfolio/projects/flt/flt.sh && \
     ln -sf /home/portfolio/scripts/agentelo.sh /home/portfolio/projects/agentelo/agentelo.sh && \
     ln -sf /home/portfolio/scripts/stm32-games.sh /home/portfolio/projects/stm32-games/stm32-games.sh && \
-    ln -sf /home/portfolio/scripts/term-site.sh /home/portfolio/projects/term-site/term-site.sh && \
+    ln -sf /home/portfolio/scripts/tim.waldin.net.sh /home/portfolio/projects/tim.waldin.net/tim.waldin.net.sh && \
     ln -sf /home/portfolio/scripts/trade-up-bot.sh /home/portfolio/projects/trade-up-bot/trade-up-bot.sh && \
     ln -sf /home/portfolio/scripts/hone.sh /home/portfolio/projects/hone/hone.sh && \
     ln -sf /home/portfolio/scripts/harness.sh /home/portfolio/projects/harness/harness.sh && \

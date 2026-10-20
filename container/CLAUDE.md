@@ -29,8 +29,8 @@ container/
     ├── themes.txt          # 464 theme names, written by scripts/generate-themes-lib.py with frontend/src/config/themes.ts
     ├── projects.sh         # Project cards (2-up grid on wide terminals); sources also.sh for the dump at the bottom
     ├── also.sh             # Hackathon / archived / fork one-liners (print_also_list when sourced, full page when run)
-    ├── flt.sh, agentelo.sh, hone.sh, harness.sh, stm32-games.sh,
-    │   term-site.sh, trade-up-bot.sh, studyspot.sh, dotfiles.sh   # Pages for cloned repos: blurb + git_activity
+    ├── easl.sh, flt.sh, agentelo.sh, hone.sh, harness.sh, stm32-games.sh,
+    │   tim.waldin.net.sh, trade-up-bot.sh, studyspot.sh, dotfiles.sh # Cloned repo pages with git_activity
     ├── tetrio-tui.sh, deck.sh, hone-a-drone.sh, gepa-ts.sh        # Pages for placeholder dirs: blurb only
     ├── about.sh            # About me
     ├── contact.sh          # Email + socials via OSC 8 hyperlinks
@@ -46,7 +46,8 @@ container/
 - **Removed installs**: mdcat/glow (blog renders as HTML), duplicate apt vim/neovim and nano (nightly nvim remains), bat (cat remains), wget, apt-transport-https/software-properties-common (the base already enables universe), and Linux Nerd Fonts/fontconfig (the browser supplies the terminal font; figlet fonts remain). nvm is unnecessary with visitor-owned startup: no Node runtime is installed.
 - **Editor**: bob v4.1.6 release archives, pinned and SHA-256-verified per architecture, install nightly nvim while preserving the dotfiles nvim config and baked-in plugins for the network-isolated sandbox. `vi` and `vim` alias nvim in both shells. The headless plugin warmup tolerates optional tool-download errors; validate actual offline editor startup after changing dependencies. `typst-preview` is stripped because a sandbox cannot open a system browser.
 - **Prompt**: Oh My Posh v31.3.0's pinned, SHA-256-verified architecture-specific binary is installed to `~/.local/bin`, without its unused bundled themes. `zshrc` initializes it once with `~/.dotfiles/zsh/pure-modified.omp.json`, whose username template is replaced with `tim.waldin.net`. The dotfiles repository remains available for browsing and nvim configuration, but its workstation zsh startup is not sourced.
-- **Repos** (one `RUN`, with an optional `github_token` build secret exported as `GITHUB_TOKEN` to lift bob's unauthenticated GitHub API rate limit): `twaldin/dotfiles` → `~/.dotfiles` (`~/.config/nvim` symlinks to its `nvim/`), and `~/projects/{flt,agentelo,stm32-games,term-site,trade-up-bot,hone,harness,studyspot}` cloned from `github.com/twaldin/<name>`. Every clone is shallow (`--depth 20 --single-branch`; project pages show five commits). `hone` is also a blobless sparse checkout that leaves out `capsules/*/*/` (~3.3 GB of benchmark toolchains and fixtures) but keeps each capsule's top-level config and manifest files; without that, the image grew past 6 GB. `~/projects/dotfiles` is a symlink to `~/.dotfiles`; `tetrio-tui`, `deck`, `hone-a-drone`, `gepa-ts` are empty `mkdir -p` placeholders, which is why their pages skip `git_activity`. Each project directory also gets a `<name>.sh` symlink (absolute target) to its script, plus `~/projects/also.sh`.
+- **Repos** (one `RUN`, with an optional `github_token` build secret exported as `GITHUB_TOKEN` to lift bob's unauthenticated GitHub API rate limit): `twaldin/dotfiles` → `~/.dotfiles` (`~/.config/nvim` symlinks to its `nvim/`), and `~/projects/{easl,flt,agentelo,stm32-games,tim.waldin.net,trade-up-bot,hone,harness,studyspot}` cloned directly from `github.com/twaldin/<name>`. Every clone is shallow (`--depth 20 --single-branch`; project pages show five commits). `easl` uses a blobless sparse checkout to keep binary assets out of the visitor image. It excludes `docs/media/`, browser-quality PNG fixtures, bundled TTF fonts, and `.github/social-card.png`. Its source remains available to browse with `nvim .`. `hone` is also a blobless sparse checkout that leaves out `capsules/*/*/` (~3.3 GB of benchmark toolchains and fixtures) but keeps each capsule's top-level config and manifest files; without that, the image grew past 6 GB. `~/projects/dotfiles` is a symlink to `~/.dotfiles`; `tetrio-tui`, `deck`, `hone-a-drone`, `gepa-ts` are empty `mkdir -p` placeholders, which is why their pages skip `git_activity`. Each project directory also gets a `<name>.sh` symlink (absolute target) to its script, plus `~/projects/also.sh`.
+- **Offline easl history**: the build fetches source blobs from all 20 shallow commits, but not the excluded binaries. nvim's current-line git blame can then read earlier versions without contacting GitHub from the network-isolated sandbox.
 - **sudo**: passwordless for `portfolio` (`/etc/sudoers.d/portfolio`). Safe because the backend creates containers with `CapDrop: ALL` (only `SETUID`/`SETGID` added back), no network, and memory/pid limits — `sudo rm -rf /` works as a demo but can't escape.
 - **Home extras**: `~/README.md` describes supported tools; `~/portfolio/`, `~/workspace/`, `~/tmp/` are writable.
 - **Entrypoint**: `secure-shell.sh` sets the visitor environment and execs zsh. Image `PATH` exposes bob's nvim proxy, `~/.local/bin` and `~/scripts` to both bash and zsh; `EDITOR=nvim`.
@@ -63,18 +64,20 @@ The Dockerfile installs this directory's `zshrc`, rather than importing workstat
 
 ### Aliases
 
-The 25 portfolio navigation aliases live in `shell-aliases.sh`; both interactive shells source the same file. It also defines `vi`/`vim` → nvim and `ll`/`la` → ls. Every script path below is `/home/portfolio/scripts/<name>.sh`.
+The 26 portfolio navigation aliases live in `shell-aliases.sh`; both interactive shells source the same file. It also defines `vi`/`vim` → nvim and `ll`/`la` → ls. Every script path below is `/home/portfolio/scripts/<name>.sh`.
 
 | Alias | Runs |
 |---|---|
 | `home`, `welcome`, `boot` | `cd ~ && boot.sh` — all three replay the intro |
 | `about`, `contact`, `resume` | `cd ~ && <name>.sh` |
 | `projects`, `also` | `cd ~/projects && <name>.sh` |
-| `flt`, `agentelo`, `stm32-games`, `term-site`, `trade-up-bot`, `hone`, `harness`, `studyspot`, `tetrio-tui`, `deck`, `hone-a-drone`, `gepa-ts` | `cd ~/projects/<name> && <name>.sh` |
+| `easl`, `flt`, `agentelo`, `stm32-games`, `tim.waldin.net`, `trade-up-bot`, `hone`, `harness`, `studyspot`, `tetrio-tui`, `deck`, `hone-a-drone`, `gepa-ts` | `cd ~/projects/<name> && <name>.sh` |
 | `dotfiles` | `cd ~/.dotfiles && dotfiles.sh` |
 | `theme`, `help`, `blog`, `gui` | `<name>.sh` — no `cd` |
 
 Adding a command means updating `shell-aliases.sh` and `help.sh`, plus — if a URL should reach it — `NAVIGATION_COMMANDS` in `frontend/src/lib/websocket.ts` and `KNOWN_COMMANDS` in `frontend/src/lib/routes.ts`. A project alias also needs both frontend `PROJECT_ALIASES` sets and the `zshrc` preexec mapping. Bash has navigation parity, but only zsh has the browser URL hook.
+
+`projects.sh` lists `easl` first. Its page links to `https://easl.sh`, the source repository, and the launch post. Its copy comes from the easl README and `blog/posts/2026-10-04-easl.md`.
 
 ## Boot intro (animations)
 
@@ -119,5 +122,4 @@ URL conventions for OSC 9999: page scripts push their own command name (`about`,
 
 ## Things to watch
 
-- The `term-site` clone is guarded with `(git clone … || mkdir -p term-site)` from when the repo was private. `twaldin/term-site` now redirects to the public `twaldin/tim.waldin.net`, so the clone succeeds and the visitor's `term-site` page shows live git activity; the guard is dormant.
 - `help.sh` lists four animations for `boot <name>`; `ANIMATIONS` in `boot.sh` has five (`font-cycle` is missing from help).

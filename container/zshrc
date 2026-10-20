@@ -19,7 +19,7 @@ preexec() {
   esac
   case "$cmd" in
     welcome|home) emit_url ""; return ;;
-    flt|agentelo|hone|harness|term-site|trade-up-bot|studyspot|stm32-games|dotfiles|tetrio-tui|deck|hone-a-drone|gepa-ts|also)
+    easl|flt|agentelo|hone|harness|tim.waldin.net|trade-up-bot|studyspot|stm32-games|dotfiles|tetrio-tui|deck|hone-a-drone|gepa-ts|also)
       emit_url "projects/$cmd"; return ;;
   esac
   emit_url "${cmd// /%20}"

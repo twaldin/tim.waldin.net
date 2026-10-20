@@ -1,6 +1,6 @@
-# Terminal Portfolio
+# tim.waldin.net
 
-<img src=".github/social-card.png" alt="term site" width="100%" />
+<img src=".github/social-card.png" alt="tim.waldin.net" width="100%" />
 
 My portfolio website that looks like a terminal. Users get an xterm.js terminal in their browser that connects to isolated Docker containers where they can run commands, explore my projects, view my resume, etc.
 
@@ -28,7 +28,7 @@ Browser (xterm.js) → Nginx (reverse proxy, SSL, rate limiting)
 ## Project Structure
 
 ```
-term-site/
+tim.waldin.net/
 ├── frontend/                  # Next.js app
 │   ├── src/app/               # Routes: terminal page for / and every command URL, blog/, gui/, repo-card/, OG image, sitemap
 │   ├── src/components/        # Terminal.tsx (xterm.js, OSC handlers, font sizing, clipboard)
@@ -121,7 +121,7 @@ Custom portfolio navigation:
 - `resume` - View my resume
 - `projects` - Explore all projects
 - `blog` - Posts I've written; `blog <slug>` opens a post
-- `<project>` - Jump straight to a project page: `harness`, `hone`, `flt`, `agentelo`, `term-site`, `trade-up-bot`, `studyspot`, `stm32-games`, `dotfiles`, `tetrio-tui`, `deck`, `hone-a-drone`, `gepa-ts`, `also`
+- `<project>` - Jump straight to a project page: `easl`, `harness`, `hone`, `flt`, `agentelo`, `tim.waldin.net`, `trade-up-bot`, `studyspot`, `stm32-games`, `dotfiles`, `tetrio-tui`, `deck`, `hone-a-drone`, `gepa-ts`, `also`
 - `theme` - Re-theme the site with a live fzf preview over 464 schemes; `theme <name>`, `theme dark|light`, `theme reset`
 - `boot` - Replay the intro animation; `boot <name>` picks one
 - `gui` - The point-and-click version, for mouse users
@@ -129,6 +129,8 @@ Custom portfolio navigation:
 - `home` / `welcome` - Back to the main page (same as `boot`)
 
 Plus tools for exploring the sandbox: `ls`, `cd`, `cat`, `nvim` (also `vi`/`vim`), `git`, `grep`, `rg`, `fzf`, `tree`, and `htop`. Bash and zsh share the portfolio aliases; zsh is the default and provides browser URL synchronization.
+
+Run `nvim ~/projects/easl` to browse easl's source in the sandbox. Its sparse checkout omits binary media, screenshots, and fonts. This site's source lives in `~/projects/tim.waldin.net`; the `tim.waldin.net` command opens its project page.
 
 ## Features
 
