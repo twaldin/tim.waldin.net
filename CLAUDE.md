@@ -99,3 +99,4 @@ The audit log (`events.jsonl`, with daily pageview rollups appended to it) lives
 
 - Every directory with a `CLAUDE.md` also has an `AGENTS.md` symlink → `CLAUDE.md`. Treat `CLAUDE.md` as canonical; edit only `CLAUDE.md`, never `AGENTS.md`.
 - One-off agent docs (plans, diagnoses, handoffs, content drafts) never get committed — they live untracked in `~/notes/tim.waldin.net/` on the dev machine.
+- Editing `.ts` or `.tsx` → read `skill://typescript-best-practices`.
