@@ -116,11 +116,19 @@ RUN --mount=type=secret,id=github_token,required=false,mode=0644 \
       '!/Tests/CanvasCoreTests/Fixtures/browser-quality/*.png' \
       '!/resources/fonts/*.ttf' '!/.github/social-card.png' && \
     # nvim's git blame needs source history in the network-isolated sandbox.
-    git -C easl rev-list --objects --all -- . ':(exclude)docs/media' \
-      ':(exclude)Tests/CanvasCoreTests/Fixtures/browser-quality/*.png' \
-      ':(exclude)resources/fonts/*.ttf' ':(exclude).github/social-card.png' | \
-      cut -d ' ' -f 1 | git -C easl fetch --no-tags --no-write-fetch-head \
-        --filter=blob:none --stdin origin && \
+    easl_history="$(mktemp -d)" && \
+    easl_missing_blobs() { \
+      git -C easl rev-list --objects --all --missing=print -- . ':(exclude)docs/media' \
+        ':(exclude)Tests/CanvasCoreTests/Fixtures/browser-quality/*.png' \
+        ':(exclude)resources/fonts/*.ttf' ':(exclude).github/social-card.png' \
+        > "$easl_history/objects" && \
+      awk '/^\?/ { print substr($0, 2) }' "$easl_history/objects" > "$easl_history/missing"; \
+    } && \
+    easl_missing_blobs && \
+    git -C easl fetch --no-tags --no-write-fetch-head --filter=blob:none --stdin origin \
+      < "$easl_history/missing" && \
+    easl_missing_blobs && test ! -s "$easl_history/missing" && \
+    rm -r "$easl_history" && \
     $CLONE https://github.com/twaldin/flt.git && \
     $CLONE https://github.com/twaldin/agentelo.git && \
     $CLONE https://github.com/twaldin/stm32-games.git && \
