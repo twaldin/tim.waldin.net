@@ -10,9 +10,8 @@ echo ""
 
 create_box "Description" "TETR.IO TUI. Custom protocol client (theorypack / Ribbon /
 NetCodec, reverse-engineered) plus a TETR.IO-exact local stacker
-engine. Solo modes — 40 LINES, BLITZ, ZEN, practice — run with
---offline. Live league and custom rooms need network this container
-does not have." "${PURPLE}"
+engine. The client isn't installed in this container.
+Get it from github.com/twaldin/tetrio-tui to run it yourself." "${PURPLE}"
 
 echo ""
 
@@ -25,11 +24,10 @@ typewriter "   ${PURPLE}•${RESET} truecolor TUI"
 
 echo ""
 
-typewriter "${BLUE}Play:${RESET}"
+typewriter "${BLUE}Availability:${RESET}"
 animated_separator "~" 10 "${PURPLE}"
-typewriter "   ${PURPLE}•${RESET} --offline — no network, straight to the solo menu"
+typewriter "   ${PURPLE}•${RESET} client not installed in this container"
 typewriter "   ${PURPLE}•${RESET} live Tetra League / custom rooms need a network"
-typewriter "     this site's container does not have"
 typewriter "   ${PURPLE}•${RESET} unofficial fan client — not affiliated with TETR.IO"
 
 echo ""

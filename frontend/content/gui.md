@@ -7,13 +7,13 @@ no terminal? no judgment. the 30-second version:
 
 ## who
 
-i'm tim waldin. i optimize production ai agents at [lindy](https://lindy.ai) in san francisco — evals, prompt optimization, making sure a change actually generalizes.
+i'm tim waldin. i work on agent reliability at [lindy](https://lindy.ai) in san francisco: production evals and prompt optimization.
 
 ## the story
 
-for now the interesting work is at lindy.
+i also build tools for coding agents in public — the newest is [easl](https://easl.sh).
 
-also shipped: [harness](https://github.com/twaldin/harness) · [hone](https://github.com/twaldin/hone) · [flt](https://github.com/twaldin/flt) · [agentelo](https://github.com/twaldin/agentelo)
+also shipped: [easl](https://github.com/twaldin/easl) · [hone](https://github.com/twaldin/hone) · [trade-up-bot](https://github.com/twaldin/trade-up-bot) · [harness](https://github.com/twaldin/harness)
 
 ## projects
 

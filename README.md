@@ -121,7 +121,7 @@ Custom portfolio navigation:
 - `resume` - View my resume
 - `projects` - Explore all projects
 - `blog` - Posts I've written; `blog <slug>` opens a post
-- `<project>` - Jump straight to a project page: `easl`, `harness`, `hone`, `flt`, `agentelo`, `tim.waldin.net`, `trade-up-bot`, `studyspot`, `stm32-games`, `dotfiles`, `tetrio-tui`, `deck`, `hone-a-drone`, `gepa-ts`, `also`
+- `<project>` - Jump straight to a project page: `easl`, `hone`, `trade-up-bot`, `tim.waldin.net`, `harness`, `flt`, `studyspot`, `stm32-games`, `tetrio-tui`, `gepa-ts`, `dotfiles`, `also`
 - `theme` - Re-theme the site with a live fzf preview over 464 schemes; `theme <name>`, `theme dark|light`, `theme reset`
 - `boot` - Replay the intro animation; `boot <name>` picks one
 - `gui` - The point-and-click version, for mouse users

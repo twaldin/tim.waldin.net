@@ -1,15 +1,13 @@
 export const KNOWN_COMMANDS = new Set([
   'welcome', 'about', 'contact', 'blog', 'projects', 'resume', 'help',
   'boot', 'theme', 'home',
-  'easl', 'flt', 'agentelo', 'trade-up-bot', 'tim.waldin.net',
-  'stm32-games', 'dotfiles', 'hone', 'harness', 'studyspot',
-  'tetrio-tui', 'deck', 'hone-a-drone', 'gepa-ts', 'also',
+  'easl', 'hone', 'trade-up-bot', 'tim.waldin.net', 'harness', 'flt',
+  'studyspot', 'stm32-games', 'tetrio-tui', 'gepa-ts', 'dotfiles', 'also',
 ]);
 
 export const PROJECT_ALIASES = new Set([
-  'easl', 'flt', 'agentelo', 'trade-up-bot', 'tim.waldin.net',
-  'stm32-games', 'dotfiles', 'hone', 'harness', 'studyspot',
-  'tetrio-tui', 'deck', 'hone-a-drone', 'gepa-ts', 'also',
+  'easl', 'hone', 'trade-up-bot', 'tim.waldin.net', 'harness', 'flt',
+  'studyspot', 'stm32-games', 'tetrio-tui', 'gepa-ts', 'dotfiles', 'also',
 ]);
 
 export const BLOG_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]*$/;

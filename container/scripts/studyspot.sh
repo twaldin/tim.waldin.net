@@ -7,6 +7,8 @@ echo ""
 ascii_typewriter "studyspot" "DOS_Rebel" "${PURPLE}"
 
 echo ""
+typewriter "${DIM}archived on github: no longer maintained${RESET}"
+echo ""
 
 create_box "Description" "Co-founded AI study platform (studyspot.us). RAG pipeline + Claude
 answering questions from uploaded course materials — pgvector semantic

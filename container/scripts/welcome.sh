@@ -78,8 +78,8 @@ wtblank() { echo ""; _wt_pace "$WELCOME_PACE_BLANK"; }
 # codes stripped but doesn't know OSC 8 sequences are zero-width.
 wtblank
 
-wt "${WHITE}i'm tim — i optimize production ai agents at$(hyperlink "󰖟 lindy.ai" "https://lindy.ai" "$BLUE")${WHITE} in san francisco.${RESET}"
-wt "${WHITE}evals, prompt optimization, scoring real traces — the job is \"did it actually get better.\"${RESET}"
+wt "${WHITE}i'm tim — i work on agent reliability at$(hyperlink "lindy.ai" "https://lindy.ai" "$BLUE")${WHITE} in san francisco: production evals and prompt optimization.${RESET}"
+wt "${WHITE}on the side i build tools for coding agents. newest: ${CYAN}easl${WHITE}.${RESET}"
 
 wtblank
 # The box cascades faster than the prose — menu items, not copy.
