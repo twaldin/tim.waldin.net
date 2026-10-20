@@ -1,13 +1,13 @@
 export const KNOWN_COMMANDS = new Set([
   'welcome', 'about', 'contact', 'blog', 'projects', 'resume', 'help',
   'boot', 'theme', 'home',
-  'flt', 'agentelo', 'trade-up-bot', 'term-site',
+  'easl', 'flt', 'agentelo', 'trade-up-bot', 'tim.waldin.net',
   'stm32-games', 'dotfiles', 'hone', 'harness', 'studyspot',
   'tetrio-tui', 'deck', 'hone-a-drone', 'gepa-ts', 'also',
 ]);
 
 export const PROJECT_ALIASES = new Set([
-  'flt', 'agentelo', 'trade-up-bot', 'term-site',
+  'easl', 'flt', 'agentelo', 'trade-up-bot', 'tim.waldin.net',
   'stm32-games', 'dotfiles', 'hone', 'harness', 'studyspot',
   'tetrio-tui', 'deck', 'hone-a-drone', 'gepa-ts', 'also',
 ]);
@@ -46,8 +46,7 @@ export function getOgImage(pathname: string): { url: string; width: number; heig
   else if (p.startsWith('projects/')) p = p.slice('projects/'.length);
   const cmd = p.split('/')[0];
   if (PROJECT_ALIASES.has(cmd) && cmd !== 'also') {
-    const card = cmd === 'term-site' ? 'tim.waldin.net' : cmd;
-    return { url: `/repo-card/${card}`, width: 1280, height: 640 };
+    return { url: `/repo-card/${cmd}`, width: 1280, height: 640 };
   }
   return { url: '/opengraph-image', width: 1200, height: 630 };
 }

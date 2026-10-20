@@ -78,7 +78,7 @@ require_cmd() {
 
 require_repo_root() {
   [[ -f "${REPO_ROOT}/docker-compose.yml" ]] \
-    || die "expected to be running from the term-site repo root (no docker-compose.yml at ${REPO_ROOT})"
+    || die "expected to be running from the tim.waldin.net repo root (no docker-compose.yml at ${REPO_ROOT})"
 }
 
 require_vps_reachable() {

@@ -68,7 +68,7 @@ ok('repeat views increment the count', () => {
 });
 
 ok('encoded path chars (%20, dots, dashes) are accepted', () => {
-  const res = beacon('/projects/term-site%20v2.0_beta', '203.0.113.1');
+  const res = beacon('/projects/tim.waldin.net%20v2.0_beta', '203.0.113.1');
   assert.strictEqual(res._statusCode, 204);
 });
 

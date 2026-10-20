@@ -291,7 +291,7 @@ hyperlink() {
   local url="$2"
   local color="${3:-$CYAN}"
 
-  echo -en "${color}\033]8;;${url}\033\\ ${text}\033]8;;\033\\${RESET}"
+  printf '%b\033]8;;%s\033\\ %s\033]8;;\033\\%b' "$color" "$url" "$text" "$RESET"
 }
 
 email_link() {

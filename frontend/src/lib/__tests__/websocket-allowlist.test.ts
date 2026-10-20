@@ -56,6 +56,23 @@ describe('URL command allowlist', () => {
     expectInitCommand('about');
   });
 
+  it.each([
+    ['/easl', 'easl'],
+    ['/t/easl', 'easl'],
+    ['/projects/easl', 'easl'],
+    ['/tim.waldin.net', 'tim.waldin.net'],
+    ['/t/tim.waldin.net', 'tim.waldin.net'],
+    ['/projects/tim.waldin.net', 'tim.waldin.net'],
+  ])('launches %s through the handshake', (path, command) => {
+    connectFrom(path);
+    expectInitCommand(command);
+  });
+
+  it.each(['/term-site', '/t/term-site', '/projects/term-site'])('rejects the removed command at %s', path => {
+    connectFrom(path);
+    expectInitCommand(undefined);
+  });
+
   it('rejects command-prefix bypasses of the old denylist', () => {
     connectFrom('/command%20rm%20-rf%20%2F');
     expectInitCommand(undefined);

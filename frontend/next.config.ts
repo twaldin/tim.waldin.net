@@ -72,6 +72,11 @@ const nextConfig: NextConfig = {
         destination: "/resume.pdf",
         permanent: true,
       },
+      {
+        source: "/projects/term-site",
+        destination: "/projects/tim.waldin.net",
+        permanent: true,
+      },
     ];
   },
 };

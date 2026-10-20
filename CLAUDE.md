@@ -1,4 +1,4 @@
-# tim.waldin.net (term-site)
+# tim.waldin.net
 
 Interactive terminal-themed portfolio at [tim.waldin.net](https://tim.waldin.net). Visitors land on a web-based xterm.js terminal that connects via Socket.IO to a Node.js backend, which leases them an isolated Ubuntu Docker container running a custom zsh shell with portfolio scripts (figlet ASCII art, project pages, blog, resume).
 
@@ -98,4 +98,4 @@ The audit log (`events.jsonl`, with daily pageview rollups appended to it) lives
 ## Conventions
 
 - Every directory with a `CLAUDE.md` also has an `AGENTS.md` symlink → `CLAUDE.md`. Treat `CLAUDE.md` as canonical; edit only `CLAUDE.md`, never `AGENTS.md`.
-- One-off agent docs (plans, diagnoses, handoffs, content drafts) never get committed — they live untracked in `~/notes/term-site/` on the dev machine.
+- One-off agent docs (plans, diagnoses, handoffs, content drafts) never get committed — they live untracked in `~/notes/tim.waldin.net/` on the dev machine.
