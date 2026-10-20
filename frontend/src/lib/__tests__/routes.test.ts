@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isValidPath, getOgImage } from '../routes';
+import { isValidPath, getPageMetadata, getOgImage } from '../routes';
 
 describe('isValidPath', () => {
   it('/ → true', () => expect(isValidPath('/')).toBe(true));
@@ -31,6 +31,19 @@ describe('isValidPath', () => {
   it('/foo/bar/baz → false', () => expect(isValidPath('/foo/bar/baz')).toBe(false));
 });
 
+describe('metadata route equivalence', () => {
+  it.each(['easl', 'tim.waldin.net', 'flt'])('%s retains its identity through every project URL', alias => {
+    const metadata = getPageMetadata(`/${alias}`);
+    expect(metadata.title).toContain(alias);
+    expect(metadata.description).toContain(alias);
+    expect(getPageMetadata(`/t/${alias}`)).toEqual(metadata);
+    expect(getPageMetadata(`/projects/${alias}`)).toEqual(metadata);
+  });
+
+  it.each(['about', 'blog', 'blog/some-post', 'projects'])('%s retains its metadata through terminal handoff', path => {
+    expect(getPageMetadata(`/t/${path}`)).toEqual(getPageMetadata(`/${path}`));
+  });
+});
 
 describe('project share cards', () => {
   it.each(['easl', 'tim.waldin.net'])('%s uses its project card on every supported path', alias => {
